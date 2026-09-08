@@ -54,5 +54,20 @@ cargo run --quiet --bin manifest > "$here/cartridge.json"
 # carries what a caller needs to CHOOSE and CHECK a board while the boards travel as files.
 python3 "$here/tools/catalogue.py" "$here"
 
+# The reference observation set admission validates against. Generated for the same reason the
+# manifests are: it is ENGINE OUTPUT, so a hand-maintained copy would drift from the payloads a
+# model actually meets, and the gate would be testing a shape the game no longer produces.
+#
+# What is not in this file is not checked, so it is a spread -- every preset, sparse and crowded --
+# rather than one mid-game board. `src/bin/reference.rs` says what it samples and why.
+cargo run --quiet --bin reference > "$here/reference/observations.json"
+python3 - "$here" <<'REFEOF'
+import json, sys
+doc = json.load(open(sys.argv[1] + "/reference/observations.json"))
+obs = doc["observations"]
+biggest = max(len(json.dumps(o, separators=(",", ":"))) for o in obs)
+print("    reference: %d observations, largest %d bytes" % (len(obs), biggest))
+REFEOF
+
 ls -l "$here/tb-ants.wasm" "$here/plugin.json" "$here/cartridge.json"
 ls -d "$here/maps" | sed "s/^/    boards: /"

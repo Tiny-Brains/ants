@@ -40,6 +40,7 @@ other colonies' hills; the cartridge implements the world in which those decisio
 | called by | Kalam | Orion plugin ABI | Worlds, observations, actions, and results for a wave |
 | reads | Caller | Plugin inputs | Seeds, preset, turn limit, an optional board, and opaque seat references |
 | writes | DevOps registration loader | cartridge.json | Presets, seat counts, the board catalogue, limits, and admission budgets |
+| writes | Admission | reference/observations.json | The payloads an adapter is validated against |
 
 Kalam vendors the built artifacts, so running a replica does not require this repository or Rust.
 The [system map](https://github.com/Tiny-Brains/devops#where-it-sits) describes the surrounding services.
@@ -118,6 +119,8 @@ maps/                the boards themselves, one JSON file each
 src/state.rs         match state and seeded world generation
 src/turn.rs          turn resolution and ending conditions
 src/observe.rs       visibility and per-seat observations
+reference/           the observation set admission validates an adapter against
+src/bin/reference.rs generates it -- every preset, sparse and crowded
 src/codec.rs         packed wave-state encoding
 src/replay.rs        action recording and replay reconstruction
 src/tests.rs         rules, determinism, and ABI behavior tests
@@ -135,6 +138,7 @@ build.sh             tests, component validation, and artifact generation
 
 - **Game logic uses integer arithmetic.** deny.sh checks for floating-point constructs, and replay tests check reconstruction.
 - **Seeds and actions determine the match.** Seed-repeatability tests guard against introducing ambient randomness or time.
+- **Exploring is remembered.** `turn.rs` folds each seat's vision into what it knows every turn; a model is a pure function of one observation, so the engine remembers on its behalf or scouting buys nothing.
 - **World generation preserves player symmetry.** The symmetry test covers terrain, hills, and initial resources.
 - **Seat references remain opaque.** The observe test checks that caller handles are echoed without interpretation.
 - **Registration follows the preset implementation.** build.sh regenerates cartridge.json instead of maintaining a second preset table.

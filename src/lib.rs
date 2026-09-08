@@ -70,6 +70,101 @@ pub const MAX_TURNS: u16 = 1000;
 /// becoming files: it is no longer a step in a match, it is the factory that writes the boards a
 /// match is played on. `build.sh` calls it, the output is committed, and nothing at runtime grows
 /// a world any more.
+/// Play one match to a busy turn and hand back what every seat could see.
+///
+/// **The gate is only as good as its worst case.** Admission validates an adapter against these
+/// observations and nothing else, so a set drawn from turn zero -- two ants, no contact, almost
+/// nothing known -- would admit adapters that are struck every turn of a real match, and the check
+/// would be theatre. This plays the largest board to a turn where colonies have grown, explored
+/// and met, and takes the views from there.
+///
+/// Actions are drawn from the match's own seeded generator, so the set is reproducible from the
+/// arguments alone and no committed fixture is needed to regenerate it.
+pub fn reference_observations(preset_name: &str, seed: u64, until_turn: u16) -> Option<Value> {
+    let p = map::preset(preset_name)?;
+    let mf = mapfile::for_seed(p.name, seed)?;
+    let mut m = mf.build(seed, MAX_TURNS).ok()?;
+    let food_target = m.food_target as usize;
+
+    // A greedy walker: step toward the nearest food, and spread out when there is none in sight.
+    //
+    // Not play, and not meant to be -- what this set has to contain is a BOARD IN A DEMANDING
+    // STATE. A random walk will not produce one: it collects food by accident, so the colony never
+    // grows, and after two hundred turns a seat still has four ants and has explored almost
+    // nothing. The payload an adapter is validated against would then be a fraction of the size of
+    // the one it meets on the ladder, which is the gate being narrow exactly where narrowness is
+    // dangerous.
+    //
+    // Integer throughout, like everything else here: `dist2` is squared distance on the torus and
+    // no square root is taken.
+    // `observe` returns nothing for a finished match, and a greedy field ends one: colonies meet,
+    // fight, and one of them is exterminated well before a turn limit. So the last LIVE state is
+    // kept, and that is what the set is drawn from -- asking for turn 250 of a match that ended on
+    // turn 190 gives the observations from turn 189 rather than an empty file.
+    let mut last_live = m.clone();
+    let mut rng = map::Rng(seed ^ 0x5EED_0B5E_2A17_C0DE);
+    while m.turn < until_turn && !m.done {
+        let mut moves: Vec<Vec<String>> = Vec::with_capacity(m.players as usize);
+        for seat in 0..m.players {
+            let mine = m.mine(seat);
+            let mut orders = Vec::with_capacity(mine.len());
+            // Each ant takes the nearest food NO OTHER ANT HAS TAKEN. Without this the whole
+            // colony converges on one square, and ants that move onto the same square all die --
+            // a greedy field with no claim exterminated both colonies by turn four, which is a
+            // demanding board in no sense at all.
+            let mut claimed: Vec<u16> = Vec::new();
+            for pos in &mine {
+                let target = m
+                    .food
+                    .iter()
+                    .copied()
+                    .filter(|f| !claimed.contains(f))
+                    .min_by_key(|&f| m.g.dist2(*pos, f));
+                if let Some(f) = target {
+                    claimed.push(f);
+                }
+                let order = match target {
+                    Some(f) if m.g.dist2(*pos, f) > 0 => {
+                        // Whichever of the four steps ends up closest. Ties fall to the first,
+                        // which is stable and therefore reproducible.
+                        let (r, c) = m.g.rc(*pos);
+                        let best = map::DIRS
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, (dr, dc))| m.g.dist2(m.g.at(r + dr, c + dc), f))
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        ["N", "E", "S", "W"][best]
+                    }
+                    // Nothing visible: wander, so the colony covers ground rather than sitting on
+                    // a hill and knowing nothing about the board.
+                    _ => ["N", "E", "S", "W"][rng.below(4) as usize],
+                };
+                orders.push(order.to_string());
+            }
+            moves.push(orders);
+        }
+        last_live = m.clone();
+        turn::step(&mut m, &moves, food_target);
+    }
+
+    let m = if m.done { last_live } else { m };
+    let reached = m.turn;
+    let w = Wave { matches: vec![m] };
+    let views = f_observe(&json!({ "wave_state": pack(&w) })).ok()?;
+    Some(json!({
+        "generated_from": {
+            "preset": preset_name, "seed": seed,
+            "asked_for_turn": until_turn, "turn": reached,
+            "map": mf.id,
+        },
+        "observations": views.get("views")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().map(|v| v["view"].clone()).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    }))
+}
+
 pub fn generate_map(preset_name: &str, seed: u64, id: &str) -> Option<Value> {
     let p = map::preset(preset_name)?;
     let m = state::worldgen(seed, p, MAX_TURNS);

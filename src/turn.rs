@@ -22,6 +22,24 @@ pub fn step(m: &mut Match, moves: &[Vec<String>], food_target: usize) {
     let collected = gather(m);
     spawn_food(m, &mut rng, food_target);
 
+    // 7. What everyone alive can now see, folded into what they know -- rule 16, and the reason
+    // `observe.rs` chose known water over visible water: "known water is the only option in which
+    // scouting buys anything at all", because a model is a pure function of one observation and
+    // has no channel for state between turns.
+    //
+    // THIS WAS MISSING. `reveal` ran once, in worldgen, and never again -- so `known` was frozen at
+    // turn-zero vision for the whole match and exploring recorded nothing. Nothing failed: every
+    // test passed, replays re-simulated exactly, and observations were simply smaller than the
+    // design measured (38 run-lengths at turn 700 against the 774 by turn 600 that observe.rs
+    // documents). A property that is expensive, deliberate, documented and absent is worse than
+    // one that was never chosen.
+    //
+    // After `spawn`, so a newly spawned ant sees from its hill; after `battle`, so an ant that died
+    // this turn reveals nothing.
+    for pl in 0..m.players {
+        m.reveal(pl);
+    }
+
     m.turn += 1;
     update_stalemate(m, collected);
     check_end(m);

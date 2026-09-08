@@ -24,11 +24,18 @@
 //! which is exactly what a stateless contract requires of the engine.
 //!
 //! It is the expensive choice and the numbers are known. The per-player seen-masks are **60% of
-//! `wave_state`**, and because a *partially* explored map is more fragmented than either an empty
-//! or a full one, the run-length encoding grows over a match — measured at 102 runs on turn 0 and
-//! 774 by turn 600, with the views payload up 65%. Both are affordable: a wave of 16 on the
-//! largest preset is 14% of the plugin ceiling, and an observation is about 2.4 KB. Paying that so
+//! `wave_state`** — a fixed cost, because a bitmap does not grow with what is set in it — and
+//! because a *partially* explored map is more fragmented than either an empty or a full one, the
+//! run-length encoding grows over a match. Measured on `cell-04`, greedy play: **38 runs at turn 1,
+//! 250 by turn 100, 574 by turn 300 and 1,206 by turn 600**, taking one observation from about
+//! 0.6 KB to 3.0 KB. A wave of 16 at that size is 9% of the plugin response ceiling. Paying that so
 //! that exploring means something is the right trade.
+//!
+//! **Those are the first real measurements of it.** `reveal` ran once, in `worldgen`, and was never
+//! called again — so `known` was frozen at turn-zero vision for the whole match and exploring
+//! recorded nothing. Every test passed, replays re-simulated exactly, and the only symptom was
+//! observations smaller than the design said they would be. `turn.rs` folds vision in at the end of
+//! every turn now; the earlier figures in this comment were an estimate that the code never met.
 //!
 //! Two consequences worth stating because they are visible to a model. A `0` in `water` conflates
 //! *known empty* with *never seen*, which docs/protocol.md §1 already names as the cost of dropping
