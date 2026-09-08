@@ -1,0 +1,10 @@
+# Rust build output.
+#
+# The COMPILED COMPONENT IS COMMITTED -- `tb-ants.wasm` and the generated `plugin.json` and
+# `cartridge.json` beside it are what the platform loads, and the machine that loads them has no
+# Rust toolchain. The build tree that produced them is not the artifact, for the same reason as in
+# jodi/ and kalam/.
+target/
+
+# Local run artifacts
+.run/

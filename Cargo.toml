@@ -1,0 +1,40 @@
+# The Ants cartridge: the reference game.
+#
+# A cartridge is a game -- its rules, its world generation, its scoring and its replay format --
+# shipped as a signed WebAssembly component the platform loads, versions and executes in a sandbox.
+# The contract is design/cartridge.md; the rules are design/RULES.md; what a model sees is
+# design/PROTOCOL.md. Where this crate and those documents disagree, they are right and this is a
+# bug.
+#
+# Two properties are load-bearing and are tested rather than intended:
+#
+#   * **Integer-only.** No floating point anywhere in game logic, so the platform's build and the
+#     browser's agree bit for bit and a replay can be re-simulated rather than shipped as frames.
+#     `#![forbid(clippy::float_arithmetic)]` is not a thing, so `deny.rs` checks the source.
+#   * **Deterministic from the seed.** Same seed, same preset, same match, on every machine.
+[package]
+name = "tb-ants"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json = "1"
+
+# Only the export shim needs the SDK, and its generated component-model bindings do not build for
+# the host -- so the dependency is wasm-only and the shim is behind the same cfg. Everything else
+# in the crate is host-testable, which is where every rule in RULES.md is checked.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+orion-plugin-sdk = "1.7"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
+
+[workspace]

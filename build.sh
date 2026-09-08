@@ -1,0 +1,42 @@
+#!/bin/sh
+# Rebuild the tb.ants component and place it beside the manifest that names it.
+#
+# Needs the wasm32-unknown-unknown target (`rustup target add wasm32-unknown-unknown`) and
+# `wasm-tools` (`cargo install wasm-tools`). The output is committed, so the package loads on a
+# machine with no wasm toolchain; run this after changing src/ and commit the result with it.
+#
+# The host tests are the gate. RULES.md is the specification and `src/tests.rs` is the only
+# place it is enforced -- the game's own schemas are documentation the platform never loads
+# (PROTOCOL.md §6), so nothing at runtime will catch a rule implemented wrongly. `deny.sh` runs
+# first: the determinism law is a property of the source, not of a test.
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+"$here/deny.sh"
+cd "$here"
+cargo test
+cargo build --release --target wasm32-unknown-unknown
+wasm-tools component new \
+  target/wasm32-unknown-unknown/release/tb_ants.wasm \
+  -o "$here/tb-ants.wasm"
+wasm-tools validate "$here/tb-ants.wasm" --features component-model
+
+# The manifest, again as JSON. `plugin.toml` is the authored form -- it is what `orion-cli plugins
+# create -f` reads, and what Orion's own examples use -- but the admin API takes JSON, and the
+# load script runs inside the Soma image, which has jq and base64 and no TOML parser. So the JSON
+# is a generated, committed artifact exactly like the component beside it: never hand-edited,
+# always rebuilt from the TOML by this script.
+python3 - "$here/plugin.toml" "$here/plugin.json" <<'PYEOF'
+import json, sys, tomllib
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "rb") as f:
+    manifest = tomllib.load(f)
+with open(dst, "w") as f:
+    json.dump(manifest, f, indent=2)
+    f.write("\n")
+PYEOF
+
+# The registration manifest, generated from the preset table for the same reason the plugin
+# manifest is generated from the TOML: an artifact nobody hand-edits cannot drift from the code.
+cargo run --quiet --bin manifest > "$here/cartridge.json"
+
+ls -l "$here/tb-ants.wasm" "$here/plugin.json" "$here/cartridge.json"

@@ -1,0 +1,33 @@
+{
+  "abi": 1,
+  "budgets": {
+    "adapter_ops_max": 1000000,
+    "flop_caps": {
+      "large": 128000000000.0,
+      "micro": 1000000000.0,
+      "mini": 4000000000.0,
+      "nano": 250000000.0,
+      "small": 16000000000.0
+    }
+  },
+  "game": "ants",
+  "limits": {
+    "max_turns": 1000,
+    "turn_ms": 1000
+  },
+  "presets": [
+    {
+      "name": "standard",
+      "players": 2
+    },
+    {
+      "name": "maze",
+      "players": 2
+    },
+    {
+      "name": "cell",
+      "players": 2
+    }
+  ],
+  "version": "1.0.0"
+}

@@ -1,0 +1,116 @@
+{
+  "abi": "orion:plugin@1.0.0",
+  "name": "tb.ants",
+  "version": "1.0.0",
+  "component": "tb-ants.wasm",
+  "functions": [
+    {
+      "name": "tb.ants.worldgen",
+      "description": "Build a wave of worlds from one seed per match, on one preset",
+      "category": "transform",
+      "input_fields": [
+        {
+          "name": "seeds",
+          "description": "One seed per match in the wave, in the claim's order",
+          "kind": "array",
+          "required": true,
+          "template_at": true
+        },
+        {
+          "name": "preset",
+          "description": "The map every match in this wave is played on -- one preset per wave, decision 18",
+          "kind": "string",
+          "required": true,
+          "template_at": true
+        },
+        {
+          "name": "players",
+          "description": "Optional check: the preset carries the seat count and refuses a caller that disagrees",
+          "kind": "number",
+          "required": false,
+          "template_at": true
+        },
+        {
+          "name": "max_turns",
+          "description": "The turn limit; the manifest's limits.max_turns, defaulting to 1000",
+          "kind": "number",
+          "required": false,
+          "template_at": true
+        }
+      ]
+    },
+    {
+      "name": "tb.ants.observe",
+      "description": "Every live seat's view of every live match; nothing for a match that has ended",
+      "category": "transform",
+      "input_fields": [
+        {
+          "name": "wave_state",
+          "description": "The opaque state the last call returned",
+          "kind": "string",
+          "required": true,
+          "template_at": true
+        },
+        {
+          "name": "refs",
+          "description": "Opaque per-seat handles carrying m and seat, echoed onto each view and never inspected",
+          "kind": "array",
+          "required": false,
+          "template_at": true
+        }
+      ]
+    },
+    {
+      "name": "tb.ants.step",
+      "description": "Advance every live match in the wave by one turn",
+      "category": "transform",
+      "input_fields": [
+        {
+          "name": "wave_state",
+          "kind": "string",
+          "required": true,
+          "template_at": true
+        },
+        {
+          "name": "actions",
+          "description": "Positionally aligned with the last observe, or explicit { m, seat, action } entries",
+          "kind": "array",
+          "required": true,
+          "template_at": true
+        }
+      ]
+    },
+    {
+      "name": "tb.ants.finish",
+      "description": "Ranks, scores and an end reason for every match in the wave",
+      "category": "transform",
+      "input_fields": [
+        {
+          "name": "wave_state",
+          "kind": "string",
+          "required": true,
+          "template_at": true
+        }
+      ]
+    },
+    {
+      "name": "tb.ants.replay-decode",
+      "description": "One frame of a replay payload, re-simulated from the action stream, for the viewer",
+      "category": "transform",
+      "input_fields": [
+        {
+          "name": "payload",
+          "kind": "object",
+          "required": true,
+          "template_at": true
+        },
+        {
+          "name": "turn",
+          "kind": "number",
+          "required": true,
+          "template_at": true
+        }
+      ]
+    }
+  ]
+}
