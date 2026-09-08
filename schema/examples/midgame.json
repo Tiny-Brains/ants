@@ -1,0 +1,12 @@
+{
+  "_note": "Three of your ants, two enemy ants visible, both hills known. action[i] is the move for mine[i]: the ant at [12,30] goes north, the one at [13,30] holds, the one at [41,77] goes east toward the enemy hill.",
+  "state": {
+    "size": [64, 96],
+    "mine":  [[12, 30], [13, 30], [41, 77]],
+    "foes":  [[12, 33, 1], [11, 34, 1]],
+    "food":  [[11, 31], [40, 80]],
+    "hills": [[20, 20, 0], [44, 76, 1]],
+    "water": { "rle": [0, 812, 1, 6, 0, 4110, 1, 12, 0, 1204] }
+  },
+  "action": ["N", "-", "E"]
+}

@@ -1,6 +1,6 @@
 //! The replay: the action stream, not frames.
 //!
-//! `DESIGN.md` §8 and §3.3. Game state is integer-only, so a replay can store what everyone *did*
+//! the platform design §8 and §3.3. Game state is integer-only, so a replay can store what everyone *did*
 //! and the viewer re-simulates the match rather than being shipped a hundred times the bytes. The
 //! platform never decodes a delta; `replay-decode` does, in the browser, against the same digest
 //! that produced it.
@@ -37,8 +37,8 @@ fn first_char(a: &str) -> char {
 /// `tb.ants.replay-decode(payload, turn)` — one frame, for the viewer.
 ///
 /// **Note the name.** Orion refuses a plugin function label that is not `[a-z][a-z0-9-]*`, so the
-/// `replay_decode` spelling in `cartridge.md` §1 does not load at all; it is `replay-decode`.
-/// Found by the wave-turn spike (`design/v2/03-spike/FINDINGS.md` §2.1).
+/// `replay_decode` spelling in docs/docs/cartridge.md §1 does not load at all; it is `replay-decode`.
+/// Found by the wave-turn spike (`the wave-turn spikeFINDINGS.md` §2.1).
 ///
 /// The envelope carries the seed and the preset, so a frame is produced by replaying the action
 /// stream from turn zero rather than by storing one. That is the determinism law paying for

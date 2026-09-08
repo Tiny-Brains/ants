@@ -1,7 +1,7 @@
 //! The rules, checked one at a time.
 //!
-//! `RULES.md` is the specification and this is where it is enforced: the game's schemas are
-//! documentation the platform never loads (`PROTOCOL.md` §6), so nothing at runtime will catch a
+//! The published rules of Ants are the specification and this is where they are enforced: the game's schemas are
+//! documentation the platform never loads (docs/protocol.md §6), so nothing at runtime will catch a
 //! rule implemented wrongly. Each test names the rule it is for.
 
 use super::*;
@@ -518,7 +518,7 @@ fn the_same_seed_is_the_same_match_every_time() {
 
 #[test]
 fn wave_state_round_trips_exactly_after_a_played_turn() {
-    // cartridge.md §2. Tested after a turn, not on a fresh state: a fresh state exercises none of
+    // docs/docs/cartridge.md §2. Tested after a turn, not on a fresh state: a fresh state exercises none of
     // the fields that matter -- scores, the hive, razed hills, the stalemate counters.
     let w = invoke("tb.ants.worldgen", json!({"seeds": [11, 12], "preset": "standard"})).unwrap();
     let mut state = w["wave_state"].as_str().unwrap().to_string();
@@ -551,7 +551,7 @@ fn random_actions(views: &Value, rng: &mut Rng) -> Vec<Value> {
 
 #[test]
 fn the_water_run_lengths_sum_to_the_cell_count() {
-    // PROTOCOL.md §6: one of the two invariants the schemas state and cannot enforce.
+    // docs/protocol.md §6: one of the two invariants the schemas state and cannot enforce.
     let w = invoke("tb.ants.worldgen", json!({"seeds": [3], "preset": "cell"})).unwrap();
     let views = invoke("tb.ants.observe", json!({"wave_state": w["wave_state"]})).unwrap();
     for v in views["views"].as_array().unwrap() {
@@ -564,7 +564,7 @@ fn the_water_run_lengths_sum_to_the_cell_count() {
 
 #[test]
 fn an_action_array_is_as_long_as_mine() {
-    // PROTOCOL.md §6: the other invariant. It is the model's to honour and the engine's to
+    // docs/protocol.md §6: the other invariant. It is the model's to honour and the engine's to
     // tolerate -- a short array means the rest hold, and never a rejected match.
     let w = invoke("tb.ants.worldgen", json!({"seeds": [5], "preset": "standard"})).unwrap();
     let views = invoke("tb.ants.observe", json!({"wave_state": w["wave_state"]})).unwrap();
@@ -580,7 +580,7 @@ fn an_action_array_is_as_long_as_mine() {
 
 #[test]
 fn observe_says_nothing_about_a_finished_match() {
-    // cartridge.md §1: there is no terminal message. A model receives states while its match runs
+    // docs/docs/cartridge.md §1: there is no terminal message. A model receives states while its match runs
     // and nothing afterwards -- it is never told that it lost.
     let mut m = bare(20, 20, 2);
     m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
@@ -781,7 +781,7 @@ fn measure_what_random_play_produces() {
 
 #[test]
 fn a_replay_re_simulates_the_match_it_recorded() {
-    // `DESIGN.md` §8: replays store the action stream, not frames, and the viewer re-simulates.
+    // the platform design §8: replays store the action stream, not frames, and the viewer re-simulates.
     // That is only possible because game state is integer-only (§3.3) — which is why `deny.sh`
     // checks the source for floating point rather than trusting that nobody added any.
     //

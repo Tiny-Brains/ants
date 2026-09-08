@@ -1,6 +1,6 @@
 //! `tb.ants` — the reference cartridge.
 //!
-//! Five functions in one component, dispatched on the function name — `cartridge.md` §1:
+//! Five functions in one component, dispatched on the function name — docs/docs/cartridge.md §1:
 //!
 //! ```text
 //! tb.ants.worldgen(seeds[], preset, players)  → wave_state
@@ -10,10 +10,10 @@
 //! tb.ants.replay-decode(payload, turn)        → frame
 //! ```
 //!
-//! # Three departures from `cartridge.md` §1 as written, each found by running it
+//! # Three departures from docs/docs/cartridge.md §1 as written, each found by running it
 //!
-//! The wave-turn spike (`design/v2/03-spike/FINDINGS.md`) drove this shape in a real Orion before
-//! the cartridge existed. All three are folded into `cartridge.md` and belong to layer 05.
+//! The wave-turn spike (`the wave-turn spikeFINDINGS.md`) drove this shape in a real Orion before
+//! the cartridge existed. All three are folded into docs/cartridge.md.
 //!
 //! **`replay-decode`, not `replay_decode`.** Orion refuses a plugin function label that is not
 //! `[a-z][a-z0-9-]*`, so the five-function set does not load as written.
@@ -59,7 +59,7 @@ pub fn presets() -> &'static [map::Preset] {
     &map::PRESETS
 }
 
-/// The turn limit the manifest publishes — `RULES.md` §12.
+/// The turn limit the manifest publishes — the rules of Ants in the book §12.
 pub const MAX_TURNS: u16 = 1000;
 
 pub const FUNCTIONS: [&str; 5] = [
@@ -108,7 +108,7 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
         .ok_or_else(|| Fault::new("NO_SUCH_PRESET", format!("no preset '{name}'")))?;
 
     // Decision 14: the preset carries the seat count, and a caller that disagrees is refused
-    // rather than quietly seated short. `PROTOCOL.md` §4: "the engine may refuse a mismatch".
+    // rather than quietly seated short. docs/protocol.md §4: "the engine may refuse a mismatch".
     if let Some(players) = input.get("players").and_then(Value::as_u64) {
         if players != p.players as u64 {
             return Err(Fault::new(
@@ -143,7 +143,7 @@ fn f_observe(input: &Value) -> Result<Value, Fault> {
 
     let mut views = Vec::new();
     for (mi, m) in w.matches.iter().enumerate() {
-        // `observe` returns nothing for a finished match — cartridge.md §1. There is no terminal
+        // `observe` returns nothing for a finished match — docs/docs/cartridge.md §1. There is no terminal
         // message: a model receives states while its match runs and nothing afterwards, and is
         // never told that it lost.
         if m.done {

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinybrains.dev/games/ants/1.0.0/action.json",
+  "title": "Ants — action (model → engine)",
+
+  "description": "One move per ant, positionally aligned with state.mine. LENGTH MUST EQUAL len(state.mine) — a cross-field invariant JSON Schema cannot express, so conformance checks it. A move into water or off a legal square is rejected and that ant holds; a rejection costs a move, never the match.",
+
+  "type": "array",
+  "items": {
+    "enum": ["N", "E", "S", "W", "-"],
+    "description": "N/E/S/W move one cell with wrap; \"-\" holds position."
+  },
+
+  "examples": [
+    ["N", "-", "E"],
+    []
+  ]
+}

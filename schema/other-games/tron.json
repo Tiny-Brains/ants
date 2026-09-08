@@ -1,0 +1,47 @@
+{
+  "_note": "Tron, given the same pass as Ants. `alive` is gone -- in a two-player game a dead opponent means the match is over, and the engine simply stops sending. Heads are split into me/foes for the same reason Ants splits mine/foes: the action refers to my unit, so it must be unambiguous which one that is.",
+  "cartridge": {
+    "game": "tron",
+    "version": "1.0.0",
+    "abi": 1,
+    "presets": [
+      {
+        "name": "standard",
+        "players": 2
+      }
+    ],
+    "limits": {
+      "max_turns": 900,
+      "turn_ms": 1000
+    },
+    "budgets": {
+      "flop_caps": {
+        "nano": 100000000.0,
+        "micro": 400000000.0,
+        "mini": 1600000000.0,
+        "small": 6000000000.0,
+        "large": 40000000000.0
+      },
+      "adapter_ops_max": 1000000
+    }
+  },
+  "state": {
+    "size": [
+      30,
+      30
+    ],
+    "wall": "AQEBAQEBAQECAgIAAAAAAgIC",
+    "me": [
+      4,
+      11
+    ],
+    "foes": [
+      [
+        25,
+        18,
+        1
+      ]
+    ]
+  },
+  "action": "E"
+}

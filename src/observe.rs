@@ -1,4 +1,4 @@
-//! What a model sees — `PROTOCOL.md` §1 and `RULES.md` §3.
+//! What a model sees — docs/protocol.md §1 and the rules of Ants in the book §3.
 //!
 //! ```json
 //! { "size":  [64, 96],
@@ -11,7 +11,7 @@
 //!
 //! # What `water` carries, and why
 //!
-//! `PROTOCOL.md` §8.3 left this open and layer 05 owns it. **Decided: known water** —
+//! docs/protocol.md §8.3 left this open and docs/docs/cartridge.md owns it. **Decided: known water** —
 //! `water AND seen`, per player, which is what rule 16 says the field means: water never changes,
 //! so anything already seen stays true.
 //!
@@ -31,7 +31,7 @@
 //! that exploring means something is the right trade.
 //!
 //! Two consequences worth stating because they are visible to a model. A `0` in `water` conflates
-//! *known empty* with *never seen*, which `PROTOCOL.md` §1 already names as the cost of dropping
+//! *known empty* with *never seen*, which docs/protocol.md §1 already names as the cost of dropping
 //! the `vis` mask. And `water` is the only field with memory — `foes`, `food` and `hills` are all
 //! strictly what is visible this turn — which is not an inconsistency but the rules: only water is
 //! permanent.

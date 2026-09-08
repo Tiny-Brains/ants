@@ -2,7 +2,7 @@
 #
 # A game: its rules, its world generation, its scoring and its replay format, as a signed
 # WebAssembly component the platform loads, versions and executes in a sandbox. The contract is
-# design/cartridge.md; the rules are design/RULES.md.
+# docs/cartridge.md; the rules are the rules of Ants in the book.
 #
 # Note `replay-decode`: Orion refuses a plugin function label that is not [a-z][a-z0-9-]*, so the
 # `replay_decode` spelling does not load at all. Found by the wave-turn spike.

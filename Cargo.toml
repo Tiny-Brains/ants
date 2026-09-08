@@ -2,8 +2,8 @@
 #
 # A cartridge is a game -- its rules, its world generation, its scoring and its replay format --
 # shipped as a signed WebAssembly component the platform loads, versions and executes in a sandbox.
-# The contract is design/cartridge.md; the rules are design/RULES.md; what a model sees is
-# design/PROTOCOL.md. Where this crate and those documents disagree, they are right and this is a
+# The contract is docs/cartridge.md; the rules are the rules of Ants in the book; what a model sees is
+# docs/protocol.md. Where this crate and those documents disagree, they are right and this is a
 # bug.
 #
 # Two properties are load-bearing and are tested rather than intended:
@@ -26,7 +26,7 @@ serde_json = "1"
 
 # Only the export shim needs the SDK, and its generated component-model bindings do not build for
 # the host -- so the dependency is wasm-only and the shim is behind the same cfg. Everything else
-# in the crate is host-testable, which is where every rule in RULES.md is checked.
+# in the crate is host-testable, which is where every rule of Ants is checked.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 orion-plugin-sdk = "1.7"
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The determinism law, checked mechanically -- `cartridge.md` §4 and `DESIGN.md` §3.3.
+# The determinism law, checked mechanically -- docs/docs/cartridge.md §4 and the platform design §3.3.
 #
 # "Game state must be integer-only. No floating point in game logic." It is what makes the
 # platform's build and the browser's agree bit for bit, which is what lets a replay be an action
@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 bad=$(grep -nE '\bf32\b|\bf64\b|\.sqrt\(|\.powi\(|\.powf\(|[0-9]\.[0-9]' \
         "$here/src"/*.rs | grep -v '^.*://' | grep -v 'src/tests.rs' || true)
 if [ -n "$bad" ]; then
-  echo "floating point in game logic -- cartridge.md §4 forbids it:" >&2
+  echo "floating point in game logic -- docs/docs/cartridge.md §4 forbids it:" >&2
   echo "$bad" >&2
   exit 1
 fi

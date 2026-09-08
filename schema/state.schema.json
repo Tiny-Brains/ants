@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinybrains.dev/games/ants/1.0.0/state.json",
+  "title": "Ants — state (engine → model)",
+
+  "description": "Everything a model needs to choose this turn's moves, and nothing else. Authored and published by the game developer for model developers; the platform never loads it. Coordinates are [row, col], zero-indexed, row-major, and the map wraps on both axes. Owners are OBSERVER-RELATIVE: 0 is always you.",
+
+  "type": "object",
+  "required": ["size", "mine", "foes", "food", "hills", "water"],
+  "additionalProperties": false,
+
+  "properties": {
+    "size": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": { "type": "integer", "minimum": 1 },
+      "description": "[rows, cols]. Varies by preset, so it is sent; the adapter needs it to reshape the water run-lengths."
+    },
+
+    "mine": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/cell" },
+      "description": "YOUR ants. THE ACTION ARRAY IS POSITIONALLY ALIGNED WITH THIS LIST: action[i] is the move for mine[i]. Ordering is stable within a turn and carries no meaning across turns. Present even when empty."
+    },
+
+    "foes": {
+      "type": "array",
+      "items": {
+        "type": "array", "minItems": 3, "maxItems": 3,
+        "prefixItems": [
+          { "type": "integer", "minimum": 0 },
+          { "type": "integer", "minimum": 0 },
+          { "type": "integer", "minimum": 1, "description": "Opponent index, 1..players-1." }
+        ],
+        "items": false
+      },
+      "description": "Enemy ants currently visible to you. Fog is applied by the engine, so this list IS what you can see."
+    },
+
+    "food": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/cell" },
+      "description": "Visible food."
+    },
+
+    "hills": {
+      "type": "array",
+      "items": {
+        "type": "array", "minItems": 3, "maxItems": 3,
+        "prefixItems": [
+          { "type": "integer", "minimum": 0 },
+          { "type": "integer", "minimum": 0 },
+          { "type": "integer", "minimum": 0, "description": "0 is yours; 1+ is an opponent's." }
+        ],
+        "items": false
+      },
+      "description": "Hills you know about, standing or razed-and-visible."
+    },
+
+    "water": {
+      "type": "object",
+      "required": ["rle"],
+      "additionalProperties": false,
+      "properties": {
+        "rle": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Flat [value, run, value, run, …] over cells in row-major order. Values are 0 or 1. THE RUNS MUST SUM TO rows*cols — a cross-field invariant JSON Schema cannot express, so conformance checks it."
+        }
+      },
+      "description": "KNOWN water only, accumulated as the map is explored. Note the consequence of there being no visibility mask: a 0 means 'not known to be water', which conflates 'known empty' with 'never seen'. A model that cares about the exploration frontier must carry that in its recurrent state."
+    }
+  },
+
+  "$defs": {
+    "cell": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

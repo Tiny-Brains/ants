@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tinybrains.dev/schema/v1/cartridge.json",
+  "title": "TinyBrains cartridge registration",
+  "description": "Read ONCE, when a cartridge is registered with the platform. Never during a match. Every field answers a question the platform must resolve before any communication happens: what to call this, how many players, which configurations exist, when to give up on a runaway match, and what a model of each size class is allowed to spend. Nothing here describes the game, and nothing here reaches a player.",
+  "type": "object",
+  "required": [
+    "game",
+    "version",
+    "abi",
+    "presets",
+    "limits",
+    "budgets"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "game": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Registry identity."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Models are bound to an exact version, so a payload change is a new version."
+    },
+    "abi": {
+      "const": 1,
+      "description": "Game trait version. Checked when the executor loads the cartridge, so a stale deploy fails at load rather than mid-match."
+    },
+    "presets": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Match configurations the matchmaker may request BY NAME, each declaring how many seats it plays. The platform passes the name back to the cartridge and never learns what it means, so a game adds a preset -- or a seat count -- without a platform change. The number of players is a property of the MAP, which is why it lives here and not at the top level.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "players"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "players": {
+            "type": "integer",
+            "minimum": 2,
+            "description": "Seats this preset plays. `matches.seat_count` is per row, so a game may mix."
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_turns",
+        "turn_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Watchdog bound and cost multiplier. The engine enforces its own rules; this is the platform refusing to fund a runaway."
+        },
+        "turn_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Wall-clock safety net, not the fairness control. Fairness is the FLOP cap."
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "required": [
+        "flop_caps",
+        "adapter_ops_max"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "flop_caps": {
+          "type": "object",
+          "required": [
+            "nano",
+            "micro",
+            "mini",
+            "small",
+            "large"
+          ],
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(nano|micro|mini|small|large)$": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "description": "Per-class eligibility gate. Game-specific because payload size is; size classes themselves stay global."
+        },
+        "adapter_ops_max": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Adapter operations per turn allowed to a model's adapter, counted at run time by the loader's evaluator as logic nodes plus tensor elements."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "_note": "Planet Wars keeps `turn`, and that contrast is the point: the principle is 'send what the model needs to decide', not 'strip everything'. Planet Wars scores at the turn limit, so how many turns remain genuinely changes whether you should attack or consolidate. Ants has no such cliff, so its turn number was dropped. `scores` is gone from both -- it is derivable from owner, ships and fleets.",
+  "cartridge": {
+    "game": "planetwars",
+    "version": "1.0.0",
+    "abi": 1,
+    "presets": [
+      {
+        "name": "standard",
+        "players": 2
+      },
+      {
+        "name": "dense",
+        "players": 2
+      },
+      {
+        "name": "sparse",
+        "players": 2
+      }
+    ],
+    "limits": {
+      "max_turns": 200,
+      "turn_ms": 1000
+    },
+    "budgets": {
+      "flop_caps": {
+        "nano": 50000000.0,
+        "micro": 200000000.0,
+        "mini": 800000000.0,
+        "small": 3000000000.0,
+        "large": 20000000000.0
+      },
+      "adapter_ops_max": 1000000
+    }
+  },
+  "state": {
+    "turn": 12,
+    "xy": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        2.1,
+        1.4
+      ],
+      [
+        4.8,
+        0.9
+      ],
+      [
+        6.2,
+        3.3
+      ],
+      [
+        1.0,
+        3.9
+      ]
+    ],
+    "growth": [
+      5,
+      3,
+      5,
+      2,
+      4
+    ],
+    "owner": [
+      0,
+      -1,
+      1,
+      -1,
+      0
+    ],
+    "ships": [
+      34,
+      12,
+      29,
+      8,
+      14
+    ],
+    "fleets": [
+      [
+        0,
+        0,
+        1,
+        18,
+        2
+      ],
+      [
+        1,
+        2,
+        1,
+        22,
+        3
+      ]
+    ]
+  },
+  "action": [
+    [
+      0,
+      1,
+      20
+    ],
+    [
+      4,
+      3,
+      9
+    ],
+    [
+      0,
+      3,
+      6
+    ]
+  ]
+}

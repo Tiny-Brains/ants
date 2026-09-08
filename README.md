@@ -143,6 +143,7 @@ set, ordinary-release baselines, and component signing.
 ## More
 
 - Local references: [plugin ABI](plugin.toml), [registration manifest](cartridge.json), and [rule tests](src/tests.rs).
-- Competitor documentation is maintained as a separate mdBook; a published guide URL is not configured in this checkout.
+- Design docs: [`docs/cartridge.md`](docs/cartridge.md) (the plugin ABI and the determinism law) and [`docs/protocol.md`](docs/protocol.md) (the JSON shapes a model sees). [`schema/`](schema/) holds the JSON Schemas and `validate.py`.
+- [The competitor guide](https://github.com/Tiny-Brains/docs) — the reader-facing half: the rules, the model format, the adapter dialect, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
 - Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Axon](https://github.com/Tiny-Brains/axon), [Jodi](https://github.com/Tiny-Brains/jodi), [DevOps](https://github.com/Tiny-Brains/devops).
 - Apache-2.0: see [LICENSE](LICENSE).

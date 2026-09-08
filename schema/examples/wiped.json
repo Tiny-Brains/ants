@@ -1,0 +1,12 @@
+{
+  "_note": "Every one of your ants died last turn. The state still arrives, mine is empty, and the only valid action is an empty array. The engine keeps sending states while the match runs; it simply stops when the match ends, and the model is never told why.",
+  "state": {
+    "size": [64, 96],
+    "mine":  [],
+    "foes":  [[20, 20, 1], [21, 20, 1]],
+    "food":  [],
+    "hills": [[20, 20, 0], [44, 76, 1]],
+    "water": { "rle": [0, 812, 1, 6, 0, 5326] }
+  },
+  "action": []
+}

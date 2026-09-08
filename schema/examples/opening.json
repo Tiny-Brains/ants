@@ -1,0 +1,12 @@
+{
+  "_note": "First decision of the match. One ant on its hill, nothing explored yet, so the water run-length is a single zero run covering all 6144 cells.",
+  "state": {
+    "size": [64, 96],
+    "mine":  [[20, 20]],
+    "foes":  [],
+    "food":  [[18, 22]],
+    "hills": [[20, 20, 0]],
+    "water": { "rle": [0, 6144] }
+  },
+  "action": ["N"]
+}
