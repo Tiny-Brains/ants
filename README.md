@@ -23,7 +23,7 @@ other colonies' hills; the cartridge implements the world in which those decisio
 - Schedule or host matches; [Kalam](https://github.com/Tiny-Brains/kalam) runs the cartridge.
 - Evaluate models or adapters; [Axon](https://github.com/Tiny-Brains/axon) produces actions.
 - Admit competitors or maintain ratings; [Jodi](https://github.com/Tiny-Brains/jodi) owns those decisions.
-- Provide a browser viewer or an offline ONNX match runner; neither is implemented here yet.
+- Run matches or ONNX models; the `tinybrains` CLI in [DevOps](https://github.com/Tiny-Brains/devops) plays a wave locally.
 
 ## Where it sits
 
@@ -123,6 +123,7 @@ src/replay.rs        action recording and replay reconstruction
 src/tests.rs         rules, determinism, and ABI behavior tests
 src/bin/manifest.rs  cartridge registration generator
 src/bin/mapgen.rs    board factory -- the procedural generator, writing files
+viz/                 the viewer: one bundle for the web app, the book, and the CLI
 tools/               build steps: embed the boards, publish the catalogue
 tests/fixtures/      a replay the platform actually wrote, for the decode test
 plugin.toml          authored Orion ABI declaration
@@ -139,6 +140,7 @@ build.sh             tests, component validation, and artifact generation
 - **Registration follows the preset implementation.** build.sh regenerates cartridge.json instead of maintaining a second preset table.
 - **Every committed board is symmetric.** A file cannot be symmetric by construction, so `mapfile.rs` asserts it and the corpus test checks every board that ships.
 - **A replay carries the board it was played on.** The envelope is self-sufficient, and the decode test runs against an envelope the platform actually wrote.
+- **The viewer re-simulates with the cartridge, never a copy of it.** `viz/` drives the transpiled component; a JavaScript re-implementation of a rule would be a second engine.
 - **Artifacts travel together.** Review must ensure a source change includes the rebuilt component and generated manifests.
 
 ## Status
@@ -147,8 +149,10 @@ build.sh             tests, component validation, and artifact generation
 passes 50 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
 build time and compiled in, with the seed choosing within a preset's pool. A replay carries the
 board it was played on, and the decode test runs against an envelope the local stack actually
-wrote. Cross-host determinism is not yet established: the browser viewer and its conformance run
-are missing, as are the offline runner, a cartridge-owned reference observation set, and
+wrote. The viewer is built: `viz/` transpiles the component with `jco` and ships one bundle for the
+web application, the book and `tinybrains view`. Cross-host determinism is checked in the small --
+the transpiled component decodes a recorded match and agrees with it -- but the 10,000-match
+conformance run is still owed, as are a cartridge-owned reference observation set and
 ordinary-release baselines.
 
 ## More

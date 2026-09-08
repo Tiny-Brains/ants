@@ -273,29 +273,51 @@ Do not cache anything across calls, because there is no across-calls.
 
 ---
 
-## 7. The visualizer
+## 7. The viewer
 
-The one part of a cartridge that is not the component. `viz.js` is an ES module the web shell loads
-by convention at `/cartridges/{slug}/viz.js`:
+The one part of a cartridge that is not the component. It is an ES module the platform loads by
+convention at `/cartridges/{slug}/viz.js`:
 
 ```js
 export const meta = { gameId: "ants", abiVersion: 1 };
 
-export function createRenderer(canvas, manifest) {
-  return {
-    resize(w, h),
-    renderFrame(state, opts),   // state comes from replay-decode, in the browser
-    controls(),                 // game-specific toggles, surfaced by the shell
-    destroy(),
-  };
-}
+export async function mount(target, replay, opts) { /* → { destroy() } */ }
 ```
 
-The shell owns the timeline scrubber, playback speed, seek, the player list, the score chart, share
-links and keyboard handling. **You own pixels.** Adding a game requires zero changes to the shell.
+`opts` carries `turn`, a `from`/`to` range, `autoplay`, `speed`, `theme` and an `onTurn` callback.
+A replay carries its own board (§4.2), so the envelope is the whole input.
 
-`renderFrame` is fed by your own `replay-decode`, running in the browser from the same component
-digest the match recorded — which is why the viewer and the referee cannot disagree.
+**`renderFrame` is fed by your own `replay-decode`, running in the browser from the same component
+digest the match recorded** — which is why the viewer and the referee cannot disagree. Transpile
+the component with `jco` and drive it; a JavaScript re-implementation of your rules would be a
+second engine, and §4 exists to prevent exactly that.
+
+### What changed, and what it costs
+
+An earlier version of this section said the platform shell owned the timeline scrubber, playback
+speed, seek, the player list and the score chart, that a cartridge **owned pixels**, and that
+adding a game required zero changes to the shell.
+
+**The shell now lives in the cartridge.** The viewer has three consumers that are not one
+application — the web Replay screen, the book's tutorials, and `tinybrains view` — and a shell
+split across three of them is a shell maintained in three places. Ants ships the whole thing, and
+exports it twice: `mount(el, replay, opts)` for anything that is not React, and a React component
+for the application that is.
+
+**The cost is real and is not hidden: the second cartridge writes its own scrubber.** That is the
+trade, taken while there is one cartridge and one viewer to reason from. The extraction point is
+the second cartridge (tracker §7): whatever turns out to be genuinely game-independent becomes a
+shared package *then*, informed by two real viewers instead of one imagined one. If you are that
+second author and this feels like a lot of scrubber to write, say so — that is the signal the
+extraction is due, and it is a better signal than a shell designed in advance for one game.
+
+Commit the built bundle the way you commit the component, so a clone with no Node toolchain still
+has a viewer, and record the digest it was built against: a viewer re-simulating with an engine
+other than the one a replay names looks right and is wrong.
+
+**A viewer never runs a model.** It re-simulates from recorded actions — no ONNX, no adapter, no
+competitor code in the browser — which is what lets a viewer be embedded anywhere without
+inheriting the evaluator's security surface.
 
 ---
 
