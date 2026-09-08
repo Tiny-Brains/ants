@@ -18,15 +18,29 @@
         },
         {
           "name": "preset",
-          "description": "The map every match in this wave is played on -- one preset per wave, decision 18",
+          "description": "The pool of boards this wave is played from -- one preset per wave, decision 18",
           "kind": "string",
           "required": true,
           "template_at": true
         },
         {
           "name": "players",
-          "description": "Optional check: the preset carries the seat count and refuses a caller that disagrees",
+          "description": "Optional check: the map carries the seat count and refuses a caller that disagrees",
           "kind": "number",
+          "required": false,
+          "template_at": true
+        },
+        {
+          "name": "map",
+          "description": "Optional: one board for every match in the wave -- a catalogue id, or a board inline",
+          "kind": "any",
+          "required": false,
+          "template_at": true
+        },
+        {
+          "name": "maps",
+          "description": "Optional: one board per seed, positionally -- an id, an inline board, or null",
+          "kind": "array",
           "required": false,
           "template_at": true
         },
@@ -95,19 +109,35 @@
     },
     {
       "name": "tb.ants.replay-decode",
-      "description": "One frame of a replay payload, re-simulated from the action stream, for the viewer",
+      "description": "Frames of a replay payload, re-simulated from the action stream, for the viewer",
       "category": "transform",
       "input_fields": [
         {
           "name": "payload",
+          "description": "The replay envelope, which carries the board it was played on",
           "kind": "object",
           "required": true,
           "template_at": true
         },
         {
           "name": "turn",
+          "description": "One frame, by turn. Ignored when from or to is given",
           "kind": "number",
-          "required": true,
+          "required": false,
+          "template_at": true
+        },
+        {
+          "name": "from",
+          "description": "First turn of a range of frames, inclusive",
+          "kind": "number",
+          "required": false,
+          "template_at": true
+        },
+        {
+          "name": "to",
+          "description": "Last turn of a range of frames, inclusive",
+          "kind": "number",
+          "required": false,
           "template_at": true
         }
       ]

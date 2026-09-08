@@ -31,6 +31,10 @@ fn bare(rows: u8, cols: u8, players: u8) -> Match {
         score: vec![0; players as usize],
         domination_turns: 0,
         idle_food_turns: 0,
+        // No food is kept on a bare board: a test that wanted respawn would be testing worldgen.
+        food_target: 0,
+        map_id: String::new(),
+        food0: Vec::new(),
     }
 }
 
@@ -813,7 +817,19 @@ fn a_replay_re_simulates_the_match_it_recorded() {
     }
     assert!(live_positions.len() > 5, "the match must actually have been played");
 
-    let payload = json!({ "state0": state0, "deltas": deltas });
+    // The envelope Kalam writes: the board comes off `finish`, at the moment the drain persists
+    // the row, and the seed comes off the match. Built the same way here so this test breaks if
+    // the two ever stop agreeing about what a replay is.
+    let fin = invoke("tb.ants.finish", json!({"wave_state": &state})).unwrap();
+    let payload = json!({
+        "seed": 4242,
+        "preset": "standard",
+        "max_turns": 60,
+        "map_id": fin["results"][0]["map_id"],
+        "map": fin["results"][0]["map"],
+        "deltas": deltas,
+    });
+    let _ = state0;
     for (turn, mine0, mine1, score) in &live_positions {
         let f = invoke("tb.ants.replay-decode",
                        json!({"payload": payload, "turn": turn})).unwrap();
@@ -849,4 +865,220 @@ fn a_replay_of_a_match_nobody_recorded_is_refused_rather_than_guessed() {
             .unwrap_err().code,
         "BAD_REPLAY"
     );
+}
+
+// ---------------------------------------------------------------- maps as files
+
+#[test]
+fn every_committed_map_is_valid_and_symmetric() {
+    // What `worldgen`'s construction used to guarantee, now asserted over the whole catalogue.
+    // The old symmetry test checked one generated world; this checks every board that ships.
+    let cat = crate::mapfile::catalogue();
+    assert_eq!(cat.len(), crate::maps_gen::MAPS.len(), "a committed map failed to parse");
+    assert!(!cat.is_empty(), "the catalogue is empty");
+    for mf in &cat {
+        mf.validate().unwrap_or_else(|e| panic!("map {}: {} {}", mf.id, e.code, e.message));
+        let m = mf.build(1, 1000).unwrap();
+        let g = m.g;
+        for i in 0..g.cells() {
+            let img = m.sym.image(&g, i as u16, 1) as usize;
+            assert_eq!(m.water.get(i), m.water.get(img), "map {} is not symmetric", mf.id);
+        }
+        assert_eq!(m.hills.len(), mf.players as usize, "map {}: one hill each", mf.id);
+        assert_eq!(m.ants.len(), mf.players as usize, "map {}: one ant each", mf.id);
+        assert!(m.food.len() % mf.players as usize == 0, "map {}: whole orbits", mf.id);
+        for h in &m.hills {
+            assert!(!m.water.get(h.pos as usize), "map {}: a hill on water", mf.id);
+        }
+    }
+}
+
+#[test]
+fn a_map_survives_the_round_trip_to_a_file_and_back() {
+    // The property `mapgen` rests on: what the generator produced, written out and read back, is
+    // the same board. Without it a committed map is a lossy photograph of one.
+    for p in crate::map::PRESETS {
+        let m = worldgen(0xBEEF, p, 1000);
+        let a = crate::mapfile::MapFile::from_match(&m, "round-trip", p.name);
+        let b = crate::mapfile::MapFile::from_json(&a.to_json()).unwrap();
+        assert_eq!(a, b, "preset {} did not survive the round trip", p.name);
+
+        let rebuilt = b.build(0xBEEF, 1000).unwrap();
+        assert_eq!(rebuilt.water.bits, m.water.bits, "{}: terrain", p.name);
+        assert_eq!(rebuilt.food, m.food0, "{}: turn-zero food", p.name);
+        assert_eq!(rebuilt.food_target, m.food_target, "{}: food target", p.name);
+        let hills = |x: &Match| x.hills.iter().map(|h| (h.pos, h.owner)).collect::<Vec<_>>();
+        assert_eq!(hills(&rebuilt), hills(&m), "{}: hills", p.name);
+    }
+}
+
+#[test]
+fn the_seed_chooses_the_board_and_the_caller_may_pin_it() {
+    // The platform passes no map: pairing assigns the seed and the seed assigns the board, so a
+    // competitor cannot train against a board they picked. A local caller may pin one.
+    let pool = crate::mapfile::pool("cell");
+    assert!(pool.len() > 1, "a pool of one cannot demonstrate selection");
+
+    let ids = |input: serde_json::Value| -> Vec<String> {
+        invoke("tb.ants.worldgen", input).unwrap()["map_ids"]
+            .as_array().unwrap().iter()
+            .map(|v| v.as_str().unwrap().to_string()).collect()
+    };
+
+    // Deterministic, and a function of the seed alone.
+    let a = ids(json!({"seeds": [7, 8], "preset": "cell"}));
+    let b = ids(json!({"seeds": [7, 8], "preset": "cell"}));
+    assert_eq!(a, b, "the same seeds must choose the same boards");
+    assert_eq!(a[0], pool[(7 % pool.len() as u64) as usize].id);
+    assert_eq!(a[1], pool[(8 % pool.len() as u64) as usize].id);
+
+    // Pinned by id, for every seed in the wave.
+    let pinned = ids(json!({"seeds": [7, 8], "preset": "cell", "map": pool[0].id}));
+    assert_eq!(pinned, vec![pool[0].id.clone(), pool[0].id.clone()]);
+
+    // Pinned per seed, positionally -- what `match.json` writes.
+    let each = ids(json!({"seeds": [7, 8], "preset": "cell",
+                          "maps": [pool[1].id, pool[0].id]}));
+    assert_eq!(each, vec![pool[1].id.clone(), pool[0].id.clone()]);
+
+    // And an inline board, which is how a competitor plays one the catalogue has never seen.
+    let mut mine = pool[0].clone();
+    mine.id = "hand-authored".to_string();
+    let inline = ids(json!({"seeds": [7], "preset": "cell", "map": mine.to_json()}));
+    assert_eq!(inline, vec!["hand-authored".to_string()]);
+}
+
+#[test]
+fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
+    // The guarantee that moved from construction to assertion. Each of these was impossible to
+    // express before a board was a file, and is the first thing someone hand-authoring one will do.
+    let base = crate::mapfile::pool("cell")[0].clone();
+    let code = |mf: &crate::mapfile::MapFile| -> String {
+        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": mf.to_json()}))
+            .unwrap_err().code.to_string()
+    };
+
+    // One cell of water that has no counterpart.
+    let mut asym = base.clone();
+    asym.water = vec![1, 1, 0, (asym.rows as u32 * asym.cols as u32) - 1];
+    assert_eq!(code(&asym), "MAP_NOT_SYMMETRIC");
+
+    // A hill that is not the image of the first.
+    let mut moved = base.clone();
+    moved.hills[1] = (moved.hills[1].0 + 1, moved.hills[1].1);
+    assert_eq!(code(&moved), "MAP_NOT_SYMMETRIC");
+
+    // Food for one seat only.
+    let mut greedy = base.clone();
+    greedy.food.truncate(1);
+    assert_eq!(code(&greedy), "MAP_NOT_SYMMETRIC");
+
+    // Runs that do not cover the board.
+    let mut short = base.clone();
+    short.water = vec![0, 4];
+    assert_eq!(code(&short), "MAP_BAD_SHAPE");
+
+    // A board that does not divide by its seat count, so the orbit is not a partition.
+    let mut odd = base.clone();
+    odd.rows = 63;
+    odd.water = vec![0, 63 * odd.cols as u32];
+    assert_eq!(code(&odd), "MAP_BAD_SHAPE");
+
+    // A hill under water.
+    let mut drowned = base.clone();
+    let (hr, hc) = drowned.hills[0];
+    let g = drowned.geom();
+    let mut w = crate::map::Bits::zeros(g.cells());
+    for k in 0..drowned.players as i32 {
+        w.set(drowned.geom().at(hr + (g.rows / 2) * k, hc + (g.cols / 2) * k) as usize);
+    }
+    drowned.water = w.rle();
+    drowned.food.clear();
+    assert_eq!(code(&drowned), "MAP_UNPLAYABLE");
+
+    // And an unknown board is a refusal, not a silently substituted one.
+    assert_eq!(
+        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": "no-such-map"}))
+            .unwrap_err().code,
+        "NO_SUCH_MAP"
+    );
+}
+
+#[test]
+fn a_frame_range_agrees_with_the_frames_asked_for_one_at_a_time() {
+    // The scrubber's fix. `decode` re-simulates from turn zero, so a viewer walking a timeline
+    // frame by frame is quadratic; `decode_range` walks the match once. It is only worth having
+    // if it produces exactly the same frames.
+    let w = invoke("tb.ants.worldgen",
+                   json!({"seeds": [99], "preset": "standard", "max_turns": 40})).unwrap();
+    let mut state = w["wave_state"].as_str().unwrap().to_string();
+    let mut rng = Rng(7);
+    let mut deltas = Vec::new();
+    loop {
+        let views = invoke("tb.ants.observe", json!({"wave_state": &state})).unwrap();
+        if views["views"].as_array().unwrap().is_empty() {
+            break;
+        }
+        let acts = random_actions(&views, &mut rng);
+        let out = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap();
+        deltas.extend(out["replay_delta"].as_array().unwrap().iter().cloned());
+        state = out["wave_state"].as_str().unwrap().to_string();
+    }
+    let fin = invoke("tb.ants.finish", json!({"wave_state": &state})).unwrap();
+    let payload = json!({
+        "seed": 99, "max_turns": 40,
+        "map": fin["results"][0]["map"], "deltas": deltas,
+    });
+
+    let ranged = invoke("tb.ants.replay-decode",
+                        json!({"payload": &payload, "from": 0, "to": 12})).unwrap();
+    let frames = ranged["frames"].as_array().unwrap();
+    assert_eq!(frames.len(), 13, "from 0 to 12 inclusive is thirteen frames");
+    for (t, got) in frames.iter().enumerate() {
+        let one = invoke("tb.ants.replay-decode",
+                         json!({"payload": &payload, "turn": t})).unwrap();
+        assert_eq!(got, &one["frame"], "frame {t} differs between the range and the single call");
+    }
+}
+
+#[test]
+fn a_replay_the_platform_actually_wrote_decodes() {
+    // A REAL envelope, taken from MinIO after the local stack played it: Kalam's `put` task wrote
+    // this, through Orion, from the component committed beside it. The other replay tests build
+    // their own envelope in-process and would keep passing if Kalam and the engine drifted apart
+    // about what a replay is -- which is exactly what had happened, silently, for the whole life
+    // of this file: `decode` required a `state0` that `put` never wrote, so no stored replay
+    // could be viewed at all.
+    let raw = include_str!("../tests/fixtures/replay-maze-03.json");
+    let payload: serde_json::Value = serde_json::from_str(raw).expect("the fixture is JSON");
+
+    // Everything a viewer needs is in the file. No catalogue, no preset table, no second lookup.
+    assert_eq!(payload["map_id"], "maze-03");
+    assert!(payload["map"].is_object(), "the envelope carries its board");
+    assert!(payload["seed"].is_u64(), "and the seed that drove food respawn");
+    assert!(payload["max_turns"].is_u64(), "and the turn limit it was played under");
+
+    let turns = payload["turns"].as_u64().unwrap() as u16;
+    let first = invoke("tb.ants.replay-decode",
+                       json!({"payload": &payload, "turn": 0})).unwrap();
+    let f0 = &first["frame"];
+    assert_eq!(f0["turn"], 0);
+    assert_eq!(f0["size"], json!([96, 96]));
+    assert_eq!(f0["ants"].as_array().unwrap().len(), 2, "one ant each at turn zero");
+    assert_eq!(f0["hills"].as_array().unwrap().len(), 2, "and one hill each");
+
+    // The whole match, and the end it recorded.
+    let last = invoke("tb.ants.replay-decode",
+                      json!({"payload": &payload, "turn": turns})).unwrap();
+    assert_eq!(last["frame"]["turn"].as_u64().unwrap() as u16, turns);
+    assert_eq!(last["frame"]["score"], payload["scores"]);
+    assert_eq!(last["frame"]["ranks"], payload["engine_ranks"]);
+
+    // And the range form walks the same match in one pass.
+    let ranged = invoke("tb.ants.replay-decode",
+                        json!({"payload": &payload, "from": 0, "to": turns})).unwrap();
+    let frames = ranged["frames"].as_array().unwrap();
+    assert_eq!(frames.len(), turns as usize + 1);
+    assert_eq!(&frames[0], f0);
+    assert_eq!(&frames[turns as usize], &last["frame"]);
 }

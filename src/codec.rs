@@ -17,7 +17,9 @@
 //! wave    u16 matches, then each match in order
 //! match   u64 seed · u16 turn · u16 max_turns · u8 players · u8 done · u8 reason
 //!         u8 rows · u8 cols
-//!         u16 domination_turns · u16 idle_food_turns
+//!         u16 domination_turns · u16 idle_food_turns · u16 food_target
+//!         u8  map_id_len, then that many bytes of UTF-8
+//!         u16 n_food0, then n_food0 x u16 pos     (the board's turn-zero food)
 //!         bitmap water            ceil(rows*cols/8) bytes
 //!         bitmap known[player]    the same, once per player
 //!         u16 n_ants,  then n_ants x (u16 pos, u8 owner)
@@ -59,6 +61,18 @@ pub fn pack(w: &Wave) -> String {
         o.push(m.g.cols as u8);
         put_u16(&mut o, m.domination_turns);
         put_u16(&mut o, m.idle_food_turns);
+        // A property of the map (`mapfile.rs`), not of the preset table, so it travels with the
+        // state rather than being looked up by the board's dimensions.
+        put_u16(&mut o, m.food_target);
+        // The board, for the replay envelope -- `state.rs` on why the turn-zero food cannot be
+        // read back off a played match.
+        let id = m.map_id.as_bytes();
+        o.push(id.len().min(255) as u8);
+        o.extend_from_slice(&id[..id.len().min(255)]);
+        put_u16(&mut o, m.food0.len() as u16);
+        for &f in &m.food0 {
+            put_u16(&mut o, f);
+        }
         o.extend_from_slice(&m.water.bits);
         for k in &m.known {
             o.extend_from_slice(&k.bits);
@@ -138,6 +152,14 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let cols = r.u8()?;
         let domination_turns = r.u16()?;
         let idle_food_turns = r.u16()?;
+        let food_target = r.u16()?;
+        let idn = r.u8()? as usize;
+        let map_id = String::from_utf8(r.bytes(idn)?.to_vec()).ok()?;
+        let nf0 = r.u16()?;
+        let mut food0 = Vec::with_capacity(nf0 as usize);
+        for _ in 0..nf0 {
+            food0.push(r.u16()?);
+        }
 
         let g = Geom::new(rows, cols);
         let cells = g.cells();
@@ -176,7 +198,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
             seed, turn, max_turns, players, g,
             sym: Symmetry::for_preset(&g, players),
             done, reason, water, known, ants, food, hills, hive, score,
-            domination_turns, idle_food_turns,
+            domination_turns, idle_food_turns, food_target, map_id, food0,
         });
     }
     Some(Wave { matches })

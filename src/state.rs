@@ -47,6 +47,23 @@ pub struct Match {
     /// Rule 66's two stalemate counters, in turns.
     pub domination_turns: u16,
     pub idle_food_turns: u16,
+
+    /// How much food the board is kept stocked with — a property of the map (`mapfile.rs`).
+    ///
+    /// Carried in the state rather than recovered from the preset table, because two maps may be
+    /// the same size and keep different amounts of food, and because a replay must be able to
+    /// re-simulate a match whose preset has since been re-tuned.
+    pub food_target: u16,
+
+    /// The board this match opened on, kept so `finish` can hand it to the replay envelope.
+    ///
+    /// Water, the hills and the grid survive the match unchanged, but the food does not — it is
+    /// eaten and respawned from turn one. So the turn-zero food is the one part of the board that
+    /// has to be *remembered* rather than read off the current state, and `map_id` rides with it
+    /// so a replay can name its board as well as carry it. Together they cost about seventy bytes
+    /// a match, which buys a replay that needs no catalogue to be viewable.
+    pub map_id: String,
+    pub food0: Vec<u16>,
 }
 
 pub const END_REASONS: [&str; 6] = [
@@ -151,6 +168,9 @@ pub fn worldgen(seed: u64, p: Preset, max_turns: u16) -> Match {
         score: vec![0; p.players as usize],
         domination_turns: 0,
         idle_food_turns: 0,
+        food_target: p.food_per_player as u16 * p.players as u16,
+        map_id: String::new(),
+        food0: Vec::new(),
     };
 
     // ---- water, in blobs on the fundamental domain, then translated.
@@ -225,8 +245,10 @@ pub fn worldgen(seed: u64, p: Preset, max_turns: u16) -> Match {
             placed_near += 1;
         }
     }
-    spawn_food(&mut m, &mut rng, p.food_per_player as usize * p.players as usize);
+    let target = m.food_target as usize;
+    spawn_food(&mut m, &mut rng, target);
 
+    m.food0 = m.food.clone();
     for pl in 0..p.players {
         m.reveal(pl);
     }

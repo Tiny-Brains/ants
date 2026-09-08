@@ -15,16 +15,237 @@
     "max_turns": 1000,
     "turn_ms": 1000
   },
+  "maps": [
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-00",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:e692c4dd3a3766b1b37606d4b36a5fc7d0dc53afc605935d9c7849ab6ef60e48"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-01",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:04ed0be38edcd6a5aee03cc16e5e2f86e9fb45dc2621af91d1f9778cbd8b433b"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-02",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:41135cd025a3273e9fc16d09a334f4480676e64038feab415c6c1ebf1ca9a3d4"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-03",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:c791c0177e83256c5822d9972697e411b2eb085303ec70fd87ad99890cbb4309"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-04",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:fa100ff25df954ab6425c53d0bf9a2062f637713a4b825879885d4c127180215"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-05",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:b6b0f4c9aa830d7d85fb84a623d56f4f1a43d4a740d357cc3915c5143172a5f3"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-06",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:ee29a891acb402d0bfbf21f2a21abe7a64d92a5e4b8242e67fc7ff0625c634f3"
+    },
+    {
+      "cols": 128,
+      "food_target": 32,
+      "id": "cell-07",
+      "players": 2,
+      "preset": "cell",
+      "rows": 128,
+      "sha256": "sha256:988735bec0db5747124952d733841dff9d953efdbce8762dec6b828595afaccd"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-00",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:76a0e705bef23f2d25b75640625438b5af5d79d2db60fd01c6d4a08ebd1a1ed7"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-01",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:f7b10c64d1b715f2ee7b484e2506f5c91522d22b560ef1c8ef8e9c65d5c593a7"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-02",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:6699d191ef045f0cd233ff511d96b2048bb09333ea8c609a8250bb9deb88f9ef"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-03",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:6bc81a93f727117259b8fa2e5f40f0d9468d89c0a31f3def8852d9213647a305"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-04",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:066dd41d0b69102b662be89e6ff48a6a01debac9c5263af4086180071220d6c8"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-05",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:ab5cf05d47b3a0eac24b4948179fc4979048f25834e87be5fc038ee8f9d09d2d"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-06",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:8458effdfbaaaf53ea63b1798f1f4b277073d7d4dfa2552343533f967c487694"
+    },
+    {
+      "cols": 96,
+      "food_target": 20,
+      "id": "maze-07",
+      "players": 2,
+      "preset": "maze",
+      "rows": 96,
+      "sha256": "sha256:d930d5b63c74d54c6d002d50b197b65e4a1825779389350f1798278593152cdc"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-00",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:5c1ac07bcef8f29136bd00f68ebe0327c7764ac11218dbf2b303ce146846ef42"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-01",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:0d212ad905b6160bc2db3669eecc2a09bab0d8a56b9af3a13f195979db89b995"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-02",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:fd1e442364d305ec52b1e87340b4a5bcb479974859df01dc4c44f52a7d97612a"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-03",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:65f560feca193d71bb8dda52be55b49685147f254785dc621c21e815b13d5c98"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-04",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:17732063298300bb5bb51cd17c377c26a2ccffcdee0a0e2cddfb565dcde4d828"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-05",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:76e4219e515892ddb142069ff47f8592cbc80816dcb92ef6c892ddd260d9b275"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-06",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:7f11fb56445a098e322738793f1ddbb5e862ba55750b9aa6966f9e809760ac27"
+    },
+    {
+      "cols": 96,
+      "food_target": 24,
+      "id": "standard-07",
+      "players": 2,
+      "preset": "standard",
+      "rows": 64,
+      "sha256": "sha256:f5dff198d1c3e0167e34722bfd8c9b4df2c21c0d7c3ebc7d6554b7205ecae730"
+    }
+  ],
   "presets": [
     {
+      "maps": 8,
       "name": "standard",
       "players": 2
     },
     {
+      "maps": 8,
       "name": "maze",
       "players": 2
     },
     {
+      "maps": 8,
       "name": "cell",
       "players": 2
     }

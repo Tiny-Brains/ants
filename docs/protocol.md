@@ -75,12 +75,16 @@ exports. Nothing here is a method on a live object: the sandbox keeps no state b
 wave is threaded through every one of them.
 
 ```
-worldgen(seed[], preset, players)   → wave_state
+worldgen(seed[], preset, players, map?, maps?)  → wave_state
 observe(wave_state)                 → [per-seat views]     // fog-filtered; empty once a match ends
 step(wave_state, actions)           → { wave_state, done[], replay_delta }
-finish(wave_state)                  → [{ ranks, scores, reason }]   // the only semantic dependency
-replay_decode(payload, turn)        → frame                // for the viewer
+finish(wave_state)                  → [{ ranks, scores, reason, map }]  // the only semantic dependency
+replay-decode(payload, turn)        → frame                // for the viewer
+replay-decode(payload, from, to)    → frames[]             // one pass, for a scrubber
 ```
+
+Note the spelling: `replay-decode`, with a hyphen. Orion refuses a plugin function label that is
+not `[a-z][a-z0-9-]*`, so the underscore form does not load at all.
 
 **`wave_state` is not the protocol.** It is the cartridge's own encoding of every match in the wave,
 opaque to everything else and decoded only by the component that produced it — a compact blob rather
@@ -120,9 +124,17 @@ Read once, when a cartridge is registered. Six keys, each answering a question t
 resolve *before* anything communicates.
 
 **The preset carries its own player count** (decision 14, 7 September 2026). There is no top-level
-`players`: the number of seats is a property of the map, not of the game, so a preset names a world
-and how many play it. `worldgen(seed, preset, players)` keeps its signature — the platform hands
-the engine what the preset declared, and the engine may refuse a mismatch.
+`players`: the number of seats is a property of the map, not of the game, so a preset names a pool
+of boards and how many play them. The platform hands the engine what the preset declared, and the
+engine refuses a mismatch — checked against the *board* it resolved, since that is where seats
+actually live.
+
+**A preset is a pool of maps, not a set of generator parameters.** Ants' boards are files under
+`maps/`, compiled into the component, and `cartridge.json` publishes a `maps` catalogue naming each
+one with its size, seats and digest. The platform does not read that catalogue: it chooses a preset
+and the seed chooses the board within it. It is published so a competitor's tooling can know which
+boards exist without loading the component. A game whose configurations are not boards simply omits
+`maps`, which is what keeps a cartridge content rather than a platform change.
 
 ```json
 {

@@ -13,6 +13,16 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 "$here/deny.sh"
 cd "$here"
+
+# The boards, compiled in. A cartridge imports nothing -- no filesystem (docs/cartridge.md §4) --
+# so a map cannot be read at run time and every committed board is embedded instead. That is also
+# what makes a map edit an engine-digest change, and therefore refused while a season is live, on
+# the same rails a rules change already runs on.
+#
+# Regenerated before the tests, because `every_committed_map_is_valid_and_symmetric` is what
+# validates the corpus and it can only see the maps this step embedded.
+python3 "$here/tools/embed-maps.py" "$here"
+
 cargo test
 cargo build --release --target wasm32-unknown-unknown
 wasm-tools component new \
@@ -39,4 +49,10 @@ PYEOF
 # manifest is generated from the TOML: an artifact nobody hand-edits cannot drift from the code.
 cargo run --quiet --bin manifest > "$here/cartridge.json"
 
+# The map catalogue, folded into that same manifest -- metadata and a digest per board, not the
+# boards themselves. This document is read once at registration and stored on the game row, so it
+# carries what a caller needs to CHOOSE and CHECK a board while the boards travel as files.
+python3 "$here/tools/catalogue.py" "$here"
+
 ls -l "$here/tb-ants.wasm" "$here/plugin.json" "$here/cartridge.json"
+ls -d "$here/maps" | sed "s/^/    boards: /"

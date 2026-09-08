@@ -32,6 +32,8 @@
 
 mod codec;
 mod map;
+mod mapfile;
+mod maps_gen;
 mod observe;
 mod replay;
 mod state;
@@ -61,6 +63,18 @@ pub fn presets() -> &'static [map::Preset] {
 
 /// The turn limit the manifest publishes — the rules of Ants in the book §12.
 pub const MAX_TURNS: u16 = 1000;
+
+/// Run the procedural generator once and hand back the board it produced, as a map file.
+///
+/// This is the whole of `src/bin/mapgen.rs`, and it is the reason the generator survives maps
+/// becoming files: it is no longer a step in a match, it is the factory that writes the boards a
+/// match is played on. `build.sh` calls it, the output is committed, and nothing at runtime grows
+/// a world any more.
+pub fn generate_map(preset_name: &str, seed: u64, id: &str) -> Option<Value> {
+    let p = map::preset(preset_name)?;
+    let m = state::worldgen(seed, p, MAX_TURNS);
+    Some(mapfile::MapFile::from_match(&m, id, p.name).to_json())
+}
 
 pub const FUNCTIONS: [&str; 5] = [
     "tb.ants.worldgen",
@@ -104,29 +118,52 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
         return Err(Fault::new("NO_SEEDS", "a wave of no matches has nothing to play"));
     }
     let name = input.get("preset").and_then(Value::as_str).unwrap_or("standard");
-    let p = map::preset(name)
-        .ok_or_else(|| Fault::new("NO_SUCH_PRESET", format!("no preset '{name}'")))?;
-
-    // Decision 14: the preset carries the seat count, and a caller that disagrees is refused
-    // rather than quietly seated short. docs/protocol.md §4: "the engine may refuse a mismatch".
-    if let Some(players) = input.get("players").and_then(Value::as_u64) {
-        if players != p.players as u64 {
-            return Err(Fault::new(
-                "PLAYER_COUNT",
-                format!("preset '{name}' is played at {} seats, not {players}", p.players),
-            ));
-        }
+    // The preset table still names the presets: it is what `cartridge.json` publishes and what
+    // `mapgen` generates a pool from. A board is a file now, so the table no longer *builds* the
+    // world -- but a caller naming a preset nothing is played at should hear that, rather than
+    // "no map", which would send them looking in the catalogue for a fault in the request.
+    if map::preset(name).is_none() {
+        return Err(Fault::new("NO_SUCH_PRESET", format!("no preset '{name}'")));
     }
     let max_turns = input.get("max_turns").and_then(Value::as_u64).unwrap_or(1000) as u16;
 
-    let w = Wave {
-        matches: seeds.iter().map(|&s| state::worldgen(s, p, max_turns)).collect(),
-    };
+    // What board each match is played on. Three forms, and the platform uses the third:
+    //
+    //   "maps": [<id or object or null>, ...]   one per seed, positionally
+    //   "map":  <id or object>                   the same board for every seed
+    //   absent                                   the preset's pool, chosen by the seed
+    //
+    // The last is what Kalam sends, and it is deliberate that a caller who does not ask cannot
+    // influence the board: pairing assigns the seed, so the seed assigning the map keeps a
+    // competitor from training against a board they chose. `mapfile::for_seed` is the whole rule.
+    let per_seed = input.get("maps").and_then(Value::as_array);
+    let one = input.get("map");
+    let mut matches = Vec::with_capacity(seeds.len());
+    for (i, &seed) in seeds.iter().enumerate() {
+        let spec = per_seed.map(|a| a.get(i).unwrap_or(&Value::Null)).or(one);
+        let mf = mapfile::resolve(spec, name, seed).map_err(|e| Fault::new(e.code, e.message))?;
+
+        // Decision 14: seats are a property of the map, so the map is what a caller's `players` is
+        // checked against -- refused rather than quietly seated short (docs/protocol.md §4).
+        if let Some(players) = input.get("players").and_then(Value::as_u64) {
+            if players != mf.players as u64 {
+                return Err(Fault::new(
+                    "PLAYER_COUNT",
+                    format!("map '{}' is played at {} seats, not {players}", mf.id, mf.players),
+                ));
+            }
+        }
+        matches.push(mf.build(seed, max_turns).map_err(|e| Fault::new(e.code, e.message))?);
+    }
+
+    let seats = matches[0].players;
+    let w = Wave { matches };
     Ok(json!({
         "wave_state": pack(&w),
         "matches": w.matches.len(),
-        "seats": p.players,
-        "preset": p.name,
+        "seats": seats,
+        "preset": name,
+        "map_ids": w.matches.iter().map(|m| m.map_id.clone()).collect::<Vec<_>>(),
     }))
 }
 
@@ -233,14 +270,13 @@ fn f_step(input: &Value) -> Result<Value, Fault> {
     }))
 }
 
-/// How much food the map is kept stocked with. Read off the preset rather than stored, so it
-/// cannot drift from the preset table between a match and its replay.
+/// How much food the map is kept stocked with.
+///
+/// Read off the state, which read it off the map. It used to be recovered by finding the preset
+/// whose `rows` and `cols` matched the board -- which was unambiguous only while every board of a
+/// size came from one preset, and stopped being true the moment a board became a file.
 fn target_food(m: &state::Match) -> usize {
-    map::PRESETS
-        .iter()
-        .find(|p| p.rows == m.g.rows as u8 && p.cols == m.g.cols as u8)
-        .map(|p| p.food_per_player as usize * p.players as usize)
-        .unwrap_or(m.food.len())
+    m.food_target as usize
 }
 
 fn f_finish(input: &Value) -> Result<Value, Fault> {
@@ -253,13 +289,38 @@ fn f_finish(input: &Value) -> Result<Value, Fault> {
             "reason": state::END_REASONS[m.reason as usize % state::END_REASONS.len()],
             "turns":  m.turn,
             "done":   m.done,
+            // THE BOARD, so the replay envelope is self-sufficient -- a replay carries what it was
+            // played on and needs no catalogue, no preset table and no second lookup to be viewed,
+            // however far the game has moved on since. It is emitted here rather than from
+            // `worldgen` because this is the call the drain makes at the moment it writes the
+            // envelope, so the map arrives exactly when it is needed and is carried across no turns.
+            //
+            // Only for a match that has ENDED. The drain calls `finish` on every sweep while
+            // anything is queued and reads only the head, so sending every live match's board as
+            // well would repeat tens of kilobytes a turn to be thrown away. A board is written
+            // once, into the envelope of the match that was played on it.
+            "map_id": m.map_id,
+            "map": if m.done {
+                mapfile::MapFile::from_match(m, &m.map_id, "").to_json()
+            } else {
+                Value::Null
+            },
         })).collect::<Vec<_>>()
     }))
 }
 
 fn f_replay_decode(input: &Value) -> Result<Value, Fault> {
-    let turn = input.get("turn").and_then(Value::as_u64).unwrap_or(0) as u16;
     let payload = input.get("payload").cloned().unwrap_or(Value::Null);
+    // A range if the caller asked for one, a single frame otherwise. `to` alone means "from the
+    // turn you asked for, to there"; `from` alone means "to the end of what the deltas hold".
+    let from = input.get("from").and_then(Value::as_u64);
+    let to = input.get("to").and_then(Value::as_u64);
+    if from.is_some() || to.is_some() {
+        let a = from.unwrap_or(0) as u16;
+        let b = to.unwrap_or(u16::MAX as u64) as u16;
+        return replay::decode_range(&payload, a, b).map_err(|e| Fault::new("BAD_REPLAY", e));
+    }
+    let turn = input.get("turn").and_then(Value::as_u64).unwrap_or(0) as u16;
     replay::decode(&payload, turn)
         .map(|frame| json!({ "frame": frame }))
         .map_err(|e| Fault::new("BAD_REPLAY", e))

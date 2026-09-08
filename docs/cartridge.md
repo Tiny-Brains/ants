@@ -26,12 +26,20 @@ Five functions, in your own namespace. Each is a **pure JSON-to-JSON transformat
 one value and returns one value.
 
 ```
-tb.<game>.worldgen(seed[], preset, players)   → wave_state
-tb.<game>.observe(wave_state, refs)           → [per-seat views, each echoing its ref]
-tb.<game>.step(wave_state, actions)           → { wave_state, done[], replay_delta }
-tb.<game>.finish(wave_state)                  → [{ ranks, scores, reason }]
-tb.<game>.replay-decode(payload, turn)        → frame
+tb.<game>.worldgen(seed[], preset, players, map?, maps?)  → wave_state
+tb.<game>.observe(wave_state, refs)                       → [per-seat views, each echoing its ref]
+tb.<game>.step(wave_state, actions)                       → { wave_state, done[], replay_delta }
+tb.<game>.finish(wave_state)                              → [{ ranks, scores, reason, map }]
+tb.<game>.replay-decode(payload, turn | from, to)         → frame | frames[]
 ```
+
+**`map` and `maps` are optional and the platform passes neither.** A board may be named by
+catalogue id or given inline, for one match or for the whole wave; when nothing is passed the
+*seed* chooses from the preset's pool. That is deliberate rather than convenient: pairing assigns
+the seed, so a competitor who cannot pass a map cannot train against a board they picked. See §4.1.
+
+**`finish` returns the board each ended match was played on**, which is what makes a replay
+self-sufficient — §4.2.
 
 > **Three corrections the wave-turn spike made to an earlier version of this contract.** All three
 > are law now, and `ants/plugin.toml` is the proof: its five `[[functions]]` are exactly the labels
@@ -161,6 +169,53 @@ run it:
 
 Run it in CI. The platform also probes every declared function at upload, before a draft version
 exists, so a component that will not load never becomes a row.
+
+### 4.1 Boards, if your game has them
+
+Ants generates nothing at match time. Its boards are **files** — `maps/*.json`, one per board,
+each carrying its grid, its water as run lengths, its hills, its turn-zero food and how much food
+it keeps stocked. `build.sh` validates every one and compiles them in with `include_str!`, because
+a cartridge imports nothing and so cannot read a file at run time.
+
+Two consequences are worth taking on purpose rather than discovering:
+
+**A map edit is an engine-digest change**, and therefore refused while a season is live and enters
+with the next one — the same rails a rules change already runs on. There is no separate mechanism
+for shipping a board, and there should not be.
+
+**Symmetry stops being a construction and becomes an assertion.** Growing a world on one
+fundamental domain and translating it makes fairness true by the shape of the code; a file someone
+hand-authored cannot make that promise. So the guarantee moves into a validator every board passes
+before it is played — water, hills and turn-zero food each closed under the orbit, the grid
+dividing by the seat count, no hill on water or walled in. The refusals are `caller_input`: the
+same board can never succeed, so nothing retries it. What the corpus buys back is that the property
+is now checked against *every* board that ships rather than one generated example.
+
+The generator does not die. It becomes the factory that writes the files — `cargo run --bin
+mapgen` — which is the same idiom as generating the manifests: an artifact nobody hand-edits
+cannot drift from the thing it was made from.
+
+A game whose configurations are not boards simply has none of this. `cartridge.json`'s `maps` is
+optional, and omitting it is what keeps a second cartridge content rather than a platform change.
+
+### 4.2 The replay carries its own board
+
+A replay is the action stream, so re-simulating it needs the position it started from. Ants used to
+answer that with `state0`, a packed state the envelope was supposed to carry — and never did, so
+for the whole life of the format no stored replay could be decoded by the function that decodes
+replays. It went unnoticed because the round-trip test built its own envelope in-process.
+
+The envelope now carries `map`, `seed` and `max_turns`: the board it was played on, the seed that
+drove food respawn, and the limit it ran under. That is strictly better than naming a preset and a
+seed, because a replay stays viewable when the preset table has been re-tuned or the catalogue has
+moved on — it brought its terrain with it. The board comes off `finish`, at the moment the drain
+writes the row, so it costs no state carried across turns.
+
+Two rules fall out. **Test against an envelope the platform actually wrote**, not one your tests
+built; `tests/fixtures/` holds a real one for exactly this reason. And **give the viewer a range**:
+decoding re-simulates from turn zero, so a scrubber asking frame by frame is quadratic. `from`/`to`
+walks the match once. An optional field on a declared function is not a sixth function, so it stays
+inside what §9 permits.
 
 ---
 
