@@ -160,6 +160,16 @@ export class Viewer {
     this.build();
     this.renderer.setBoard(replay.map);
     this.observe();
+    // A tutorial points at a turn AND a place: `zoom` is a multiple of the fitted scale, `centre`
+    // is the cell to put in the middle. Applied after the first layout, because both are relative
+    // to a viewport that does not exist until then.
+    if (opts.zoom && opts.zoom > 1) {
+      this.renderer.zoomAt(opts.zoom, 0, 0);
+      const c = opts.centre ?? this.busiestCell();
+      this.renderer.centreOn(c[0], c[1]);
+    } else if (opts.centre) {
+      this.renderer.centreOn(opts.centre[0], opts.centre[1]);
+    }
     this.show();
     if (opts.autoplay) this.play();
   }
@@ -300,6 +310,32 @@ export class Viewer {
     this.ro = new ResizeObserver(fit);
     this.ro.observe(this.stage);
     fit();
+  }
+
+  /**
+   * Where the action is: the densest cluster of ants, not their centre of mass.
+   *
+   * The mean is the wrong answer and wrong in the way that matters -- two colonies on opposite
+   * sides of a board average to the empty middle, so a zoom that used it would open on nothing at
+   * all. This buckets the board and takes the fullest bucket.
+   */
+  busiestCell() {
+    const f = this.frames[this.i];
+    const all = f.ants.length ? f.ants : f.hills;
+    if (!all.length) return [this.renderer.rows / 2, this.renderer.cols / 2];
+    const step = 8;
+    const buckets = new Map();
+    for (const a of all) {
+      const k = `${(a[0] / step) | 0},${(a[1] / step) | 0}`;
+      const b = buckets.get(k) ?? { n: 0, r: 0, c: 0 };
+      b.n++;
+      b.r += a[0];
+      b.c += a[1];
+      buckets.set(k, b);
+    }
+    let best = null;
+    for (const b of buckets.values()) if (!best || b.n > best.n) best = b;
+    return [best.r / best.n, best.c / best.n];
   }
 
   // ------------------------------------------------------------------ input
@@ -448,7 +484,10 @@ export class Viewer {
     this.canvas.setAttribute(
       "aria-label",
       `Turn ${f.turn}. ${f.score
-        .map((s, i) => `${this.names[i]}: ${count(f.ants, i)} ants, score ${s}`)
+        .map((s, i) => {
+          const n = count(f.ants, i);
+          return `${this.names[i]}: ${n} ant${n === 1 ? "" : "s"}, score ${s}`;
+        })
         .join(". ")}`
     );
 
@@ -468,7 +507,9 @@ export class Viewer {
       const nums = d.createElement("span");
       nums.className = "tb-nums";
       const hills = f.hills.filter((h) => h[2] === seat).length;
-      nums.textContent = `${score >= 0 ? "+" : ""}${score} · ${alive} ants · ${hills} hill${hills === 1 ? "" : "s"}`;
+      nums.textContent =
+        `${score >= 0 ? "+" : ""}${score} · ${alive} ant${alive === 1 ? "" : "s"}` +
+        ` · ${hills} hill${hills === 1 ? "" : "s"}`;
       row.append(chip, name, nums);
       this.seats.appendChild(row);
     });

@@ -163,6 +163,14 @@ export class Renderer {
     this.clamp();
   }
 
+  /** Put a cell in the middle of the viewport, at the current scale. */
+  centreOn(r, c) {
+    const { w, h } = this.viewport();
+    this.ox = (c + 0.5) * this.scale - w / 2;
+    this.oy = (r + 0.5) * this.scale - h / 2;
+    this.clamp();
+  }
+
   pan(dx, dy) {
     this.ox -= dx;
     this.oy -= dy;
@@ -226,23 +234,23 @@ export class Renderer {
 
     // Hills first: an ant standing on one has to be visible on top of it, because "who is sitting
     // on whose hill" is usually the thing being read.
+    // A SQUARE ring, where an ant is a circle. An ant starts the match standing on its own hill and
+    // spends much of the match near it, so the two are almost always drawn on the same cell -- and
+    // a hill that was also a circle simply disappeared under the ant. Different shapes read at a
+    // glance even when one is on top of the other.
     for (const [r, c, owner] of frame.hills) {
       if (!onScreen(r, c)) continue;
       const col = SEATS[owner % SEATS.length];
-      const x = px(c) + s / 2;
-      const y = py(r) + s / 2;
-      const rad = s * 0.46;
-      ctx.beginPath();
-      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      const x = px(c);
+      const y = py(r);
       ctx.fillStyle = col;
-      ctx.globalAlpha = 0.22;
-      ctx.fill();
+      ctx.globalAlpha = 0.3;
+      ctx.fillRect(x, y, s, s);
       ctx.globalAlpha = 1;
-      ctx.lineWidth = Math.max(1, s * 0.14);
+      const lw = Math.max(1.5, s * 0.16);
+      ctx.lineWidth = lw;
       ctx.strokeStyle = col;
-      ctx.beginPath();
-      ctx.arc(x, y, rad * 0.72, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeRect(x + lw / 2, y + lw / 2, s - lw, s - lw);
     }
 
     for (const [r, c] of frame.food) {
