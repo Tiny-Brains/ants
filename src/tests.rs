@@ -973,6 +973,16 @@ fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     greedy.food.truncate(1);
     assert_eq!(code(&greedy), "MAP_NOT_SYMMETRIC");
 
+    // A board that starts stocked and never restocks is allowed: `spawn_food` fills up to the
+    // target and does nothing when there is already more, so nothing needs protecting from it.
+    let mut frugal = base.clone();
+    frugal.food_target = 0;
+    assert!(
+        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": frugal.to_json()}))
+            .is_ok(),
+        "a board may hold more food than it keeps stocked"
+    );
+
     // Runs that do not cover the board.
     let mut short = base.clone();
     short.water = vec![0, 4];

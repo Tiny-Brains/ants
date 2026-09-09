@@ -274,18 +274,14 @@ impl MapFile {
             }
         }
 
-        // The board cannot be kept stocked above what it holds, and a target below the turn-zero
-        // food would make `spawn_food` a no-op for the rest of the match.
-        if (self.food_target as usize) < self.food.len() {
-            return Err(err(
-                "MAP_BAD_SHAPE",
-                format!(
-                    "food_target {} is below the {} squares the map starts with",
-                    self.food_target,
-                    self.food.len()
-                ),
-            ));
-        }
+        // `food_target` is deliberately unconstrained against the turn-zero food.
+        //
+        // An earlier version refused a target BELOW what the board starts with, reasoning that it
+        // would make `spawn_food` a no-op for the rest of the match. It does -- and that is a board
+        // someone may want: one that starts stocked and never restocks, which is how a teaching
+        // board shows food being consumed rather than replaced the same turn. `spawn_food` fills
+        // *up to* the target and does nothing when there is already more, so the case was always
+        // handled; the refusal was a guess about intent, and it cost a lesson.
         Ok(())
     }
 

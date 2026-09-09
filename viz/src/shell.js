@@ -460,7 +460,12 @@ export class Viewer {
   paint() {
     this.renderer.render(this.frames[this.i]);
     const s = this.renderer.scale;
-    this.badge.textContent = `${this.replay.map_id ?? ""} ${this.renderer.cols}×${this.renderer.rows}  ${s.toFixed(1)}px/cell`;
+    // rows x cols, which is how the game states a board everywhere else -- the map file, the
+    // preset table, the book. A viewer that said 96x64 beside prose saying "64 by 96" would make
+    // the reader stop and work out which of them was wrong.
+    this.badge.textContent =
+      `${this.replay.map_id ?? ""} ${this.renderer.rows}×${this.renderer.cols} rows×cols` +
+      `  ${s.toFixed(1)}px/cell`;
   }
 
   show() {
