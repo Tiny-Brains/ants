@@ -33,6 +33,11 @@ cat > dist/engine.json <<JSON
 }
 JSON
 
+# What can be checked without eyes: the geometry under the viewer -- fitting a board to a frame,
+# zooming about a point, clamping a pan, turning a click back into a cell. Arithmetic that is wrong
+# by one looks almost right on screen and is never noticed.
+node "$here/check.mjs"
+
 echo "==> viz/dist"
 ls -l dist/*.js dist/engine.json | sed 's/^/    /'
 ls -l dist/engine/*.wasm | sed 's/^/    /'
