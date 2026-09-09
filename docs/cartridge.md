@@ -284,8 +284,9 @@ export const meta = { gameId: "ants", abiVersion: 1 };
 export async function mount(target, replay, opts) { /* → { destroy() } */ }
 ```
 
-`opts` carries `turn`, a `from`/`to` range, `autoplay`, `speed`, `theme` and an `onTurn` callback.
-A replay carries its own board (§4.2), so the envelope is the whole input.
+`opts` carries `turn`, a `from`/`to` range, `autoplay`, `speed`, `zoom`/`centre`, `theme`, `chrome`,
+`height` and an `onTurn` callback. A replay carries its own board (§4.2), so the envelope is the
+whole input.
 
 **`renderFrame` is fed by your own `replay-decode`, running in the browser from the same component
 digest the match recorded** — which is why the viewer and the referee cannot disagree. Transpile
@@ -318,6 +319,31 @@ other than the one a replay names looks right and is wrong.
 **A viewer never runs a model.** It re-simulates from recorded actions — no ONNX, no adapter, no
 competitor code in the browser — which is what lets a viewer be embedded anywhere without
 inheriting the evaluator's security surface.
+
+### What a viewer owes the page it is on
+
+Four rules, learned from having three hosts. They are not enforced by the ABI, and each of them was
+a bug first.
+
+**Scope every rule to your root class.** A viewer mounts by putting its class on the host element
+and injecting one `<style>`; it is not a shadow root. Ants' unscoped `.tb-bar` landed on the web
+shell's own header and relaid it out the moment a replay mounted — a site that broke when you opened
+a match. `viz/check.mjs` fails the build if a rule escapes.
+
+**Take the chrome's colours from the host, and keep the board's.** Read the platform's tokens with
+your own values as the fallback (`var(--ink, …)`), and the player is the colour of the card it sits
+in and follows the theme switch for free; hard-code the board, and a match looks like itself in
+either theme, the way a video does not change colour with the player around it.
+
+**Give the board the frame.** A host embeds a viewer at whatever height its page can spare — 420
+pixels is a realistic one — so anything permanent beside the transport is height the board does not
+get. Ants puts the seats, the zoom buttons and the readouts in a tray over the stage that appears on
+hover, focus or touch.
+
+**Take the layout question yourself.** Before the tray, the web application carried fourteen rules
+reaching into Ants' class names to float the seat row over the board. It worked, and it was pinned
+to names this repository owns: a release that renamed one would have silently undone it. If a host
+needs the viewer laid out differently, that is an option on `mount()`.
 
 ---
 

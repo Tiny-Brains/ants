@@ -14,7 +14,8 @@ export const meta = { gameId: "ants", abiVersion: 1 };
  *
  * @param {HTMLElement|string} target   an element, or a selector
  * @param {object|string} replay        the envelope, or a URL to fetch it from
- * @param {object} [opts]  turn, from, to, autoplay, speed, theme ("light"|"dark"), onTurn, height
+ * @param {object} [opts]  turn, from, to, autoplay, speed, theme ("light"|"dark"),
+ *                         chrome ("hover"|"always"), height, onTurn
  * @returns {Promise<Viewer>}  call .destroy() when the page is done with it
  */
 export async function mount(target, replay, opts = {}) {
@@ -30,6 +31,9 @@ export async function mount(target, replay, opts = {}) {
  * `#turn=84`, `#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`. A replay is evidence,
  * and evidence gets cited: the turn AND the corner of the board someone wants to talk about should
  * be linkable rather than described.
+ *
+ * `#chrome=always` pins the tray of readouts open, for a screenshot or a page where the viewer is
+ * not the thing being hovered.
  */
 export function optsFromHash(url = location) {
   const q = new URLSearchParams((url.hash || "").replace(/^#/, "") || url.search || "");
@@ -42,6 +46,7 @@ export function optsFromHash(url = location) {
     autoplay: q.get("autoplay") === "1" || q.get("autoplay") === "true",
     zoom: num("zoom"),
     theme: q.get("theme") || undefined,
+    chrome: q.get("chrome") || undefined,
   };
   const centre = q.get("centre") || q.get("center");
   if (centre && /^-?\d+,-?\d+$/.test(centre)) out.centre = centre.split(",").map(Number);

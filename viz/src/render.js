@@ -14,22 +14,37 @@
 //
 // **The board keeps its own colours.** A viewer's chrome follows the page's theme; the board does
 // not, any more than a video changes colour with the player around it. A match looks like itself.
+// The palette below is drawn from the platform's own blues so the board belongs to TinyBrains in
+// either theme, but every value here is a literal: a token would make a match change colour when
+// the reader flipped the page, which is exactly what this rule forbids.
 
 /// Seat colours. Two is the case that exists; the rest are here so a four-seat board is not a bug.
+///
+/// They are drawn on three grounds and have to read on all of them: the board's land, the seat
+/// chips in the tray, and the event marks on the timeline's rail. That is what makes them bright
+/// rather than deep -- a seat colour tuned only for the land vanished on the rail in dark mode.
+/// The hues answer the platform's logo regions without being taken from the tokens: a match keeps
+/// its colours when the page changes theme, so these cannot be variables.
 export const SEATS = [
-  "#e2542c", // vermilion
-  "#3a9bd9", // azure
-  "#7fbf3f", // leaf
-  "#c86fd4", // orchid
-  "#f0b429", // amber
-  "#46c2a8", // teal
+  "#FF6B41", // ember
+  "#5AB0FF", // azure
+  "#8BD44F", // leaf
+  "#C58BFF", // orchid
+  "#FFC658", // amber
+  "#4FD9BE", // teal
 ];
 
-const LAND = "#cdbb95";
-const LAND_ALT = "#c7b48c"; // a second sand, for a very faint checker at high zoom
-const WATER = "#25333d";
-const WATER_EDGE = "#1b262e";
-const FOOD = "#fff4d6";
+// The board, in the platform's own family of blues. Fixed in both themes, and dark on purpose:
+// land is the lit surface and water is the hole in it, which is the distinction a maze is read by.
+const LAND = "#2A3C61";
+const LAND_ALT = "#2D3F65"; // a second navy, for a very faint checker at high zoom
+const WATER = "#0A1526";
+// The board is an object on the void, and at a fitted scale a water-edged map ran into it.
+const BOARD_EDGE = "rgba(238,243,255,0.16)";
+const FOOD = "#FFEEC2";
+const GRID = "rgba(255,255,255,0.07)";
+const ANT_RIM = "rgba(5,8,15,0.55)";
+const FOOD_RIM = "rgba(10,15,26,0.5)";
 
 /** Expand `[value, run, value, run, ...]` into a row-major flag array. */
 function expandRle(rle, cells) {
@@ -218,7 +233,7 @@ export class Renderer {
     const py = (r) => y0 + r * s;
 
     if (this.showGrid && s >= 9) {
-      ctx.strokeStyle = "rgba(0,0,0,0.07)";
+      ctx.strokeStyle = GRID;
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let c = c0; c <= c1; c++) {
@@ -263,7 +278,7 @@ export class Renderer {
       ctx.fill();
       if (s >= 6) {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = "rgba(120,90,40,0.45)";
+        ctx.strokeStyle = FOOD_RIM;
         ctx.stroke();
       }
     }
@@ -280,17 +295,16 @@ export class Renderer {
       // A dark rim at readable sizes: an ant on its own colour of hill would otherwise vanish.
       if (s >= 5) {
         ctx.lineWidth = Math.max(1, s * 0.08);
-        ctx.strokeStyle = "rgba(0,0,0,0.45)";
+        ctx.strokeStyle = ANT_RIM;
         ctx.stroke();
       }
     }
 
-    // The water's edge, drawn last and only when zoomed in, so the coastline reads as a coastline.
-    if (s >= 14) {
-      ctx.strokeStyle = WATER_EDGE;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0 + 0.5, y0 + 0.5, this.cols * s - 1, this.rows * s - 1);
-    }
+    // Where the board ends. The void behind it is darker than deep water, so a map whose border is
+    // water had no edge at all without this -- and at a fitted scale that is most of them.
+    ctx.strokeStyle = BOARD_EDGE;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y0 + 0.5, this.cols * s - 1, this.rows * s - 1);
   }
 
   /** Which cell a canvas point is over, or null. */

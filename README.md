@@ -154,7 +154,10 @@ passes 50 host tests. Boards are files: 24 committed under `maps/`, eight per pr
 build time and compiled in, with the seed choosing within a preset's pool. A replay carries the
 board it was played on, and the decode test runs against an envelope the local stack actually
 wrote. The viewer is built: `viz/` transpiles the component with `jco` and ships one bundle for the
-web application, the book and `tinybrains view`. Cross-host determinism is checked in the small --
+web application, the book and `tinybrains view`. On **9 September 2026** it was restyled to the
+platform's design tokens — the chrome follows the host page's theme, the board keeps its own fixed
+palette, and everything but the transport is a tray over the board that appears on hover — and its
+stylesheet is now scoped to `.tb-viz`, which `viz/check.mjs` enforces. Cross-host determinism is checked in the small --
 the transpiled component decodes a recorded match and agrees with it -- but the 10,000-match
 conformance run is still owed, as are a cartridge-owned reference observation set and
 ordinary-release baselines.

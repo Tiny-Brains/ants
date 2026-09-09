@@ -152,5 +152,85 @@ check("the track is clickable", /pointerdown/.test(mod) && /releasePointerCaptur
 check("arrows step", /ArrowRight/.test(mod) && /ArrowLeft/.test(mod));
 check("transport buttons exist", /this\.nextBtn/.test(mod) && /this\.prevBtn/.test(mod));
 
+// ---------------------------------------------------------------- the stylesheet
+//
+// The viewer injects ONE <style> into the host document -- it is not a shadow root -- so a rule
+// that does not start at .tb-viz is a rule that can land on the page around it. An unscoped
+// `.tb-bar` in here once relaid out the web application's own header the moment a replay mounted,
+// and the way that bug reads from the outside is "the site breaks when you open a match".
+console.log("stylesheet");
+const css = mod.slice(mod.indexOf("const CSS = `") + 13, mod.indexOf("\n`;\n"));
+check("the stylesheet was found", css.length > 500, `${css.length} chars`);
+
+// The stylesheet is a template literal, so a backtick inside a CSS comment ends it early and the
+// rest of the file is read as JavaScript. `node --check` on a .js file does not catch that -- it
+// parses the wreckage as a script and says nothing -- but loading the module does, and the shell
+// is the only file here that no other check imports.
+let shellLoads = true;
+try {
+  const shell = await import("./dist/shell.js");
+  shellLoads = typeof shell.Viewer === "function";
+} catch (e) {
+  shellLoads = false;
+  console.log(`        ${e.message}`);
+}
+check("the built shell loads", shellLoads);
+
+/** Split a selector list on the commas that separate selectors, not the ones inside :is(...). */
+function splitTop(sel) {
+  const out = [];
+  let buf = "";
+  let depth = 0;
+  for (const ch of sel) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      out.push(buf);
+      buf = "";
+    } else buf += ch;
+  }
+  out.push(buf);
+  return out;
+}
+
+// Declarations never contain a `{`, so every prelude before one is a selector list or an at-rule.
+const preludes = [];
+{
+  let buf = "";
+  for (const ch of css.replace(/\/\*[\s\S]*?\*\//g, "")) {
+    if (ch === "{") {
+      preludes.push(buf.trim());
+      buf = "";
+    } else if (ch === "}") buf = "";
+    else buf += ch;
+  }
+}
+const escaped = preludes
+  .filter((p) => p && !p.startsWith("@"))
+  .flatMap(splitTop)
+  .map((x) => x.trim())
+  .filter((x) => x && !x.startsWith(".tb-viz"));
+check("every rule is scoped to .tb-viz", escaped.length === 0, escaped.join(" | "));
+check("the chrome reads the page's tokens", /var\(--ink,/.test(css) && /var\(--accent,/.test(css));
+check("the board's ground is a literal", /--tb-void:#/.test(css));
+
+// The readouts are a tray over the board: everything but the transport is out of the way until the
+// viewer is hovered, focused or touched. A frame is 420 pixels on a match page and the seat strip
+// used to spend a fifth of it.
+console.log("the tray");
+check("the tray exists", /"tb-tray"/.test(mod) && /\.tb-viz \.tb-tray\{/.test(css));
+check("it is hidden until wanted", /\.tb-viz \.tb-tray\{[^}]*opacity:0/.test(css));
+check(
+  "hover, focus and touch raise it",
+  /:hover/.test(css) && /:focus-within/.test(css) && /\[data-tb-peek\]/.test(css) && /pointerType === "touch"/.test(mod)
+);
+check("the transport is not in it", /mk\("div", "tb-bar"\)/.test(mod));
+check("seat chips are built once, not per frame", /buildSeats\(\)/.test(mod) && !/this\.seats\.innerHTML = ""/.test(mod));
+check("the stylesheet is per document", /getElementById\(STYLE_ID\)/.test(mod));
+// mount() puts `tb-viz` on the host element rather than making a root of its own, and that class
+// sets display:flex -- which outranks the [hidden] attribute's UA rule. A host that hides the
+// player while it loads a replay depends on this one line.
+check("a host can still hide it", /\.tb-viz\[hidden\]\{display:none\}/.test(css));
+
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall geometry checks passed");
 process.exit(failures ? 1 : 0);

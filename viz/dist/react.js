@@ -17,10 +17,12 @@ import { Viewer } from "./shell.js";
  * @param {number} [props.to]
  * @param {boolean} [props.autoplay]
  * @param {number} [props.speed]
- * @param {"light"|"dark"} [props.theme]
+ * @param {"light"|"dark"} [props.theme]   overrides the page; omit it and the viewer follows the
+ *                                         page's own tokens and theme switch
+ * @param {"hover"|"always"} [props.chrome] whether the tray of readouts is pinned open
  * @param {(frame: object) => void} [props.onTurn]
  */
-export function AntsReplay({ replay, turn, from, to, autoplay, speed, theme, onTurn, style, className }) {
+export function AntsReplay({ replay, turn, from, to, autoplay, speed, theme, chrome, onTurn, style, className }) {
   const host = useRef(null);
   const cb = useRef(onTurn);
   cb.current = onTurn;
@@ -30,11 +32,11 @@ export function AntsReplay({ replay, turn, from, to, autoplay, speed, theme, onT
     // The callback goes through a ref so a caller passing an inline arrow does not rebuild the
     // viewer -- and rebuilding it means decoding the whole match again.
     const v = new Viewer(host.current, replay, {
-      turn, from, to, autoplay, speed, theme,
+      turn, from, to, autoplay, speed, theme, chrome,
       onTurn: (f) => cb.current && cb.current(f),
     });
     return () => v.destroy();
-  }, [replay, turn, from, to, autoplay, speed, theme]);
+  }, [replay, turn, from, to, autoplay, speed, theme, chrome]);
 
   // `createElement` rather than JSX, so this file is plain ES the browser and any bundler both
   // accept and the cartridge needs no JSX toolchain of its own.
