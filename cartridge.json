@@ -1,5 +1,24 @@
 {
   "abi": 1,
+  "about": {
+    "links": [
+      {
+        "href": "https://ants.aichallenge.org",
+        "label": "Explore the original challenge"
+      },
+      {
+        "href": "https://github.com/aichallenge/aichallenge",
+        "label": "Read the original source"
+      }
+    ],
+    "provenance": "Built on Ants \u00b7 Google AI Challenge 2011",
+    "story": [
+      "Ants was the game of the 2011 Google AI Challenge, run by the University of Waterloo Computer Science Club: fog, food, and the race to raze a rival's hills, every colony moving at once.",
+      "TinyBrains reimplements those rules for trained neural networks. The game design and the maze and cell generators are the Ants creators'; the weight classes, the ratings and the arena are ours.",
+      "The challenge has changed with them. In 2011 you wrote the bot; here you train a network and write an adapter, and what you submit is measured into a weight class. The contest is not who can build the strongest player, but who can pack the strongest play into the fewest bytes."
+    ],
+    "tagline": "A classic AI challenge. Your next contest."
+  },
   "budgets": {
     "adapter_ops_max": 1000000,
     "flop_caps": {

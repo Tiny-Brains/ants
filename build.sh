@@ -54,6 +54,49 @@ cargo run --quiet --bin manifest > "$here/cartridge.json"
 # carries what a caller needs to CHOOSE and CHECK a board while the boards travel as files.
 python3 "$here/tools/catalogue.py" "$here"
 
+# What the game says about itself, folded into the same manifest. THE ONE HAND-WRITTEN INPUT: the
+# rest of cartridge.json is generated so it cannot drift from the code, and this has no code to
+# drift from. It is here rather than in the website because a second cartridge must be able to
+# introduce itself without a web deploy -- the home page's provenance section reads `about` and
+# renders whatever the selected game published. Keys the schema below does not name are dropped, and
+# every value is plain text: this document is registered from a repository and rendered in a
+# browser, and a manifest that could carry markup is a manifest that could carry a script tag.
+#
+# FOUR KEYS AND NO SHAPES. An earlier draft also folded in a comparison table -- before/after rows
+# against two era labels -- and it was dropped, because that structure only means anything for a
+# game that is a remake of something. A second cartridge would ship an empty one or bend its own
+# story to fit a frame built for this one. Prose says whatever a game needs; a schema cannot.
+#
+# about.json itself carries no commentary -- it is the copy and nothing else, so that what a
+# cartridge author writes is what a reader sees. Why it has the shape it has is here, beside the
+# code that enforces the shape.
+python3 - "$here" <<'ABOUTEOF'
+import json, sys
+here = sys.argv[1]
+cart = json.load(open(f"{here}/cartridge.json"))
+src = json.load(open(f"{here}/about.json"))
+
+def text(v):
+    if not isinstance(v, str):
+        raise SystemExit("about.json: every value must be a string, got %r" % (v,))
+    return v
+
+about = {
+    "tagline":    text(src["tagline"]),
+    "provenance": text(src["provenance"]),
+    "story":      [text(p) for p in src["story"]],
+    "links":      [{"label": text(l["label"]), "href": text(l["href"])} for l in src["links"]],
+}
+for l in about["links"]:
+    if not l["href"].startswith("https://"):
+        raise SystemExit("about.json: link %r must be https" % l["href"])
+
+cart["about"] = about
+json.dump(cart, open(f"{here}/cartridge.json", "w"), indent=2, sort_keys=True)
+open(f"{here}/cartridge.json", "a").write("\n")
+print("    about: %d paragraphs, %d links" % (len(about["story"]), len(about["links"])))
+ABOUTEOF
+
 # The reference observation set admission validates against. Generated for the same reason the
 # manifests are: it is ENGINE OUTPUT, so a hand-maintained copy would drift from the payloads a
 # model actually meets, and the gate would be testing a shape the game no longer produces.
