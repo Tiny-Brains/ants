@@ -57,7 +57,6 @@ fn open(payload: &Value) -> Result<Match, String> {
 
 /// Advance `m` through the envelope's deltas until it reaches `turn`.
 fn advance(m: &mut Match, deltas: &[Value], turn: u16) {
-    let food_target = m.food_target as usize;
     for d in deltas {
         if m.turn >= turn || m.done {
             break;
@@ -84,7 +83,7 @@ fn advance(m: &mut Match, deltas: &[Value], turn: u16) {
                     .collect()
             })
             .unwrap_or_default();
-        crate::turn::step(m, &moves, food_target);
+        crate::turn::step(m, &moves);
     }
 }
 

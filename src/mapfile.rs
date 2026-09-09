@@ -289,10 +289,11 @@ impl MapFile {
 
     /// The match this board opens at, for one seed.
     ///
-    /// Everything derivable is derived rather than stored: one ant per hill (rule 39), and each
-    /// seat's `known` folded in from what it can see. A map file that carried them could disagree
-    /// with the rules, and there would be no way to tell which was right.
+    /// Everything derivable is derived rather than stored: one ant per hill (*Map Format*), and
+    /// each seat's `known` folded in from what it can see. A map file that carried them could
+    /// disagree with the rules, and there would be no way to tell which was right.
     pub fn build(&self, seed: u64, max_turns: u16) -> Result<Match, MapError> {
+        let (rate, turn_len) = crate::state::food_rate_for(seed);
         let g = self.geom();
         let sym = Symmetry::for_preset(&g, self.players);
         let water = self.bits()?;
@@ -312,16 +313,27 @@ impl MapFile {
             hills: Vec::new(),
             hive: vec![0; self.players as usize],
             score: vec![0; self.players as usize],
-            domination_turns: 0,
-            idle_food_turns: 0,
-            food_target: self.food_target,
+            cutoff_bot: crate::state::CUTOFF_NONE,
+            cutoff_turns: 0,
+            // The hidden rate is drawn from the seed, so two matches on the same board are not
+            // the same match -- `state::food_rate_for`.
+            food_rate: rate,
+            food_turn: turn_len,
+            food_extra: 0,
+            food_rotation: 0,
+            food_cursor: 0,
+            pending_food: Vec::new(),
             map_id: self.id.clone(),
             food0: self.food.iter().map(|&(r, c)| g.at(r, c)).collect(),
         };
         for (k, &(r, c)) in self.hills.iter().enumerate() {
             let pos = g.at(r, c);
-            m.hills.push(Hill { pos, owner: k as u8, razed: false, last_spawn: 0 });
+            m.hills.push(Hill { pos, owner: k as u8, razed: false, last_touched: 0 });
             m.ants.push(Ant { pos, owner: k as u8 });
+        }
+        // One point per hill owned, before anything is razed — see `state::worldgen`.
+        for h in &m.hills {
+            m.score[h.owner as usize] += 1;
         }
         for pl in 0..self.players {
             m.reveal(pl);
@@ -346,7 +358,9 @@ impl MapFile {
             water: m.water.rle(),
             hills: m.hills.iter().map(|h| rc(h.pos)).collect(),
             food: m.food0.iter().map(|&f| rc(f)).collect(),
-            food_target: m.food_target,
+            // Every committed board carries as many food as it says it does, and `from_match`
+            // takes its food from `food0`, so the count is the board's own.
+            food_target: m.food0.len() as u16,
         }
     }
 }

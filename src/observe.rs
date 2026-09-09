@@ -12,12 +12,12 @@
 //! # What `water` carries, and why
 //!
 //! docs/protocol.md §8.3 left this open and docs/docs/cartridge.md owns it. **Decided: known water** —
-//! `water AND seen`, per player, which is what rule 16 says the field means: water never changes,
+//! `water AND seen`, per player, which is what *Bot Input* says the field means: water never changes,
 //! so anything already seen stays true.
 //!
 //! The alternatives were rejected for the same reason and it is not the obvious one. Sending the
 //! **whole map** breaks fog for the one thing worth scouting for. Sending **only what is visible
-//! now** is defensible from rules 12-14 — and it would make exploration pointless, because a model
+//! now** is defensible from *Fog of War* — and it would make exploration pointless, because a model
 //! here is a pure function of one observation with no channel for state between turns. Under that
 //! reading nothing a model discovers can ever be kept, by it or for it. Known water is the only
 //! option in which scouting buys anything at all: the engine remembers on the model's behalf,
@@ -72,14 +72,14 @@ pub fn view(m: &Match, seat: u8) -> Value {
 
     json!({
         "size":  [m.g.rows, m.g.cols],
-        // Rule 24: your own ants, all of them, whether or not another of yours can see them.
+        // *Bot Input*: your own ants, all of them, whether or not another of yours can see them.
         "mine":  m.mine(seat).into_iter().map(rc).collect::<Vec<_>>(),
-        // Rules 13-14: on visible squares you see everything; on every other square, nothing.
+        // *Fog of War*: on visible squares you see everything; on every other square, nothing.
         "foes":  m.ants.iter().filter(|a| a.owner != seat && vis.get(a.pos as usize))
                    .map(|a| rco(a.pos, a.owner)).collect::<Vec<_>>(),
         "food":  m.food.iter().copied().filter(|&f| vis.get(f as usize))
                    .map(rc).collect::<Vec<_>>(),
-        // A razed hill is gone from the map (rule 42), so it is not in the view.
+        // A razed hill is gone from the map (*Hill Razing*), so it is not in the view.
         "hills": m.hills.iter().filter(|h| !h.razed && vis.get(h.pos as usize))
                    .map(|h| rco(h.pos, h.owner)).collect::<Vec<_>>(),
         "water": { "rle": seen_water.rle() },

@@ -1,10 +1,12 @@
 //! The grid, its wrapping, its distances, and how a world is made.
 //!
-//! `RULES.md` §2 and §12. Everything here is integer arithmetic: distances are squared so no
-//! square root is ever needed (rule 10), and the map wraps in both directions so there are no
-//! edges and nothing can be defended by putting its back to a wall (rule 7).
+//! The specification's *Map Format* and *Distance*. Everything here is integer arithmetic:
+//! distances are squared so no
+//! square root is ever needed (*Distance*), and the map wraps in both directions so there are no
+//! edges and nothing can be defended by putting its back to a wall (*Map Format*).
 
-/// `RULES.md` §12, the reference values.
+/// The contest's own settings (`ants.py:1799`). The specification's prose says the view radius is
+/// 55; the engine says 77, and the engine is what every bot was scored against.
 pub const VIEW_RADIUS2: i32 = 77;
 pub const ATTACK_RADIUS2: i32 = 5;
 pub const SPAWN_RADIUS2: i32 = 1;
@@ -107,9 +109,9 @@ pub struct Preset {
     pub blob: u32,
     /// Food placed within reach of each hill at turn zero.
     ///
-    /// Without it a colony cannot bootstrap: a player starts with one ant (rule 39), an ant
-    /// collects only from an adjacent square (rule 47), and a lone ant that has to *find* its
-    /// first food before it can grow will usually not. Measured before it existed: random play
+    /// Without it a colony cannot bootstrap: a player starts with one ant (*Map Format*), an ant
+    /// collects only from an adjacent square (*Food Harvesting*), and a lone ant that has to *find*
+    /// its first food before it can grow will usually not. Measured before it existed: random play
     /// finished with an average of two ants and ended as a food stalemate twenty times in
     /// twenty-four. Real Ants seeds the hills the same way and for the same reason.
     pub hill_food: u32,
@@ -144,12 +146,12 @@ impl Geom {
     pub fn rc(&self, pos: u16) -> (i32, i32) {
         (pos as i32 / self.cols, pos as i32 % self.cols)
     }
-    /// Wrapping, in both directions — rule 7.
+    /// Wrapping, in both directions — *Map Format*.
     #[inline]
     pub fn at(&self, r: i32, c: i32) -> u16 {
         (r.rem_euclid(self.rows) * self.cols + c.rem_euclid(self.cols)) as u16
     }
-    /// Squared distance, taking the shorter way around the wrap — rule 10.
+    /// Squared distance, taking the shorter way around the wrap — *Distance*.
     #[inline]
     pub fn dist2(&self, a: u16, b: u16) -> i32 {
         let (ar, ac) = self.rc(a);
@@ -199,12 +201,12 @@ pub fn dir_of(a: &str) -> Option<(i32, i32)> {
 
 /// The symmetry a map is built with.
 ///
-/// `RULES.md` §46 requires food to be placed symmetrically so every player is offered the same
-/// opportunities in the same shape — and a map whose *terrain* were not symmetric would make that
-/// meaningless. So the whole world is built on one fundamental domain and translated: for two
-/// players, by half the rows and half the columns, which on a wrapping torus is a fixed-point-free
-/// symmetry of order two. Every player's surroundings are congruent to every other's, and a
-/// pairing can never be unfair because of the map.
+/// The specification's *Food spawning* requires food to be placed symmetrically so every player is
+/// offered the same opportunities in the same shape — and a map whose *terrain* were not symmetric
+/// would make that meaningless. So the whole world is built on one fundamental domain and
+/// translated: for two players, by half the rows and half the columns, which on a wrapping torus is
+/// a fixed-point-free symmetry of order two. Every player's surroundings are congruent to every
+/// other's, and a pairing can never be unfair because of the map.
 #[derive(Clone, Copy)]
 pub struct Symmetry {
     pub players: i32,

@@ -146,18 +146,30 @@ build.sh             tests, component validation, and artifact generation
 - **A replay carries the board it was played on.** The envelope is self-sufficient, and the decode test runs against an envelope the platform actually wrote.
 - **The viewer re-simulates with the cartridge, never a copy of it.** `viz/` drives the transpiled component; a JavaScript re-implementation of a rule would be a second engine.
 - **Artifacts travel together.** Review must ensure a source change includes the rebuilt component and generated manifests.
+- **The rules are the 2011 contest's rules.** Where the published specification and the contest engine (`aichallenge/ants/ants.py`) disagree, the engine wins — it is what every bot was scored against. Each rule cites the specification section it comes from, and the Focus Battle page's worked examples ship as named tests (`spec_scenario_*`).
 
 ## Status
 
 **8 September 2026.** The five exports and committed component are implemented; `cargo test`
-passes 50 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
+passes 74 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
 build time and compiled in, with the seed choosing within a preset's pool. A replay carries the
 board it was played on, and the decode test runs against an envelope the local stack actually
 wrote. The viewer is built: `viz/` transpiles the component with `jco` and ships one bundle for the
 web application, the book and `tinybrains view`. On **9 September 2026** it was restyled to the
 platform's design tokens — the chrome follows the host page's theme, the board keeps its own fixed
 palette, and everything but the transport is a tray over the board that appears on hover — and its
-stylesheet is now scoped to `.tb-viz`, which `viz/check.mjs` enforces. Cross-host determinism is checked in the small --
+stylesheet is now scoped to `.tb-viz`, which `viz/check.mjs` enforces. On **9 September 2026** the
+rules were audited line by line against the contest engine and the published specification, and
+seven divergences were fixed: food now blocks movement as water does, a player starts on one point
+per hill, the two stalemate counters became the reference's single population-share counter with
+its hill-kill stall and its reset on razing, hill spawn priority follows `last_touched` rather than
+`last_spawn`, the rank-stabilized cutoff is the reference's pairwise test, and the turn limit is
+checked last. The food model was then replaced with the reference's own: a hidden per-match rate
+accruing into shuffled symmetric sets, rather than topping the board back up to a fixed count. The
+~40 dangling `RULES.md` rule numbers now cite the specification sections they came from.
+Nine divergences in all, every one now closed and tested. **This changed the engine digest**, so
+Kalam's vendored component, `games.active_engine_digest`, the season and the plugin signatures all
+have to move with it. Cross-host determinism is checked in the small --
 the transpiled component decodes a recorded match and agrees with it -- but the 10,000-match
 conformance run is still owed, as are a cartridge-owned reference observation set and
 ordinary-release baselines.

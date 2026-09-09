@@ -84,7 +84,6 @@ pub fn reference_observations(preset_name: &str, seed: u64, until_turn: u16) -> 
     let p = map::preset(preset_name)?;
     let mf = mapfile::for_seed(p.name, seed)?;
     let mut m = mf.build(seed, MAX_TURNS).ok()?;
-    let food_target = m.food_target as usize;
 
     // A greedy walker: step toward the nearest food, and spread out when there is none in sight.
     //
@@ -145,7 +144,7 @@ pub fn reference_observations(preset_name: &str, seed: u64, until_turn: u16) -> 
             moves.push(orders);
         }
         last_live = m.clone();
-        turn::step(&mut m, &moves, food_target);
+        turn::step(&mut m, &moves);
     }
 
     let m = if m.done { last_live } else { m };
@@ -345,13 +344,12 @@ fn f_step(input: &Value) -> Result<Value, Fault> {
             continue;
         }
         let turn = m.turn;
-        let food_target = target_food(m);
         deltas.push({
             let mut d = replay::delta(m, turn, &moves[mi]);
             d["m"] = json!(mi);
             d
         });
-        turn::step(m, &moves[mi], food_target);
+        turn::step(m, &moves[mi]);
         if m.done {
             ended.push(mi);
         }
@@ -363,15 +361,6 @@ fn f_step(input: &Value) -> Result<Value, Fault> {
         "ended": ended,
         "replay_delta": deltas,
     }))
-}
-
-/// How much food the map is kept stocked with.
-///
-/// Read off the state, which read it off the map. It used to be recovered by finding the preset
-/// whose `rows` and `cols` matched the board -- which was unambiguous only while every board of a
-/// size came from one preset, and stopped being true the moment a board became a file.
-fn target_food(m: &state::Match) -> usize {
-    m.food_target as usize
 }
 
 fn f_finish(input: &Value) -> Result<Value, Fault> {
@@ -388,7 +377,8 @@ fn f_finish(input: &Value) -> Result<Value, Fault> {
             // played on and needs no catalogue, no preset table and no second lookup to be viewed,
             // however far the game has moved on since. It is emitted here rather than from
             // `worldgen` because this is the call the drain makes at the moment it writes the
-            // envelope, so the map arrives exactly when it is needed and is carried across no turns.
+            // envelope, so the map arrives exactly when it is needed and is carried across no
+            // turns.
             //
             // Only for a match that has ENDED. The drain calls `finish` on every sweep while
             // anything is queued and reads only the head, so sending every live match's board as
