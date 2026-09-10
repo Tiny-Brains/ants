@@ -434,3 +434,43 @@ fn water_is_remembered_and_everything_else_is_not() {
     assert_eq!(after["food"].as_array().unwrap().len(), 0, "food is only true while you see it");
     assert_eq!(water_runs(&after), water_then, "water you have seen stays true");
 }
+
+#[test]
+fn a_view_is_observer_relative() {
+    // *docs/protocol.md* §3.1: "relabel every seat in the world, ask the same player under its new
+    // label, and the bytes must be identical". The engine used to emit raw seat numbers, so seat 1
+    // saw its own hill labelled `1` while seat 0 saw its own labelled `0` -- two seats of one match
+    // are meant to be two samples of one distribution, and they were not.
+    //
+    // The property, stated as a symmetry: build a position, then build its mirror with the two
+    // seats swapped, and seat 0's view of the first must be byte-identical to seat 1's view of the
+    // second. `schema/validate.py` checks this shape against a stand-in; this checks the engine.
+    let build = |a: u8, b: u8| {
+        let mut m = bare(40, 40, 2);
+        m.ants.push(Ant { pos: at(&m, 5, 5), owner: a });
+        m.ants.push(Ant { pos: at(&m, 5, 7), owner: b });
+        m.hills.push(Hill { pos: at(&m, 5, 4), owner: a, razed: false, last_touched: 0 });
+        m.hills.push(Hill { pos: at(&m, 5, 8), owner: b, razed: false, last_touched: 0 });
+        m.reveal(0);
+        m.reveal(1);
+        m
+    };
+    let straight = build(0, 1);
+    let mirrored = build(1, 0);
+    assert_eq!(
+        crate::observe::view(&straight, 0),
+        crate::observe::view(&mirrored, 1),
+        "the same player under a different label must see the same bytes"
+    );
+
+    // And the labels are the ones state.schema.json promises: yourself 0, an opponent 1 upward.
+    let v = crate::observe::view(&straight, 1);
+    let own: Vec<i64> = v["hills"].as_array().unwrap().iter()
+        .filter(|h| h[0] == json!(5) && h[1] == json!(8))
+        .map(|h| h[2].as_i64().unwrap())
+        .collect();
+    assert_eq!(own, vec![0], "seat 1's own hill is owner 0 in seat 1's view");
+    for f in v["foes"].as_array().unwrap() {
+        assert_eq!(f[2], json!(1), "an opponent is 1 upward, never your own seat number");
+    }
+}
