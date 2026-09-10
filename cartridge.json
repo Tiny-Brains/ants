@@ -20,14 +20,7 @@
     "tagline": "A classic AI challenge. Your next contest."
   },
   "budgets": {
-    "adapter_ops_max": 1000000,
-    "flop_caps": {
-      "large": 128000000000.0,
-      "micro": 1000000000.0,
-      "mini": 4000000000.0,
-      "nano": 250000000.0,
-      "small": 16000000000.0
-    }
+    "adapter_ops_max": 1000000
   },
   "game": "ants",
   "limits": {

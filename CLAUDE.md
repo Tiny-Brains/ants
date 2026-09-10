@@ -84,8 +84,8 @@ A *wave* is many matches advanced together in one call.
 
 1. **Integer arithmetic only in game logic**, so the platform's build and the browser's agree bit
    for bit — which is what lets a replay be an action stream instead of frames. `deny.sh` greps
-   `src/` for float constructs, excluding `src/tests/` and `src/bin/` (the manifest publishes FLOP
-   caps, which are floats by definition). Nothing in Rust enforces this.
+   `src/` for float constructs, excluding `src/tests/` and `src/bin/`, which are host tooling and
+   never reach the component. Nothing in Rust enforces this.
 2. **Seeds and actions determine the match.** No ambient randomness, no time. The seed also picks
    the board from the preset's pool when the caller passes none — deliberately, so a competitor
    cannot train against a board they chose.

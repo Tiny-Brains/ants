@@ -73,36 +73,18 @@
     "turn_ms": {
      "type": "integer",
      "minimum": 1,
-     "description": "Wall-clock safety net, not the fairness control. Fairness is the FLOP cap."
+     "description": "The fairness control, and the only compute bound there is. The loader divides it among the rows of one call, so a slow graph spends its own share and times itself out rather than striking the seats behind it."
     }
    }
   },
   "budgets": {
    "type": "object",
    "required": [
-    "flop_caps",
     "adapter_ops_max"
    ],
    "additionalProperties": false,
+   "description": "One budget, and it prices marshalling. There is no compute budget: the per-class FLOP caps were removed on 10 September 2026 (devops decision 46) as shadowed by the size metric below and by turn_ms above, and unable to catch the exploit they were introduced for. A cartridge's compute bound is turn_ms, which the loader divides among the rows of a call.",
    "properties": {
-    "flop_caps": {
-     "type": "object",
-     "required": [
-      "nano",
-      "micro",
-      "mini",
-      "small",
-      "large"
-     ],
-     "additionalProperties": false,
-     "patternProperties": {
-      "^(nano|micro|mini|small|large)$": {
-       "type": "number",
-       "exclusiveMinimum": 0
-      }
-     },
-     "description": "Per-class eligibility gate. Game-specific because payload size is; size classes themselves stay global."
-    },
     "adapter_ops_max": {
      "type": "integer",
      "minimum": 1,

@@ -6,8 +6,9 @@
 # stream rather than a hundred times as many frames. Nothing in Rust enforces it, and a single
 # `as f64` in a loop bound would be invisible until two builds disagreed on a match.
 #
-# src/ only: the tests and src/bin/ are host tooling, and the manifest generator publishes FLOP caps
-# that are floats by definition.
+# src/ only: the tests and src/bin/ are host tooling and never reach the component. (Until
+# decision 46 the manifest generator also published FLOP caps, which are floats by definition; it
+# publishes no floats now, but the exclusion stands on the host-tooling argument alone.)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 bad=$(grep -rnE '\bf32\b|\bf64\b|\.sqrt\(|\.powi\(|\.powf\(|[0-9]\.[0-9]' \

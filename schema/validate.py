@@ -49,8 +49,10 @@ NEG = [
     ("top-level players",       mut(lambda d: d.update(players=[2]))),
     ("bad version string",      mut(lambda d: d.update(version="1.0"))),
     ("bad game id",             mut(lambda d: d.update(game="Ants!"))),
-    ("incomplete flop caps",    mut(lambda d: d["budgets"].update(flop_caps={"nano": 1e8}))),
-    ("zero flop cap",           mut(lambda d: d["budgets"]["flop_caps"].update(micro=0))),
+    # There is no compute budget since decision 46; a manifest still declaring one is refused
+    # rather than ignored, so a stale cartridge is told so instead of quietly carrying a dead field.
+    ("a compute budget at all",  mut(lambda d: d["budgets"].update(flop_caps={"nano": 1e8}))),
+    ("missing adapter_ops_max",  mut(lambda d: d["budgets"].pop("adapter_ops_max"))),
     ("max_turns of zero",       mut(lambda d: d["limits"].update(max_turns=0))),
     ("missing turn_ms",         mut(lambda d: d["limits"].pop("turn_ms"))),
     ("leftover protocol field", mut(lambda d: d.update(protocol=1))),

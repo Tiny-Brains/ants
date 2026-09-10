@@ -143,7 +143,7 @@ boards exist without loading the component. A game whose configurations are not 
                { "name": "maze",     "players": 2 },
                { "name": "cell",     "players": 2 } ],
   "limits":  { "max_turns": 1000, "turn_ms": 1000 },
-  "budgets": { "flop_caps": { "nano": 2.5e8, … }, "adapter_ops_max": 1000000 }
+  "budgets": { "adapter_ops_max": 1000000 }
 }
 ```
 

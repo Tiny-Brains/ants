@@ -70,8 +70,9 @@ The export is spelled `replay-decode`, including the hyphen.
 | tb-ants.wasm | Generated from Rust by build.sh | Kalam's plugin host |
 
 The manifest names `standard`, `maze`, and `cell`, each with two seats and eight boards. Runtime limits are
-`limits.max_turns` and `limits.turn_ms`; admission policy uses `budgets.adapter_ops_max` and the
-class-specific FLOP caps in [cartridge.json](cartridge.json).
+`limits.max_turns` and `limits.turn_ms`; admission policy uses `budgets.adapter_ops_max` from
+[cartridge.json](cartridge.json). There is no compute budget — `turn_ms` is the compute bound, and
+the loader divides it among the rows of one call.
 
 Check the replay contract without an Orion instance:
 
@@ -149,6 +150,12 @@ build.sh             the gate, then every committed artifact
 - **The rules are the 2011 contest's rules.** Where the published specification and the contest engine (`aichallenge/ants/ants.py`) disagree, the engine wins — it is what every bot was scored against. Each rule cites the specification section it comes from, and the Focus Battle page's worked examples ship as named tests (`spec_scenario_*`).
 
 ## Status
+
+**Decision 46, 10 September 2026 — no compute cap.** `cartridge.json` declares `adapter_ops_max`
+alone; `budgets.flop_caps` is gone from the manifest, from `schema/tb-cartridge.schema.json`'s
+`required` block (a manifest still declaring one is now refused, not ignored), and from both
+`other-games/` sketches. `turn_ms` is the compute bound and its schema description says so. Only
+`src/bin/manifest.rs` changed, so **the component and the engine digest are untouched.**
 
 **9 September 2026.** The five exports and the committed component are implemented and `cargo test`
 passes 74 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at

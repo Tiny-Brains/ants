@@ -16,9 +16,11 @@ fn main() {
         // No top-level `players`: the preset carries it, because seats are a property of the map.
         "presets": presets,
         "limits":  { "max_turns": tb_ants::MAX_TURNS, "turn_ms": 1000 },
+        // One budget, and it prices marshalling. There is no compute cap: it was removed on
+        // 10 September 2026 (devops decision 46) after measurement showed it shadowed by S below
+        // and by turn_ms above, and unable to catch the exploit it was introduced for. The turn
+        // deadline is the compute bound, and the loader gives each row its own share of it.
         "budgets": {
-            "flop_caps": { "nano": 2.5e8, "micro": 1e9, "mini": 4e9,
-                           "small": 1.6e10, "large": 1.28e11 },
             // Measured, not argued: a reference six-plane adapter costs 197,272 operations against
             // a real worst-case observation, and a visibility-deriving one did not fit 200,000 at
             // all. See axon/tests/ants_adapter.rs.
