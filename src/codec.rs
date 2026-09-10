@@ -1,14 +1,13 @@
 //! The packed `wave_state`, and base64 over it.
 //!
-//! `cartridge.md` §2 states three rules, and this file is the whole of the compliance:
+//! Three rules, and this file is the whole of the compliance.
 //!
 //! **Opaque and compact.** Base64 over a packed binary encoding, not readable JSON. Nothing outside
-//! this component decodes it and nothing outside it should be able to — that is what makes "the
-//! platform never parses game state" a property rather than a promise.
+//! this component decodes it, which is what makes "the platform never parses game state" a property
+//! rather than a promise.
 //!
-//! **It round-trips exactly.** `step` returns the state its next call receives; any information not
-//! encoded is information the match does not have next turn. Tested against a played match, not
-//! against a fresh one, because a fresh state exercises none of the fields that matter.
+//! **It round-trips exactly.** `step` returns the state its next call receives; anything not
+//! encoded is information the match does not have next turn.
 //!
 //! **No version field.** A wave never spans two cartridge versions, so the encoding is versioned by
 //! the digest that produced it.
@@ -16,7 +15,7 @@
 //! ```text
 //! wave    u16 matches, then each match in order
 //! match   u64 seed · u16 turn · u16 max_turns · u8 players · u8 done · u8 reason
-//!         u8 rows · u8 cols
+//!         u8  rows · u8 cols
 //!         u8  cutoff_bot · u16 cutoff_turns
 //!         u16 food_rate · u16 food_turn · u32 food_extra
 //!         u16 food_rotation · u16 food_cursor
@@ -32,87 +31,94 @@
 //! ```
 
 use crate::map::{Bits, Geom, Symmetry};
-use crate::state::{Hill, Match, Ant};
+use crate::state::{Ant, Hill, Match};
 
 pub struct Wave {
     pub matches: Vec<Match>,
 }
 
-// ---------------------------------------------------------------- writing
+#[derive(Default)]
+struct W(Vec<u8>);
 
-fn put_u16(o: &mut Vec<u8>, v: u16) {
-    o.extend_from_slice(&v.to_le_bytes());
-}
-fn put_i16(o: &mut Vec<u8>, v: i16) {
-    o.extend_from_slice(&v.to_le_bytes());
-}
-fn put_u64(o: &mut Vec<u8>, v: u64) {
-    o.extend_from_slice(&v.to_le_bytes());
+impl W {
+    fn u8(&mut self, v: u8) {
+        self.0.push(v);
+    }
+    fn u16(&mut self, v: u16) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+    fn i16(&mut self, v: i16) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+    fn u32(&mut self, v: u32) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+    fn u64(&mut self, v: u64) {
+        self.0.extend_from_slice(&v.to_le_bytes());
+    }
+    fn bytes(&mut self, v: &[u8]) {
+        self.0.extend_from_slice(v);
+    }
+    /// A count-prefixed list of positions.
+    fn positions(&mut self, v: &[u16]) {
+        self.u16(v.len() as u16);
+        for &p in v {
+            self.u16(p);
+        }
+    }
 }
 
 pub fn pack(w: &Wave) -> String {
-    let mut o: Vec<u8> = Vec::new();
-    put_u16(&mut o, w.matches.len() as u16);
+    let mut o = W::default();
+    o.u16(w.matches.len() as u16);
     for m in &w.matches {
-        put_u64(&mut o, m.seed);
-        put_u16(&mut o, m.turn);
-        put_u16(&mut o, m.max_turns);
-        o.push(m.players);
-        o.push(m.done as u8);
-        o.push(m.reason);
-        o.push(m.g.rows as u8);
-        o.push(m.g.cols as u8);
-        o.push(m.cutoff_bot);
-        put_u16(&mut o, m.cutoff_turns);
-        // A property of the map (`mapfile.rs`), not of the preset table, so it travels with the
-        // state rather than being looked up by the board's dimensions.
-        put_u16(&mut o, m.food_rate);
-        put_u16(&mut o, m.food_turn);
-        o.extend_from_slice(&m.food_extra.to_le_bytes());
-        put_u16(&mut o, m.food_rotation);
-        put_u16(&mut o, m.food_cursor);
-        put_u16(&mut o, m.pending_food.len() as u16);
-        for &f in &m.pending_food {
-            put_u16(&mut o, f);
-        }
-        // The board, for the replay envelope -- `state.rs` on why the turn-zero food cannot be
-        // read back off a played match.
+        o.u64(m.seed);
+        o.u16(m.turn);
+        o.u16(m.max_turns);
+        o.u8(m.players);
+        o.u8(m.done as u8);
+        o.u8(m.reason);
+        o.u8(m.g.rows as u8);
+        o.u8(m.g.cols as u8);
+        o.u8(m.cutoff_bot);
+        o.u16(m.cutoff_turns);
+        o.u16(m.food_rate);
+        o.u16(m.food_turn);
+        o.u32(m.food_extra);
+        o.u16(m.food_rotation);
+        o.u16(m.food_cursor);
+        o.positions(&m.pending_food);
+        // The board, for the replay envelope — `state.rs` on why the turn-zero food cannot be read
+        // back off a played match.
         let id = m.map_id.as_bytes();
-        o.push(id.len().min(255) as u8);
-        o.extend_from_slice(&id[..id.len().min(255)]);
-        put_u16(&mut o, m.food0.len() as u16);
-        for &f in &m.food0 {
-            put_u16(&mut o, f);
-        }
-        o.extend_from_slice(&m.water.bits);
+        let id = &id[..id.len().min(255)];
+        o.u8(id.len() as u8);
+        o.bytes(id);
+        o.positions(&m.food0);
+        o.bytes(&m.water.bits);
         for k in &m.known {
-            o.extend_from_slice(&k.bits);
+            o.bytes(&k.bits);
         }
-        put_u16(&mut o, m.ants.len() as u16);
+        o.u16(m.ants.len() as u16);
         for a in &m.ants {
-            put_u16(&mut o, a.pos);
-            o.push(a.owner);
+            o.u16(a.pos);
+            o.u8(a.owner);
         }
-        put_u16(&mut o, m.food.len() as u16);
-        for &f in &m.food {
-            put_u16(&mut o, f);
-        }
-        o.push(m.hills.len() as u8);
+        o.positions(&m.food);
+        o.u8(m.hills.len() as u8);
         for h in &m.hills {
-            put_u16(&mut o, h.pos);
-            o.push(h.owner);
-            o.push(h.razed as u8);
-            put_u16(&mut o, h.last_touched);
+            o.u16(h.pos);
+            o.u8(h.owner);
+            o.u8(h.razed as u8);
+            o.u16(h.last_touched);
         }
         for i in 0..m.players as usize {
-            put_u16(&mut o, m.hive[i]);
-            put_i16(&mut o, m.score[i]);
+            o.u16(m.hive[i]);
+            o.i16(m.score[i]);
         }
     }
-    b64_encode(&o)
+    b64_encode(&o.0)
 }
-
-// ---------------------------------------------------------------- reading
 
 struct R<'a> {
     b: &'a [u8],
@@ -121,34 +127,31 @@ struct R<'a> {
 
 impl<'a> R<'a> {
     fn u8(&mut self) -> Option<u8> {
-        let v = *self.b.get(self.at)?;
-        self.at += 1;
-        Some(v)
+        Some(self.bytes(1)?[0])
     }
     fn u16(&mut self) -> Option<u16> {
-        let s = self.b.get(self.at..self.at + 2)?;
-        self.at += 2;
+        let s = self.bytes(2)?;
         Some(u16::from_le_bytes([s[0], s[1]]))
     }
     fn i16(&mut self) -> Option<i16> {
         self.u16().map(|v| v as i16)
     }
     fn u32(&mut self) -> Option<u32> {
-        let s = self.b.get(self.at..self.at + 4)?;
-        self.at += 4;
-        Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        let s = self.bytes(4)?;
+        Some(u32::from_le_bytes(s.try_into().ok()?))
     }
     fn u64(&mut self) -> Option<u64> {
-        let s = self.b.get(self.at..self.at + 8)?;
-        self.at += 8;
-        let mut a = [0u8; 8];
-        a.copy_from_slice(s);
-        Some(u64::from_le_bytes(a))
+        let s = self.bytes(8)?;
+        Some(u64::from_le_bytes(s.try_into().ok()?))
     }
     fn bytes(&mut self, n: usize) -> Option<&'a [u8]> {
         let s = self.b.get(self.at..self.at.checked_add(n)?)?;
         self.at += n;
         Some(s)
+    }
+    fn positions(&mut self) -> Option<Vec<u16>> {
+        let n = self.u16()?;
+        (0..n).map(|_| self.u16()).collect()
     }
 }
 
@@ -164,8 +167,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let players = r.u8()?;
         let done = r.u8()? != 0;
         let reason = r.u8()?;
-        let rows = r.u8()?;
-        let cols = r.u8()?;
+        let g = Geom::new(r.u8()?, r.u8()?);
         let cutoff_bot = r.u8()?;
         let cutoff_turns = r.u16()?;
         let food_rate = r.u16()?;
@@ -173,20 +175,11 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let food_extra = r.u32()?;
         let food_rotation = r.u16()?;
         let food_cursor = r.u16()?;
-        let npend = r.u16()?;
-        let mut pending_food = Vec::with_capacity(npend as usize);
-        for _ in 0..npend {
-            pending_food.push(r.u16()?);
-        }
+        let pending_food = r.positions()?;
         let idn = r.u8()? as usize;
         let map_id = String::from_utf8(r.bytes(idn)?.to_vec()).ok()?;
-        let nf0 = r.u16()?;
-        let mut food0 = Vec::with_capacity(nf0 as usize);
-        for _ in 0..nf0 {
-            food0.push(r.u16()?);
-        }
+        let food0 = r.positions()?;
 
-        let g = Geom::new(rows, cols);
         let cells = g.cells();
         let nb = cells.div_ceil(8);
         let water = Bits { bits: r.bytes(nb)?.to_vec(), len: cells };
@@ -197,21 +190,18 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let na = r.u16()?;
         let mut ants = Vec::with_capacity(na as usize);
         for _ in 0..na {
-            let pos = r.u16()?;
-            ants.push(Ant { pos, owner: r.u8()? });
+            ants.push(Ant { pos: r.u16()?, owner: r.u8()? });
         }
-        let nf = r.u16()?;
-        let mut food = Vec::with_capacity(nf as usize);
-        for _ in 0..nf {
-            food.push(r.u16()?);
-        }
+        let food = r.positions()?;
         let nh = r.u8()?;
         let mut hills = Vec::with_capacity(nh as usize);
         for _ in 0..nh {
-            let pos = r.u16()?;
-            let owner = r.u8()?;
-            let razed = r.u8()? != 0;
-            hills.push(Hill { pos, owner, razed, last_touched: r.u16()? });
+            hills.push(Hill {
+                pos: r.u16()?,
+                owner: r.u8()?,
+                razed: r.u8()? != 0,
+                last_touched: r.u16()?,
+            });
         }
         let mut hive = Vec::with_capacity(players as usize);
         let mut score = Vec::with_capacity(players as usize);
@@ -219,6 +209,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
             hive.push(r.u16()?);
             score.push(r.i16()?);
         }
+
         matches.push(Match {
             seed, turn, max_turns, players, g,
             sym: Symmetry::for_preset(&g, players),

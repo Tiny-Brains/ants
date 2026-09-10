@@ -57,6 +57,9 @@ NEG = [
     ("leftover visualizer",     mut(lambda d: d.update(visualizer={"module": "viz.js"}))),
     ("leftover docs pointer",   mut(lambda d: d.update(docs={"url": "https://x"}))),
     ("per-game message cap",    mut(lambda d: d["limits"].update(max_message_kib=512))),
+    ("about without links",     mut(lambda d: d["about"].pop("links"))),
+    ("about link not https",    mut(lambda d: d["about"]["links"].append({"label": "x", "href": "http://x"}))),
+    ("about with markup shape", mut(lambda d: d["about"].update(html="<b>x</b>"))),
 ]
 for name, doc in NEG:
     check(not CV.is_valid(doc), f"cartridge should have been rejected: {name}")

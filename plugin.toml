@@ -5,7 +5,7 @@
 # docs/cartridge.md; the rules are the rules of Ants in the book.
 #
 # Note `replay-decode`: Orion refuses a plugin function label that is not [a-z][a-z0-9-]*, so the
-# `replay_decode` spelling does not load at all. Found by the wave-turn spike.
+# `replay_decode` spelling does not load at all.
 abi = "orion:plugin@1.0.0"
 name = "tb.ants"
 version = "1.0.0"

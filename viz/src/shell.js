@@ -1,47 +1,27 @@
 // The player: everything around the pixels.
 //
-// It behaves like a media player because that is what watching a match is. Transport buttons, a
-// timeline you can click and drag, playback speed, and a keyboard that does what a keyboard does
-// in a player — space, arrows, home and end.
+// It behaves like a media player because that is what watching a match is — transport buttons, a
+// timeline you can click and drag, playback speed, and a keyboard that does what a keyboard does in
+// a player. Two things it does that a video player cannot: the timeline is annotated, so a hill
+// razed or a colony wiped out can be found without scrubbing for it; and the board can be
+// inspected, because a replay is evidence about a model's decisions and the question is usually
+// "why did it do that, there".
 //
-// Two things it does that a video player cannot, because a match is not video:
-//
-//   * **The timeline is annotated.** A hill razed and a colony wiped out are marked on the track,
-//     so the interesting turns of a two-hundred-turn match can be found without scrubbing for them.
-//   * **The board can be inspected.** Zoom in, and click a cell to see what is on it. A replay is
-//     evidence about a model's decisions, and the question is usually "why did it do that, there".
-//
-// `docs/cartridge.md` §7 used to put this in the platform's web application and leave the cartridge
-// owning pixels. It lives here because the viewer has three consumers that are not one application
-// — the web Replay screen, the book's tutorials, and `tinybrains view` — and a shell split across
-// three of them is a shell maintained in three places.
-//
-// Framework-free on purpose: this is a canvas, a slider and some readouts, and React would tie the
-// cartridge to a version it has no business pinning. `react.js` wraps it for the application.
-//
-// # Three rules this file keeps
+// Three rules this file keeps.
 //
 // **The board gets the whole frame; the readouts are a tray.** Only the transport bar is always on
-// screen. Who is playing, the board's identity, the zoom buttons and the cell readout live in a
-// layer over the stage that appears on hover, on keyboard focus, and on a touch of the board — the
-// way a video player's chrome does. A 420-pixel frame on a match page spent a fifth of its height
-// on seat chips before this, which is why the web application had grown its own rules reaching in
-// here to float them; it does not need them now. `chrome: "always"` pins the tray open for a
-// consumer that wants it, and the web application does not.
+// screen. Everything else lives in a layer over the stage that appears on hover, on keyboard focus,
+// and on a touch — the way a video player's chrome does. `chrome: "always"` pins it open.
 //
 // **The chrome follows the page; the board does not.** Every colour of the frame is one of the
-// platform's design tokens with a written-out fallback, so inside the application the player is
-// the colour of the card it sits in and follows the theme switch with no work here, and outside it
-// — the book, `tinybrains view`, a plain page — it still looks like TinyBrains and still answers
-// `prefers-color-scheme`. The board keeps its own fixed palette in both themes: a match has to
-// look like itself, the way a video does not change colour with the player around it. That is also
-// why the tray's panels are a flat dark that belongs to the board rather than to the theme — they
-// are read against terrain, not against the page.
+// platform's design tokens with a written-out fallback, so the player is the colour of the card it
+// sits in and follows a theme switch with no work here. The board keeps its own fixed palette in
+// both themes: a match has to look like itself, the way a video does not change colour with the
+// player around it.
 //
 // **Every rule in the stylesheet starts at `.tb-viz`.** One `<style>` goes into the host document
-// on mount; it is not a shadow root. An unscoped `.tb-bar` in here once landed on the web shell's
-// own header and silently relaid it out the moment a replay mounted. A rule that cannot leave the
-// viewer cannot do that again.
+// on mount; it is not a shadow root, and `check.mjs` fails the build on an unscoped rule. An
+// unscoped `.tb-bar` in here once landed on the web application's own header.
 
 import { allFrames } from "./engine.js";
 import { Renderer, SEATS } from "./render.js";
@@ -207,10 +187,8 @@ const PEEK_MS = 2600;
 const ICON = {
   play: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg>',
   pause: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="2.5" width="3" height="11" rx="1"/><rect x="9" y="2.5" width="3" height="11" rx="1"/></svg>',
-  // ONE ARROW STEPS, TWO ARROWS AGAINST A BAR GO TO THE END. Previous and first were both a
-  // triangle with a bar beside it and differed by a pixel and a half, which is no difference at
-  // all at fifteen pixels: the two left-hand buttons of the transport looked like the same button
-  // drawn twice. Next and last were the same mistake mirrored.
+  // One arrow steps; two arrows against a bar go to the end. At fifteen pixels a triangle with a
+  // bar beside it and a bare triangle are the same button drawn twice.
   prev: '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M11.4 3.2v9.6L4.6 8z"/></svg>',
   next: '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M4.6 3.2v9.6L11.4 8z"/></svg>',
   first: '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M13 3.6v8.8L9 8z"/><path d="M8.8 3.6v8.8L4.8 8z"/><rect x="2.7" y="3.2" width="1.7" height="9.6" rx=".85"/></svg>',

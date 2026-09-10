@@ -1,40 +1,30 @@
-//! Write the reference observation set admission validates against.
+//! Write the reference observation set admission validates an adapter against.
 //!
-//! The loader reads `ants/reference/observations.json` and falls back, with a warning, to a single
-//! observation from Axon's test fixture when it is missing. That fallback is the gate being narrow
-//! in the one place narrowness is dangerous: an adapter is admitted on the strength of these
-//! payloads, so **what is not in them is not checked**.
-//!
-//! So the default is a spread rather than a sample: every preset, and each at an early turn and a
-//! busy one. The book asks a competitor to test "every preset size, sparse and crowded positions,
-//! no visible enemies or food, fragmented known water, and ants near wrapping borders"; a gate
-//! that tested one 128x128 mid-game board would be asking for more than it checks.
+//! **What is not in this file is not checked.** An adapter is admitted on the strength of these
+//! payloads alone, so the default is a spread rather than a sample: every preset, and each at an
+//! early turn and a busy one. A gate that tested one 128x128 mid-game board would be asking a
+//! competitor for more than it checks.
 //!
 //!     cargo run --bin reference > reference/observations.json
 //!     cargo run --bin reference -- --only cell:20260908:600
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let only: Vec<String> = args
-        .iter()
-        .position(|a| a == "--only")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| s.split(',').map(str::to_string).collect())
-        .unwrap_or_default();
+mod args;
 
-    // preset : seed : turn. An early turn is the sparse case -- one ant, nothing known, no enemy --
-    // and a late one is the crowded case, where the known-water run-length encoding is at its most
-    // fragmented and an observation is at its largest.
-    let default = [
-        "standard:20260908:20",
-        "standard:20260908:400",
-        "maze:20260908:400",
-        "cell:20260908:20",
-        "cell:20260908:600",
-    ];
-    let specs: Vec<String> = if only.is_empty() {
-        default.iter().map(|s| s.to_string()).collect()
-    } else {
-        only
+/// `preset:seed:turn`. An early turn is the sparse case — one ant, nothing known, no enemy — and a
+/// late one is the crowded case, where the known-water run-length encoding is at its most
+/// fragmented and an observation is at its largest.
+const DEFAULT: [&str; 5] = [
+    "standard:20260908:20",
+    "standard:20260908:400",
+    "maze:20260908:400",
+    "cell:20260908:20",
+    "cell:20260908:600",
+];
+
+fn main() {
+    let a = args::Args::new();
+    let specs: Vec<String> = match a.get("--only") {
+        Some(s) => s.split(',').map(str::to_string).collect(),
+        None => DEFAULT.iter().map(|s| s.to_string()).collect(),
     };
 
     let mut observations = Vec::new();
@@ -45,12 +35,9 @@ fn main() {
             eprintln!("reference: '{spec}' is not preset:seed:turn");
             std::process::exit(2);
         }
-        let (preset, seed, turn) = (
-            parts[0],
-            parts[1].parse::<u64>().unwrap_or(0),
-            parts[2].parse::<u16>().unwrap_or(0),
-        );
-        match tb_ants::reference_observations(preset, seed, turn) {
+        let seed = parts[1].parse::<u64>().unwrap_or(0);
+        let turn = parts[2].parse::<u16>().unwrap_or(0);
+        match tb_ants::reference_observations(parts[0], seed, turn) {
             Some(v) => {
                 from.push(v["generated_from"].clone());
                 if let Some(a) = v["observations"].as_array() {
@@ -58,7 +45,7 @@ fn main() {
                 }
             }
             None => {
-                eprintln!("reference: no preset '{preset}', or it is played on no board");
+                eprintln!("reference: no preset '{}', or it is played on no board", parts[0]);
                 std::process::exit(2);
             }
         }

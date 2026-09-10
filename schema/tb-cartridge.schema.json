@@ -156,12 +156,61 @@
      "food_target": {
       "type": "integer",
       "minimum": 0,
-      "description": "How much food this board is kept stocked with, for the whole match."
+      "description": "How much food this board carries at turn zero."
      },
      "sha256": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "Over the map file exactly as committed, so a stale exported copy is detectable."
+     }
+    }
+   }
+  },
+  "about": {
+   "type": "object",
+   "description": "Optional. What the game says about itself, for a page that lists cartridges. The one hand-written part of this document, and here rather than in the website so a second cartridge can introduce itself without a web deploy. Every value is plain text: this is registered from a repository and rendered in a browser, and a manifest that could carry markup could carry a script tag.",
+   "required": [
+    "tagline",
+    "provenance",
+    "story",
+    "links"
+   ],
+   "additionalProperties": false,
+   "properties": {
+    "tagline": {
+     "type": "string",
+     "description": "One line, for a card."
+    },
+    "provenance": {
+     "type": "string",
+     "description": "Where the game comes from."
+    },
+    "story": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Paragraphs. Prose says whatever a game needs; a schema cannot."
+    },
+    "links": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "label",
+       "href"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "label": {
+        "type": "string"
+       },
+       "href": {
+        "type": "string",
+        "pattern": "^https://",
+        "description": "https only; the loader registers this and a browser follows it."
+       }
+      }
      }
     }
    }

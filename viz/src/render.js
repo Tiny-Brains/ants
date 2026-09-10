@@ -5,26 +5,16 @@
 //   { turn, size: [rows, cols], water: { rle }, ants: [[r, c, owner]], food: [[r, c]],
 //     hills: [[r, c, owner]], score: [], ranks: [], done }
 //
-// # Two things the board owes the reader
-//
-// **The terrain is drawn once.** Water never changes, so it is painted into an offscreen canvas at
-// one pixel per cell and then scaled. That is what makes zooming and panning cost nothing: the
-// per-frame work is the ants, the food and the hills, which are tens of shapes rather than sixteen
+// The terrain is drawn once, into an offscreen canvas at one pixel per cell, and then scaled — so
+// zooming and panning cost nothing and the per-frame work is tens of shapes rather than sixteen
 // thousand cells.
 //
-// **The board keeps its own colours.** A viewer's chrome follows the page's theme; the board does
-// not, any more than a video changes colour with the player around it. A match looks like itself.
-// The palette below is drawn from the platform's own blues so the board belongs to TinyBrains in
-// either theme, but every value here is a literal: a token would make a match change colour when
-// the reader flipped the page, which is exactly what this rule forbids.
+// Every colour here is a literal. The board keeps its palette in both themes: a match has to look
+// like itself, and a token would make one change colour when the reader flipped the page.
 
-/// Seat colours. Two is the case that exists; the rest are here so a four-seat board is not a bug.
-///
-/// They are drawn on three grounds and have to read on all of them: the board's land, the seat
-/// chips in the tray, and the event marks on the timeline's rail. That is what makes them bright
-/// rather than deep -- a seat colour tuned only for the land vanished on the rail in dark mode.
-/// The hues answer the platform's logo regions without being taken from the tokens: a match keeps
-/// its colours when the page changes theme, so these cannot be variables.
+/** Seat colours. Two is the case that exists; the rest are here so a four-seat board is not a bug.
+ *  They have to read on three grounds — the board's land, the seat chips, and the timeline's rail —
+ *  which is what makes them bright rather than deep. */
 export const SEATS = [
   "#FF6B41", // ember
   "#5AB0FF", // azure
@@ -73,13 +63,10 @@ export class Renderer {
     this.ox = 0; // pan, in canvas pixels
     this.oy = 0;
     this.showGrid = true;
-    // Whether the board should keep filling the viewport as it resizes. True until someone zooms
-    // or pans, because until then "fit" is what they asked for and a resize should honour it.
-    //
-    // It is a flag rather than a comparison against `fitScale()` on purpose: the first `resize`
-    // runs while the canvas is still zero-sized, so that comparison is against a fit scale of
-    // zero, concludes the view was not fitted, and leaves the board at its constructor default --
-    // which is how a 96x96 board opened at four pixels a cell in a 900-pixel frame.
+    // Whether the board should keep filling the viewport as it resizes, true until someone zooms
+    // or pans. A flag rather than a comparison against `fitScale()`, because the first `resize`
+    // runs while the canvas is still zero-sized and that comparison would conclude the view was
+    // never fitted — which is how a 96x96 board once opened at four pixels a cell.
     this.fitted = true;
   }
 

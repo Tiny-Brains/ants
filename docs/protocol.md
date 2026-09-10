@@ -19,9 +19,9 @@ same way, since the SDK drives the loop and knows the last state it sent.
 | Path | What it is |
 |---|---|
 | `schema/tb-cartridge.schema.json` | The platform's **only** schema. Read once, at registration. |
-| `schema/ants/` | The reference game: `state.schema.json`, `action.schema.json`, three worked examples |
-| `schema/examples/{tron,planetwars}.json` | Comparison sketches |
-| `schema/validate.py` | 3 cartridges · 19 rejects · 3 state/action pairs · 17 rejects · 12 cross-field · 3 properties |
+| `schema/state.schema.json`, `schema/action.schema.json` | The reference game, with three worked examples under `schema/examples/` |
+| `schema/other-games/{tron,planetwars}.json` | Comparison sketches: what the platform schema has to accept from a game that is not Ants |
+| `schema/validate.py` | Runs all of it: cartridges, their rejects, the state/action pairs, the cross-field invariants and the observer-relative property. `build.sh` runs it when `jsonschema` is installed |
 
 ---
 
@@ -172,7 +172,7 @@ action  [[0,1,20],[4,3,9],[0,3,6]]
 
 ## 6. The game's schemas are documentation
 
-`schema/ants/state.schema.json` and `action.schema.json` are written by the game developer and
+`schema/state.schema.json` and `schema/action.schema.json` are written by the game developer and
 published for model developers. **The platform never loads them.** They are checked in CI because
 the game developer is the platform owner and a broken example helps nobody — not because anything
 at runtime depends on them.
