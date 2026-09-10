@@ -465,7 +465,10 @@ fn a_view_is_observer_relative() {
 
     // And the labels are the ones state.schema.json promises: yourself 0, an opponent 1 upward.
     let v = crate::observe::view(&straight, 1);
-    let own: Vec<i64> = v["hills"].as_array().unwrap().iter()
+    let own: Vec<i64> = v["hills"]
+        .as_array()
+        .unwrap()
+        .iter()
         .filter(|h| h[0] == json!(5) && h[1] == json!(8))
         .map(|h| h[2].as_i64().unwrap())
         .collect();

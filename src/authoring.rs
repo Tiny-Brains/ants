@@ -4,12 +4,12 @@
 //! `mapfile::build` is what a match actually opens from. None of it is reachable from a plugin
 //! call, so the linker leaves it out of the component.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::codec::{pack, Wave};
-use crate::map::{self, Bits, Geom, Preset, Rng, DIRS, DIR_NAMES, SPAWN_RADIUS2};
+use crate::codec::{Wave, pack};
+use crate::map::{self, Bits, DIR_NAMES, DIRS, Geom, Preset, Rng, SPAWN_RADIUS2};
 use crate::state::Match;
-use crate::{mapfile, turn, MAX_TURNS};
+use crate::{MAX_TURNS, mapfile, turn};
 
 /// The presets, for the registration manifest. `src/bin/manifest.rs` generates `cartridge.json`
 /// from this, so the manifest and the engine cannot disagree about how many seats a map is played
@@ -88,24 +88,26 @@ fn greedy_orders(m: &Match, seat: u8, rng: &mut Rng) -> Vec<String> {
         if let Some(f) = target {
             claimed.push(f);
         }
-        orders.push(match target {
-            Some(f) if m.g.dist2(pos, f) > 0 => {
-                // Whichever of the four steps ends up closest; ties fall to the first, which is
-                // stable and therefore reproducible.
-                let (r, c) = m.g.rc(pos);
-                let best = DIRS
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, (dr, dc))| m.g.dist2(m.g.at(r + dr, c + dc), f))
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                DIR_NAMES[best]
+        orders.push(
+            match target {
+                Some(f) if m.g.dist2(pos, f) > 0 => {
+                    // Whichever of the four steps ends up closest; ties fall to the first, which is
+                    // stable and therefore reproducible.
+                    let (r, c) = m.g.rc(pos);
+                    let best = DIRS
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|(_, (dr, dc))| m.g.dist2(m.g.at(r + dr, c + dc), f))
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    DIR_NAMES[best]
+                }
+                // Nothing visible: wander, so the colony covers ground rather than sitting on a hill
+                // and knowing nothing about the board.
+                _ => DIR_NAMES[rng.below(4) as usize],
             }
-            // Nothing visible: wander, so the colony covers ground rather than sitting on a hill
-            // and knowing nothing about the board.
-            _ => DIR_NAMES[rng.below(4) as usize],
-        }
-        .to_string());
+            .to_string(),
+        );
     }
     orders
 }

@@ -38,7 +38,8 @@ fn losing_every_hill_does_not_eliminate_you() {
     assert!(m.alive(0), "still alive with every hill razed");
     assert_eq!(m.ants_of(0).count(), 1, "and the ant is still on the board");
     assert_ne!(
-        state::END_REASONS[m.reason as usize], "extermination",
+        state::END_REASONS[m.reason as usize],
+        "extermination",
         "losing hills is not elimination"
     );
 }

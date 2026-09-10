@@ -92,18 +92,29 @@ This is a plugin, so there is no server to start. All commands run from this rep
 - No database, object store, or running platform is needed for the host tests.
 
 ```sh
-./build.sh          # the whole gate, then every committed artifact
+./build.sh          # the whole gate, then every artifact, locally
+docker build -t tinybrains/ants:dev .   # the artifact image -- what actually ships
 ./deny.sh           # just the source-level determinism check
-cargo test          # just the host suite -- 74 tests
+cargo test          # just the host suite -- 75 tests
 ```
 
 `build.sh` runs `deny.sh` and the tests before it compiles anything, then writes `tb-ants.wasm`,
 `plugin.json`, `cartridge.json`, `src/maps_gen.rs` and `reference/observations.json`, and prints the
-engine digest the platform will load the component under. Commit rebuilt artifacts with the source
-change that caused them, so downstream vendoring receives one version.
+engine digest the platform will load the component under.
 
-A rebuilt component is a **new engine digest**, which Kalam's vendored copy,
-`games.active_engine_digest`, the season and the plugin signatures all have to move with.
+**None of that output is committed.** It ships in the artifact image `Dockerfile` builds, under
+`/artifacts/`: the component, its manifests, the board catalogue, the reference observations and the
+built viewer. Consumers name an image rather than a path — `tinybrains/ants:dev` built from this
+directory, or `ghcr.io/tiny-brains/ants:<tag>` pulled — so no one needs this repository checked out
+beside theirs. What `build.sh` writes locally is for working here.
+
+The image pins rustc exactly and remaps build paths, because rustc bakes the absolute path of every
+source file a panic can name into the binary: without that, the digest is a fingerprint of the
+machine rather than of the source. `docker build --no-cache` lands on the same digest every time.
+Build it **once** and let every consumer take that image.
+
+A rebuilt component is a **new engine digest**, which `games.active_engine_digest`, the season and
+the plugin signatures all have to move with.
 
 The optional measurement test is `cargo test measure_what_random_play_produces -- --nocapture`. It
 samples random play; its outcomes are diagnostics rather than balance guarantees.
@@ -117,21 +128,22 @@ src/state.rs         a match while it is played, and food at the hidden rate
 src/turn.rs          turn resolution and ending conditions
 src/observe.rs       visibility and per-seat observations
 src/mapfile.rs       the board as a file: parsing, validation, the catalogue
-src/maps_gen.rs      generated: every committed board, compiled in
+src/maps_gen.rs      generated (gitignored): every board under maps/, compiled in
 src/codec.rs         packed wave-state encoding
 src/replay.rs        action recording and replay reconstruction
 src/authoring.rs     host-only: the board factory and the artifact generators
 src/bin/             manifest, mapgen, reference -- the three generators
 src/tests/           the host suite, one file per area
 maps/                the boards themselves, one JSON file each
-reference/           the observation set admission validates an adapter against
+reference/           generated (gitignored): the observations admission validates against
 tests/fixtures/      a replay the platform actually wrote, for the decode test
 tools/               build steps: embed the boards, write the manifests, report
 schema/              JSON Schemas, worked examples, and validate.py
 viz/                 the viewer: one bundle for the web app, the book, and the CLI
 plugin.toml          authored Orion ABI declaration
 deny.sh              source check for floating-point game logic
-build.sh             the gate, then every committed artifact
+build.sh             the gate, then every artifact, locally
+Dockerfile           the artifact image: the build that actually ships
 ```
 
 ## What must stay true
@@ -151,6 +163,28 @@ build.sh             the gate, then every committed artifact
 
 ## Status
 
+**10 September 2026 — the build output left git, and the crate moved to edition 2024.** Nothing
+generated is committed any more: `tb-ants.wasm`, `plugin.json`, `cartridge.json`, `src/maps_gen.rs`,
+`reference/observations.json` and `viz/dist/` are gitignored and ship in the artifact image
+`Dockerfile` builds, under `/artifacts/`. Consumers name an image — `tinybrains/ants:dev` built from
+here, `ghcr.io/tiny-brains/ants:<tag>` pulled — instead of reading a sibling checkout, so this
+repository no longer has to sit beside theirs.
+
+That made a latent problem visible: **the component this repository used to commit was not
+reproducible by anyone else.** rustc bakes the absolute path of every source file a panic can name
+into the binary, so the committed artifact carried one machine's `~/.cargo` and `~/.rustup` paths.
+The image pins rustc exactly (`rust:1.98-trixie` floats to the newest patch, and a patch bump moves
+the bytes) and passes `--remap-path-prefix`, so the digest is a function of the source;
+`docker build --no-cache` lands on the same one every time.
+
+The crate is now **edition 2024**. `cargo fix --edition` took two match-ergonomics fixes in
+`turn.rs`, clippy took two `collapsible_if` sites into let-chains (`lib.rs`, `turn.rs`), and
+`rustfmt.toml` was added — the same `max_width = 100` / `use_small_heuristics = "Max"` axon uses,
+because without it `cargo fmt` reformats every file away from the style this crate is written in.
+`cargo test` (75), `cargo clippy -D warnings` on both targets, `cargo audit` and `deny.sh` are clean.
+**The engine digest moved**, as any rebuild does; `cartridge.json` and `reference/observations.json`
+are byte-identical across the change, which is what says no rule moved with it.
+
 **Decision 46, 10 September 2026 — no compute cap.** `cartridge.json` declares `adapter_ops_max`
 alone; `budgets.flop_caps` is gone from the manifest, from `schema/tb-cartridge.schema.json`'s
 `required` block (a manifest still declaring one is now refused, not ignored), and from both
@@ -158,7 +192,7 @@ alone; `budgets.flop_caps` is gone from the manifest, from `schema/tb-cartridge.
 `src/bin/manifest.rs` changed, so **the component and the engine digest are untouched.**
 
 **9 September 2026.** The five exports and the committed component are implemented and `cargo test`
-passes 74 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
+passes 75 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
 build time and compiled in, with the seed choosing within a preset's pool. A replay carries the
 board it was played on, and the decode test runs against an envelope the local stack actually wrote.
 The viewer ships as one bundle for the web application, the book and `tinybrains view`, styled to

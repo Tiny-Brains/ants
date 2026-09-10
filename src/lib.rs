@@ -40,8 +40,8 @@ mod turn;
 mod authoring;
 pub use authoring::{generate_map, presets, reference_observations};
 
-use codec::{pack, unpack, Wave};
-use serde_json::{json, Value};
+use codec::{Wave, pack, unpack};
+use serde_json::{Value, json};
 
 #[derive(Debug, PartialEq)]
 pub struct Fault {
@@ -73,10 +73,9 @@ pub fn invoke(function: &str, input: Value) -> Result<Value, Fault> {
         "tb.ants.step" => f_step(&input),
         "tb.ants.finish" => f_finish(&input),
         "tb.ants.replay-decode" => f_replay_decode(&input),
-        other => Err(Fault::new(
-            "UNKNOWN_FUNCTION",
-            format!("this component exports no '{other}'"),
-        )),
+        other => {
+            Err(Fault::new("UNKNOWN_FUNCTION", format!("this component exports no '{other}'")))
+        }
     }
 }
 
@@ -127,13 +126,13 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
 
         // Seats are a property of the map, so the map is what a caller's `players` is checked
         // against — refused rather than quietly seated short.
-        if let Some(players) = asked_players {
-            if players != mf.players as u64 {
-                return Err(Fault::new(
-                    "PLAYER_COUNT",
-                    format!("map '{}' is played at {} seats, not {players}", mf.id, mf.players),
-                ));
-            }
+        if let Some(players) = asked_players
+            && players != mf.players as u64
+        {
+            return Err(Fault::new(
+                "PLAYER_COUNT",
+                format!("map '{}' is played at {} seats, not {players}", mf.id, mf.players),
+            ));
         }
         matches.push(mf.build(seed, max_turns).map_err(|e| Fault::new(e.code, e.message))?);
     }
@@ -291,14 +290,13 @@ fn f_replay_decode(input: &Value) -> Result<Value, Fault> {
 
 #[cfg(target_arch = "wasm32")]
 mod exported {
-    use orion_plugin_sdk::{export_plugin, serde_json::Value, Plugin, PluginError};
+    use orion_plugin_sdk::{Plugin, PluginError, export_plugin, serde_json::Value};
 
     struct TbAnts;
 
     impl Plugin for TbAnts {
         fn invoke(function: &str, input: Value) -> Result<Value, PluginError> {
-            super::invoke(function, input)
-                .map_err(|f| PluginError::caller_input(f.code, f.message))
+            super::invoke(function, input).map_err(|f| PluginError::caller_input(f.code, f.message))
         }
     }
 

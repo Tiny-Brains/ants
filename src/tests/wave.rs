@@ -49,8 +49,11 @@ fn wave_state_round_trips_exactly_after_a_played_turn() {
     for _ in 0..25 {
         let views = invoke("tb.ants.observe", json!({"wave_state": &state})).unwrap();
         let acts = random_actions(&views, &mut rng);
-        state = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap()
-            ["wave_state"]
+        state = invoke(
+            "tb.ants.step",
+            json!({"wave_state": &state, "actions": acts}),
+        )
+        .unwrap()["wave_state"]
             .as_str()
             .unwrap()
             .to_string();
@@ -81,10 +84,7 @@ fn an_action_array_is_as_long_as_mine() {
     let n = views["views"][0]["view"]["mine"].as_array().unwrap().len();
     assert!(n > 0);
     let short = json!([json!([]), json!([])]);
-    let out = invoke(
-        "tb.ants.step",
-        json!({"wave_state": w["wave_state"], "actions": short}),
-    );
+    let out = invoke("tb.ants.step", json!({"wave_state": w["wave_state"], "actions": short}));
     assert!(out.is_ok(), "a short action array is every remaining ant holding, not a fault");
 }
 
@@ -124,10 +124,8 @@ fn actions_may_be_positional_or_explicit_and_they_agree() {
     let views = invoke("tb.ants.observe", json!({"wave_state": s})).unwrap();
     let vs = views["views"].as_array().unwrap();
 
-    let positional: Vec<Value> = vs
-        .iter()
-        .map(|v| json!(vec!["N"; v["view"]["mine"].as_array().unwrap().len()]))
-        .collect();
+    let positional: Vec<Value> =
+        vs.iter().map(|v| json!(vec!["N"; v["view"]["mine"].as_array().unwrap().len()])).collect();
     let explicit: Vec<Value> = vs
         .iter()
         .map(|v| {
@@ -150,10 +148,7 @@ fn actions_may_be_positional_or_explicit_and_they_agree() {
 #[test]
 fn refusals() {
     assert_eq!(invoke("tb.ants.nope", json!({})).unwrap_err().code, "UNKNOWN_FUNCTION");
-    assert_eq!(
-        invoke("tb.ants.worldgen", json!({"seeds": []})).unwrap_err().code,
-        "NO_SEEDS"
-    );
+    assert_eq!(invoke("tb.ants.worldgen", json!({"seeds": []})).unwrap_err().code, "NO_SEEDS");
     assert_eq!(
         invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "nope"})).unwrap_err().code,
         "NO_SUCH_PRESET"
@@ -173,9 +168,11 @@ fn refusals() {
 
 #[test]
 fn a_wave_plays_to_an_end_and_finishes_with_ranks() {
-    let w = invoke("tb.ants.worldgen",
-                   json!({"seeds": [31, 32, 33, 34], "preset": "standard", "max_turns": 300}))
-        .unwrap();
+    let w = invoke(
+        "tb.ants.worldgen",
+        json!({"seeds": [31, 32, 33, 34], "preset": "standard", "max_turns": 300}),
+    )
+    .unwrap();
     let mut state = w["wave_state"].as_str().unwrap().to_string();
     let mut rng = Rng(99);
     let mut turns = 0;
@@ -185,8 +182,14 @@ fn a_wave_plays_to_an_end_and_finishes_with_ranks() {
             break;
         }
         let acts = random_actions(&views, &mut rng);
-        state = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap()
-            ["wave_state"].as_str().unwrap().to_string();
+        state = invoke(
+            "tb.ants.step",
+            json!({"wave_state": &state, "actions": acts}),
+        )
+        .unwrap()["wave_state"]
+            .as_str()
+            .unwrap()
+            .to_string();
         turns += 1;
         assert!(turns <= 301, "the wave did not terminate");
     }

@@ -30,7 +30,7 @@
 //! `foes`, `food` and `hills` are strictly what is visible this turn — which is not an
 //! inconsistency but the rules: only water is permanent.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::map::{Bits, Geom};
 use crate::state::Match;

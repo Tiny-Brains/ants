@@ -1,13 +1,14 @@
 #!/bin/sh
-# Build the viewer into viz/dist, which is committed exactly as tb-ants.wasm is.
+# Build the viewer into viz/dist, which ships in the artifact image exactly as tb-ants.wasm does.
 #
 # Two steps and no bundler. `jco transpile` turns the component into an ES module the browser can
 # import -- so the browser re-simulates through THE SAME CARTRIDGE the referee used, which is the
 # whole reason the determinism law exists. The rest of the viewer is already ES modules, so it is
 # copied rather than compiled.
 #
-# Committing dist/ is what keeps Node off everyone else's critical path: only someone changing the
-# viewer needs it, exactly as only someone changing the engine needs the wasm toolchain.
+# Shipping dist/ in the image is what keeps Node off everyone else's critical path: only someone
+# changing the viewer runs this, exactly as only someone changing the engine needs the wasm
+# toolchain. ../Dockerfile runs it in a node stage and carries the result under /artifacts/viz/.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"

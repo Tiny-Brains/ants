@@ -9,9 +9,9 @@
 //! guarantee moves here, to `validate`, which every map passes through before it is played. Its
 //! refusals are `caller_input`: the same map can never succeed, so nothing retries it.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::map::{Bits, Geom, Symmetry, SPAWN_RADIUS2};
+use crate::map::{Bits, Geom, SPAWN_RADIUS2, Symmetry};
 use crate::state::Match;
 
 /// A board, in the shape the JSON file has.
@@ -61,9 +61,9 @@ fn u8_field(v: &Value, k: &str) -> Result<u8, MapError> {
 fn pairs(v: &Value, k: &str) -> Result<Vec<(i32, i32)>, MapError> {
     let a = match v.get(k) {
         None => return Ok(Vec::new()),
-        Some(x) => x
-            .as_array()
-            .ok_or_else(|| err("MAP_BAD_SHAPE", format!("'{k}' must be an array")))?,
+        Some(x) => {
+            x.as_array().ok_or_else(|| err("MAP_BAD_SHAPE", format!("'{k}' must be an array")))?
+        }
     };
     let mut out = Vec::with_capacity(a.len());
     for (i, e) in a.iter().enumerate() {
@@ -167,7 +167,10 @@ impl MapFile {
         if i != cells {
             return Err(err(
                 "MAP_BAD_SHAPE",
-                format!("'water' covers {i} cells; a {}x{} board has {cells}", self.rows, self.cols),
+                format!(
+                    "'water' covers {i} cells; a {}x{} board has {cells}",
+                    self.rows, self.cols
+                ),
             ));
         }
         Ok(b)

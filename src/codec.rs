@@ -211,11 +211,31 @@ pub fn unpack(s: &str) -> Option<Wave> {
         }
 
         matches.push(Match {
-            seed, turn, max_turns, players, g,
+            seed,
+            turn,
+            max_turns,
+            players,
+            g,
             sym: Symmetry::for_preset(&g, players),
-            done, reason, water, known, ants, food, hills, hive, score,
-            cutoff_bot, cutoff_turns, map_id, food0,
-            food_rate, food_turn, food_extra, food_rotation, food_cursor, pending_food,
+            done,
+            reason,
+            water,
+            known,
+            ants,
+            food,
+            hills,
+            hive,
+            score,
+            cutoff_bot,
+            cutoff_turns,
+            map_id,
+            food0,
+            food_rate,
+            food_turn,
+            food_extra,
+            food_rotation,
+            food_cursor,
+            pending_food,
         });
     }
     Some(Wave { matches })

@@ -21,7 +21,9 @@ All from this repository's root. Needs stable Rust, the `wasm32-unknown-unknown`
 `wasm-tools`, and Python 3.11+ (`tomllib`). `jsonschema` and Node are optional (schema check, viz).
 
 ```sh
-./build.sh          # the whole gate, then every committed artifact
+./build.sh          # the whole gate, then every artifact (local only; not committed)
+docker build -t tinybrains/ants:dev .   # the artifact image -- the build that ships
+cargo fmt --check && cargo clippy --all-targets -- -D warnings   # edition 2024; rustfmt.toml matches axon's
 ./deny.sh           # just the determinism check (no floating point in game logic)
 cargo test          # just the host suite -- 74 tests, ~20s
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
@@ -41,7 +43,7 @@ cargo run --bin reference > reference/observations.json    # -- --only cell:2026
 cargo run --bin mapgen -- --preset cell --seed 7 --id cell-07 > maps/cell-07.json
 ```
 
-The viewer (`viz/`) has its own toolchain and its own committed `dist/`:
+The viewer (`viz/`) has its own toolchain and its own `dist/` (gitignored; built into the image):
 
 ```sh
 cd viz && ./build.sh   # jco transpile + copy + geometry checks; writes dist/ and dist/engine.json
@@ -98,11 +100,19 @@ A *wave* is many matches advanced together in one call.
 
 ## What breaks if you forget it
 
-- **Generated artifacts are the shipped artifacts, and they are committed**: `tb-ants.wasm`,
-  `plugin.json`, `cartridge.json`, `src/maps_gen.rs`, `reference/observations.json`, and
-  `viz/dist/`. A source change without its regenerated output ships a stale package and nothing at
-  runtime notices. Run `./build.sh` (and `viz/build.sh` if the component or viewer changed) and
-  commit the output with the change that caused it.
+- **Generated artifacts are the shipped artifacts, and they are NOT committed**: `tb-ants.wasm`,
+  `plugin.json`, `cartridge.json`, `src/maps_gen.rs`, `reference/observations.json` and `viz/dist/`
+  are gitignored. They ship in the artifact image `Dockerfile` builds — `tinybrains/ants:dev`
+  locally, `ghcr.io/tiny-brains/ants:<tag>` published — under `/artifacts/`, and every consumer
+  takes them from there rather than from a sibling checkout of this directory. `./build.sh` still
+  writes them locally and is still what you run while working here; it is no longer what ships.
+- **The image is the build, and the digest is reproducible.** `Dockerfile` pins rustc *exactly*
+  (`rust:1.98-trixie` floats to the newest patch, and a patch bump moves the component's bytes) and
+  passes `--remap-path-prefix`, because rustc bakes the absolute path of every source file a panic
+  can name into the binary. Without that the digest is a fingerprint of the machine that built it:
+  the component this repository used to commit carried one developer's `~/.cargo` path, and nobody
+  else could reproduce it. `docker build --no-cache` now lands on the same digest every time — so
+  build it **once** and have every consumer take that image, rather than each running this build.
 - **A rebuilt component is a new engine digest.** Kalam's vendored copy,
   `games.active_engine_digest`, the season, the plugin signatures, and `viz/dist/engine.json` all
   have to move with it. Say so in the commit and in README Status.

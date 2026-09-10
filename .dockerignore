@@ -1,0 +1,15 @@
+# The build tree, and the artifacts this image exists to produce. Copying either in would let a
+# stale local build shadow the one this Dockerfile makes -- the exact failure the image removes.
+#
+# reference/ is excluded by FILE, not by directory: build.sh redirects `cargo run --bin reference`
+# into reference/observations.json, and a redirect into a directory that is not there fails.
+target/
+tb-ants.wasm
+plugin.json
+cartridge.json
+reference/observations.json
+viz/dist/
+src/maps_gen.rs
+
+.git/
+.run/

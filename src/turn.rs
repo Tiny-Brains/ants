@@ -6,9 +6,9 @@
 //! because razing runs after the fighting. A cartridge that resolved these steps in a different
 //! order would be a different game with the same rules text.
 
-use crate::map::{dir_of, Bits, ATTACK_RADIUS2, SPAWN_RADIUS2};
+use crate::map::{ATTACK_RADIUS2, Bits, SPAWN_RADIUS2, dir_of};
 use crate::state::{
-    spawn_food, Ant, Match, CUTOFF_FOOD, CUTOFF_NONE, CUTOFF_PERCENT, STALEMATE_TURNS,
+    Ant, CUTOFF_FOOD, CUTOFF_NONE, CUTOFF_PERCENT, Match, STALEMATE_TURNS, spawn_food,
 };
 
 /// Advance one match by one turn. `moves[seat]` is that seat's action array, positionally aligned
@@ -122,11 +122,10 @@ fn battle(m: &mut Match) -> Vec<u16> {
         }
     }
     let focus: Vec<usize> = facing.iter().map(|f| f.len()).collect();
-    let dead: Vec<bool> =
-        (0..n).map(|i| facing[i].iter().any(|&j| focus[j] <= focus[i])).collect();
+    let dead: Vec<bool> = (0..n).map(|i| facing[i].iter().any(|&j| focus[j] <= focus[i])).collect();
 
-    let died = m.ants.iter().zip(&dead).filter(|(_, &d)| d).map(|(a, _)| a.pos).collect();
-    m.ants = m.ants.iter().zip(&dead).filter(|(_, &d)| !d).map(|(a, _)| *a).collect();
+    let died = m.ants.iter().zip(&dead).filter(|&(_, &d)| d).map(|(a, _)| a.pos).collect();
+    m.ants = m.ants.iter().zip(&dead).filter(|&(_, &d)| !d).map(|(a, _)| *a).collect();
     died
 }
 
@@ -140,7 +139,9 @@ fn raze(m: &mut Match) {
     let mut razings: Vec<(usize, u8, u8)> = Vec::new(); // hill, owner, razer
     let mut touched: Vec<usize> = Vec::new();
     for (hi, h) in m.hills.iter().enumerate() {
-        let Some(a) = m.ants.iter().find(|a| a.pos == h.pos) else { continue };
+        let Some(a) = m.ants.iter().find(|a| a.pos == h.pos) else {
+            continue;
+        };
         if a.owner == h.owner {
             touched.push(hi);
         } else if !h.razed {
@@ -212,10 +213,10 @@ pub(crate) fn gather(m: &mut Match) {
         let mut claimants: Vec<u8> = Vec::new();
         for (dr, dc) in &disk {
             let p = m.g.at(fr + dr, fc + dc);
-            if let Some(a) = m.ants.iter().find(|a| a.pos == p) {
-                if !claimants.contains(&a.owner) {
-                    claimants.push(a.owner);
-                }
+            if let Some(a) = m.ants.iter().find(|a| a.pos == p)
+                && !claimants.contains(&a.owner)
+            {
+                claimants.push(a.owner);
             }
         }
         match claimants.len() {

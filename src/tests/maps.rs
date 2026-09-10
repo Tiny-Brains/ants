@@ -55,8 +55,11 @@ fn the_seed_chooses_the_board_and_the_caller_may_pin_it() {
 
     let ids = |input: serde_json::Value| -> Vec<String> {
         invoke("tb.ants.worldgen", input).unwrap()["map_ids"]
-            .as_array().unwrap().iter()
-            .map(|v| v.as_str().unwrap().to_string()).collect()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
     };
 
     // Deterministic, and a function of the seed alone.
@@ -89,7 +92,9 @@ fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     let base = crate::mapfile::pool("cell")[0].clone();
     let code = |mf: &crate::mapfile::MapFile| -> String {
         invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": mf.to_json()}))
-            .unwrap_err().code.to_string()
+            .unwrap_err()
+            .code
+            .to_string()
     };
 
     // One cell of water that has no counterpart.
@@ -112,8 +117,11 @@ fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     let mut frugal = base.clone();
     frugal.food_target = 0;
     assert!(
-        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": frugal.to_json()}))
-            .is_ok(),
+        invoke(
+            "tb.ants.worldgen",
+            json!({"seeds": [1], "preset": "cell", "map": frugal.to_json()})
+        )
+        .is_ok(),
         "a board may hold more food than it keeps stocked"
     );
 
@@ -143,7 +151,8 @@ fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     // And an unknown board is a refusal, not a silently substituted one.
     assert_eq!(
         invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "cell", "map": "no-such-map"}))
-            .unwrap_err().code,
+            .unwrap_err()
+            .code,
         "NO_SUCH_MAP"
     );
 }

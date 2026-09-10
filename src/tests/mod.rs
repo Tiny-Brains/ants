@@ -17,7 +17,7 @@ use crate::map::{Bits, Geom, Rng};
 use crate::state::{Ant, Hill, Match};
 use crate::turn::step;
 use crate::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A hand-built match, so a rule can be tested in isolation rather than fished out of a real game:
 /// no water, no food, no hills unless the test adds them, and no food spawning — `food_rate: 0` is

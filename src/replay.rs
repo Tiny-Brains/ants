@@ -12,7 +12,7 @@
 //! `seed` is still required: the map fixes the board, but the seed drives the hidden food rate and
 //! every respawn, so a replay missing its seed re-simulates a different match on the same terrain.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::mapfile::MapFile;
 use crate::observe::{rc, rc_owned};
