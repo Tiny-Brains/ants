@@ -2,16 +2,18 @@
 //
 // It behaves like a media player because that is what watching a match is — transport buttons, a
 // timeline you can click and drag, playback speed, and a keyboard that does what a keyboard does in
-// a player. Two things it does that a video player cannot: the timeline is annotated, so a hill
-// razed or a colony wiped out can be found without scrubbing for it; and the board can be
-// inspected, because a replay is evidence about a model's decisions and the question is usually
-// "why did it do that, there".
+// a player. One thing it does that a video player cannot: the timeline is annotated, so a hill razed
+// or a colony wiped out can be found without scrubbing for it. And two things are drawn over the
+// board to say where to look: a ring around any hill an enemy is within eight moves of, and -- on a
+// toggle -- the territory each seat has explored, from the engine's own record of what it saw.
 //
 // Three rules this file keeps.
 //
-// **The board gets the whole frame; the readouts are a tray.** Only the transport bar is always on
-// screen. Everything else lives in a layer over the stage that appears on hover, on keyboard focus,
-// and on a touch — the way a video player's chrome does. `chrome: "always"` pins it open.
+// **Two bars and a board.** The seats are a title bar above the board and the transport a bar below
+// it, and both are always on screen: who is playing and what the score is are read the whole way
+// through a match, so they are not something to go and find. The tools -- zoom and the territory
+// toggle -- are the only layer over the stage, and appear on hover, on keyboard focus and on a
+// touch, the way a video player's chrome does. `chrome: "always"` pins them open.
 //
 // **The chrome follows the page; the board does not.** Every colour of the frame is one of the
 // platform's design tokens with a written-out fallback, so the player is the colour of the card it
@@ -24,7 +26,7 @@
 // unscoped `.tb-bar` in here once landed on the web application's own header.
 
 import { allFrames } from "./engine.js";
-import { Renderer, SEATS } from "./render.js";
+import { Renderer, SEATS, expandRle } from "./render.js";
 
 const CSS = `
 .tb-viz{
@@ -80,6 +82,28 @@ const CSS = `
 .tb-viz:focus{outline:none}
 .tb-viz:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
 
+/* ---------- the title bar: every seat, always on screen ----------
+   Colour, name and score first, and never squeezed out; whose it is and the counts after them, and
+   those are what give way when the frame is narrow. One line at any width, so a count that grows by
+   a digit never moves the board under it. */
+.tb-viz .tb-top{display:flex;flex:none;min-width:0;background:var(--tb-panel);
+  border-bottom:1px solid var(--tb-line)}
+.tb-viz .tb-seat{display:flex;align-items:center;gap:8px;flex:1 1 0;min-width:0;padding:8px 12px;
+  white-space:nowrap;overflow:hidden}
+.tb-viz .tb-seat+.tb-seat{border-left:1px solid var(--tb-line)}
+.tb-viz .tb-seat[data-out=true]{opacity:.55}
+.tb-viz .tb-chip{width:10px;height:10px;border-radius:3px;flex:none}
+/* The name does not shrink at all: flex shares a squeeze out in proportion, so a name allowed to
+   shrink lost a few pixels of itself while the counts beside it kept a hundred. Only a name too long
+   for its seat is cut, and never so far that the chip and the score lose their room beside it. */
+.tb-viz .tb-name{font-weight:650;overflow:hidden;text-overflow:ellipsis;flex:none;
+  max-width:min(20ch,calc(100% - 60px))}
+.tb-viz .tb-score{font:600 15px/1 var(--tb-mono);font-variant-numeric:tabular-nums;flex:none}
+.tb-viz .tb-by{color:var(--tb-dim);overflow:hidden;text-overflow:ellipsis;flex:0 100 auto;
+  min-width:0}
+.tb-viz .tb-nums{margin-left:auto;font:11px/1 var(--tb-mono);font-variant-numeric:tabular-nums;
+  color:var(--tb-dim);overflow:hidden;text-overflow:ellipsis;flex:0 10 auto;min-width:0}
+
 /* ---------- the stage ---------- */
 .tb-viz .tb-stage{position:relative;flex:1 1 auto;min-height:200px;display:flex;overflow:hidden;
   background:var(--tb-void);cursor:grab}
@@ -93,37 +117,19 @@ const CSS = `
   justify-content:space-between;gap:8px;padding:9px;pointer-events:none;
   opacity:0;transition:opacity .16s ease}
 .tb-viz .tb-row{display:flex;align-items:flex-start;gap:8px;min-width:0}
-.tb-viz .tb-row.tb-foot{align-items:flex-end}
-.tb-viz .tb-head{transform:translateY(-5px)}
-.tb-viz .tb-foot{transform:translateY(5px)}
-.tb-viz .tb-head,.tb-viz .tb-foot{transition:transform .16s ease}
+.tb-viz .tb-head{transform:translateY(-5px);transition:transform .16s ease}
 .tb-viz:is(:hover,:focus-within,[data-tb-peek],[data-tb-chrome=always]) .tb-tray{opacity:1}
-.tb-viz:is(:hover,:focus-within,[data-tb-peek],[data-tb-chrome=always]) :is(.tb-head,.tb-foot){
-  transform:none}
+.tb-viz:is(:hover,:focus-within,[data-tb-peek],[data-tb-chrome=always]) .tb-head{transform:none}
 .tb-viz .tb-pane{background:var(--tb-over);border:1px solid var(--tb-over-line);
   border-radius:var(--tb-r);color:var(--tb-over-ink)}
-
-.tb-viz .tb-seats{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
-.tb-viz .tb-seat{display:flex;align-items:center;gap:7px;padding:5px 9px;min-width:0;max-width:100%}
-.tb-viz .tb-seat[data-out=true]{opacity:.55}
-.tb-viz .tb-chip{width:9px;height:9px;border-radius:2px;flex:none}
-.tb-viz .tb-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  max-width:16ch}
-.tb-viz .tb-nums{font:11px/1 var(--tb-mono);font-variant-numeric:tabular-nums;
-  color:var(--tb-over-dim);white-space:nowrap}
 
 /* The only part of the tray that is clickable, so a drag anywhere else still pans the board. */
 .tb-viz .tb-tools{display:flex;gap:2px;margin-left:auto;padding:3px;pointer-events:auto;flex:none}
 .tb-viz .tb-tools button{width:28px;height:28px;padding:0;border-radius:5px;
   color:var(--tb-over-ink)}
 .tb-viz .tb-tools button:hover:not(:disabled){background:rgba(238,243,255,.14)}
-
-.tb-viz .tb-tip{padding:6px 9px;font:11px/1.5 var(--tb-mono);white-space:pre;max-width:56%}
-.tb-viz .tb-tip[hidden]{display:none}
-.tb-viz .tb-meta{margin-left:auto;padding:6px 9px;text-align:right;
-  font:11px/1.5 var(--tb-mono);color:var(--tb-over-dim);white-space:nowrap;min-width:0;
-  overflow:hidden;text-overflow:ellipsis}
-.tb-viz .tb-meta b{display:block;font-weight:600;color:var(--tb-over-ink)}
+.tb-viz .tb-tools button[aria-pressed=true]{background:rgba(238,243,255,.24)}
+.tb-viz .tb-tools .tb-sep{width:1px;margin:5px 3px;background:var(--tb-over-line)}
 
 /* ---------- the transport, which is always on screen ---------- */
 .tb-viz .tb-bar{display:flex;align-items:center;gap:10px;padding:8px 10px;flex:none;
@@ -156,7 +162,7 @@ const CSS = `
 .tb-viz .tb-err{padding:16px;color:var(--tb-bad);font:13px/1.6 var(--tb-sans)}
 
 @media (prefers-reduced-motion:reduce){
-  .tb-viz .tb-tray,.tb-viz .tb-head,.tb-viz .tb-foot{transition:none}}
+  .tb-viz .tb-tray,.tb-viz .tb-head{transition:none}}
 `;
 
 const STYLE_ID = "tb-viz-style";
@@ -180,6 +186,8 @@ const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const TURNS_PER_SECOND = 10;
 /** How long the tray stays up after a touch, which has no hover to keep it up. */
 const PEEK_MS = 2600;
+/** How near an enemy ant has to be to a hill, in moves, before the hill is ringed. */
+const THREAT_STEPS = 8;
 
 // Inline SVG rather than glyphs: "⏮" renders as a different width, weight and baseline on every
 // platform, and transport controls that jump about are the first thing that makes a player feel
@@ -196,13 +204,16 @@ const ICON = {
   plus: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><rect x="7.2" y="3" width="1.6" height="10" rx=".8"/><rect x="3" y="7.2" width="10" height="1.6" rx=".8"/></svg>',
   minus: '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="7.2" width="10" height="1.6" rx=".8"/></svg>',
   fit: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.8 6V2.8H6M10 2.8h3.2V6M13.2 10v3.2H10M6 13.2H2.8V10"/></svg>',
+  // An eye, because a seat's territory is what it has seen.
+  explored: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.6 8s2.4-4.3 6.4-4.3S14.4 8 14.4 8s-2.4 4.3-6.4 4.3S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>',
 };
 
 export class Viewer {
   /**
    * @param {HTMLElement} el   where to draw
    * @param {object} replay    the envelope: it carries its own board, so nothing else is needed
-   * @param {object} [opts]    { turn, from, to, autoplay, speed, theme, chrome, height, onTurn }
+   * @param {object} [opts]    { turn, from, to, autoplay, speed, theme, chrome, height, labels,
+   *                             explored, onTurn }
    */
   constructor(el, replay, opts = {}) {
     this.el = el;
@@ -239,8 +250,17 @@ export class Viewer {
     this.hi = clamp(opts.to ?? this.frames.length - 1, this.lo, this.frames.length - 1);
     this.i = clamp(opts.turn ?? this.lo, this.lo, this.hi);
 
-    this.names = seatNames(replay, this.frames[0].score.length);
+    this.labels = seatLabels(replay, this.frames[0].score.length, opts.labels);
+    this.names = this.labels.map((l) => l.name);
     this.events = findEvents(this.frames, this.lo, this.hi);
+    // Derived from the frames on first use and kept: the board's step counts on the first paint,
+    // the territory the first time someone asks to see it.
+    this.board = null;
+    this.firstSeen = null;
+    // Only a cartridge that reports what each seat saw can draw it. This bundle ships with one that
+    // does; a shell copied beside an older engine would otherwise draw the whole board as fog.
+    this.canExplore = Array.isArray(this.frames[0].discovered);
+    this.explored = Boolean(opts.explored) && this.canExplore;
 
     this.build();
     this.renderer.setBoard(replay.map);
@@ -279,30 +299,34 @@ export class Viewer {
       return b;
     };
 
+    // ---- the title bar: every seat, always on screen
+    this.seats = mk("div", "tb-top");
+
     // ---- stage
     this.stage = mk("div", "tb-stage");
     this.canvas = mk("canvas", null, this.stage);
     this.canvas.setAttribute("role", "img");
     this.renderer = new Renderer(this.canvas);
 
-    // ---- the tray: seats and zoom above, the cell readout and the board's identity below
+    // ---- the tray: the tools, over the board's top-right corner
     const tray = mk("div", "tb-tray", this.stage);
     const head = mk("div", "tb-row tb-head", tray);
-    this.seats = mk("div", "tb-seats", head);
     const tools = mk("div", "tb-tools tb-pane", head);
+    this.exploreBtn = btn(tools, ICON.explored, "Explored territory (E)", () =>
+      this.setExplored(!this.explored)
+    );
+    this.exploreBtn.setAttribute("aria-pressed", String(this.explored));
+    if (!this.canExplore) {
+      this.exploreBtn.disabled = true;
+      this.exploreBtn.title = "This engine does not report what each seat has seen";
+    }
+    mk("span", "tb-sep", tools);
     btn(tools, ICON.minus, "Zoom out (−)", () => this.zoom(1 / 1.4));
     btn(tools, ICON.plus, "Zoom in (+)", () => this.zoom(1.4));
     btn(tools, ICON.fit, "Fit the board (0)", () => {
       this.renderer.fit();
       this.paint();
     });
-
-    const foot = mk("div", "tb-row tb-foot", tray);
-    this.tip = mk("div", "tb-tip tb-pane", foot);
-    this.tip.hidden = true;
-    this.meta = mk("div", "tb-meta tb-pane", foot);
-    this.metaBoard = mk("b", null, this.meta);
-    this.metaSay = mk("span", null, this.meta);
 
     // ---- transport
     const bar = mk("div", "tb-bar");
@@ -334,37 +358,38 @@ export class Viewer {
     this.stage.addEventListener("pointerdown", (e) => this.onDown(e));
     this.stage.addEventListener("pointermove", (e) => this.onMove(e));
     this.stage.addEventListener("pointerup", (e) => this.onUp(e));
-    this.stage.addEventListener("pointerleave", () => {
-      // A pinned cell survives the pointer leaving; a hovered one does not.
-      this.hover = this.pinned;
-      this.showTip();
-    });
   }
 
   /**
-   * The seat chips, built once and then written to.
+   * The title bar's seats, built once and then written to.
    *
    * They used to be rebuilt from scratch on every frame, which is ten times a second at 1× and
    * eighty at 8×: a row of elements thrown away and remade while the reader is trying to read the
-   * numbers on it. Nothing about a seat changes but two strings.
+   * numbers on it. Nothing about a seat changes but its score and its counts.
    */
   buildSeats() {
     const d = this.el.ownerDocument;
+    const span = (row, cls, text) => {
+      const n = d.createElement("span");
+      n.className = cls;
+      if (text != null) {
+        n.textContent = text;
+        n.title = text;
+      }
+      row.appendChild(n);
+      return n;
+    };
     this.seatRows = this.frames[this.i].score.map((_, seat) => {
       const row = d.createElement("div");
-      row.className = "tb-seat tb-pane";
-      const chip = d.createElement("span");
-      chip.className = "tb-chip";
-      chip.style.background = SEATS[seat % SEATS.length];
-      const name = d.createElement("span");
-      name.className = "tb-name";
-      name.textContent = this.names[seat];
-      name.title = this.names[seat];
-      const nums = d.createElement("span");
-      nums.className = "tb-nums";
-      row.append(chip, name, nums);
+      row.className = "tb-seat";
+      span(row, "tb-chip").style.background = SEATS[seat % SEATS.length];
+      const { name, by } = this.labels[seat];
+      span(row, "tb-name", name);
+      const score = span(row, "tb-score");
+      if (by) span(row, "tb-by", by);
+      const nums = span(row, "tb-nums");
       this.seats.appendChild(row);
-      return { row, nums };
+      return { row, score, nums };
     });
   }
 
@@ -479,19 +504,22 @@ export class Viewer {
         this.renderer.fit();
         this.paint();
       },
+      e: () => this.setExplored(!this.explored),
+      E: () => this.setExplored(!this.explored),
     };
     const fn = map[k];
     if (!fn) return;
     e.preventDefault();
-    if (k !== " ") this.pause();
+    // The territory is worth watching grow, so turning it on is not a reason to stop.
+    if (k !== " " && k !== "e" && k !== "E") this.pause();
     fn();
   }
 
   /**
    * Show the tray for a moment.
    *
-   * Hover is what raises it, and a touch screen has no hover: without this the seats, the zoom
-   * buttons and the readouts would be unreachable on a phone rather than merely out of the way.
+   * Hover is what raises it, and a touch screen has no hover: without this the zoom buttons and the
+   * territory toggle would be unreachable on a phone rather than merely out of the way.
    */
   peek() {
     if (this.destroyed) return;
@@ -514,64 +542,26 @@ export class Viewer {
     if (e.pointerType === "touch") this.peek();
     if (e.target !== this.canvas && e.target !== this.stage) return;
     this.stage.setPointerCapture(e.pointerId);
-    this.drag = { x: e.clientX, y: e.clientY, moved: false };
+    this.drag = { x: e.clientX, y: e.clientY };
     this.stage.classList.add("tb-drag");
   }
 
   onMove(e) {
-    const r = this.canvas.getBoundingClientRect();
-    if (this.drag) {
-      const dx = e.clientX - this.drag.x;
-      const dy = e.clientY - this.drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) this.drag.moved = true;
-      this.drag.x = e.clientX;
-      this.drag.y = e.clientY;
-      this.renderer.pan(dx, dy);
-      this.paint();
-      return;
-    }
-    this.hover = this.renderer.cellAt(e.clientX - r.left, e.clientY - r.top);
-    this.showTip();
+    if (!this.drag) return;
+    const dx = e.clientX - this.drag.x;
+    const dy = e.clientY - this.drag.y;
+    this.drag.x = e.clientX;
+    this.drag.y = e.clientY;
+    this.renderer.pan(dx, dy);
+    this.paint();
   }
 
   onUp(e) {
-    const wasDrag = this.drag && this.drag.moved;
     this.drag = null;
     this.stage.classList.remove("tb-drag");
     try {
       this.stage.releasePointerCapture(e.pointerId);
     } catch {}
-    // A click that did not pan is an inspection: pin what is on that cell, so the readout survives
-    // the pointer moving away -- and reading a cell usually means then looking somewhere else.
-    // Clicking the pinned cell again lets it go.
-    if (!wasDrag) {
-      const r = this.canvas.getBoundingClientRect();
-      const cell = this.renderer.cellAt(e.clientX - r.left, e.clientY - r.top);
-      this.pinned = same(cell, this.pinned) ? null : cell;
-      this.hover = cell;
-      this.showTip();
-    }
-  }
-
-  /** What is on the cell under the pointer, at this turn. */
-  showTip() {
-    const cell = this.hover;
-    if (!cell) {
-      this.tip.hidden = true;
-      return;
-    }
-    const [r, c] = cell;
-    const f = this.frames[this.i];
-    const lines = [`r${r} c${c}${same(cell, this.pinned) ? " · pinned" : ""}`];
-    const ant = f.ants.find((a) => a[0] === r && a[1] === c);
-    const hill = f.hills.find((h) => h[0] === r && h[1] === c);
-    const food = f.food.some((x) => x[0] === r && x[1] === c);
-    if (ant) lines.push(`ant · ${this.names[ant[2]]}`);
-    if (hill) lines.push(`hill · ${this.names[hill[2]]}`);
-    if (food) lines.push("food");
-    if (!ant && !hill && !food) lines.push(isWater(this.replay.map, r, c) ? "water" : "land");
-    this.tip.textContent = lines.join("\n");
-    this.tip.hidden = false;
   }
 
   zoom(f) {
@@ -599,19 +589,13 @@ export class Viewer {
   }
 
   paint() {
-    this.renderer.render(this.frames[this.i]);
-    // rows x cols, which is how the game states a board everywhere else -- the map file, the
-    // preset table, the book. A viewer that said 96x64 beside prose saying "64 by 96" would make
-    // the reader stop and work out which of them was wrong.
-    const id = this.replay.map_id ? `${this.replay.map_id} · ` : "";
-    this.metaBoard.textContent =
-      `${id}${this.renderer.rows}×${this.renderer.cols} rows×cols · ${this.renderer.scale.toFixed(1)}px/cell`;
+    this.renderer.render(this.frames[this.i], { threats: this.threatsAt(this.i) });
   }
 
   show() {
     const f = this.frames[this.i];
+    if (this.explored) this.renderer.setTerritory(this.territoryAt(this.i).mask);
     this.paint();
-    this.showTip();
 
     const p = this.pct(this.i);
     this.fill.style.width = `${p}%`;
@@ -626,16 +610,35 @@ export class Viewer {
     this.nextBtn.disabled = this.i >= this.hi;
     this.lastBtn.disabled = this.i >= this.hi;
 
+    this.writeSeats();
+
+    if (this.onTurn) this.onTurn(f);
+  }
+
+  /**
+   * The title bar's scores and counts, and the canvas's description, which read the same counts.
+   *
+   * Apart from `show()` because the territory toggle changes what a chip says without changing the
+   * turn, and `show()` also tells the host that the turn changed.
+   */
+  writeSeats() {
+    const f = this.frames[this.i];
     // One pass for the counts the seats and the label both want, rather than one pass per seat.
     const ants = new Array(f.score.length).fill(0);
     for (const a of f.ants) ants[a[2]] = (ants[a[2]] ?? 0) + 1;
     const hills = new Array(f.score.length).fill(0);
     for (const h of f.hills) hills[h[2]] = (hills[h[2]] ?? 0) + 1;
+    const seen = this.explored ? this.territoryAt(this.i).seen : null;
+    const cells = this.renderer.rows * this.renderer.cols;
+    const threats = this.threatsAt(this.i).map(
+      (t) => `${this.names[t.owner]}'s hill has an enemy ${t.steps} move${t.steps === 1 ? "" : "s"} from it`
+    );
 
     this.canvas.setAttribute(
       "aria-label",
       `Turn ${f.turn}. ${f.score
         .map((s, i) => `${this.names[i]}: ${ants[i]} ant${ants[i] === 1 ? "" : "s"}, score ${s}`)
+        .concat(threats)
         .join(". ")}`
     );
 
@@ -643,17 +646,65 @@ export class Viewer {
       const row = this.seatRows[seat];
       if (!row) return;
       row.row.dataset.out = String(ants[seat] === 0);
+      row.score.textContent = String(score);
       row.nums.textContent =
-        `${score >= 0 ? "+" : ""}${score} · ${ants[seat]} ant${ants[seat] === 1 ? "" : "s"}` +
-        ` · ${hills[seat]} hill${hills[seat] === 1 ? "" : "s"}`;
+        `${ants[seat]} ant${ants[seat] === 1 ? "" : "s"} · ${hills[seat]} hill${hills[seat] === 1 ? "" : "s"}` +
+        (seen ? ` · ${Math.round((100 * seen[seat]) / cells)}% explored` : "");
     });
+  }
 
-    const done = this.i === this.hi && this.replay.reason;
-    this.metaSay.textContent = done
-      ? `${this.replay.reason} after ${this.replay.turns} turns`
-      : `seed ${this.replay.seed ?? "?"}`;
+  /** Show or hide each seat's explored territory. */
+  setExplored(on) {
+    this.explored = Boolean(on) && this.canExplore;
+    this.exploreBtn.setAttribute("aria-pressed", String(this.explored));
+    this.renderer.setTerritory(this.explored ? this.territoryAt(this.i).mask : null);
+    this.paint();
+    this.writeSeats();
+  }
 
-    if (this.onTurn) this.onTurn(f);
+  /**
+   * The hills an enemy ant is within `THREAT_STEPS` moves of at frame `i`, and how near the nearest
+   * one is. Kept for the one frame, because `paint()` runs on every pan and zoom as well as every
+   * turn.
+   */
+  threatsAt(i) {
+    if (this.threatCache?.i === i) return this.threatCache.threats;
+    const map = this.replay.map;
+    if (!this.board && map) {
+      const water = expandRle(map.water, map.rows * map.cols);
+      this.board = { rows: map.rows, cols: map.cols, water, steps: new Map() };
+    }
+    const threats = this.board ? threatsIn(this.frames[i], this.board, THREAT_STEPS) : [];
+    this.threatCache = { i, threats };
+    return threats;
+  }
+
+  /**
+   * What each seat has explored at frame `i`: a byte per cell with bit `s` set where seat `s` knows
+   * it, and how many cells each seat knows.
+   *
+   * The frames' `discovered` -- the engine's own record of what each seat saw first, turn by turn --
+   * is folded once into the frame at which each seat first saw each cell. After that any frame's
+   * territory is one comparison per cell, which is what lets it keep up with playback at 8×.
+   */
+  territoryAt(i) {
+    if (this.territoryCache?.i === i) return this.territoryCache;
+    const cols = this.renderer.cols;
+    const cells = this.renderer.rows * cols;
+    this.firstSeen ??= firstSeen(this.frames, cols, cells);
+    const mask = new Uint8Array(cells);
+    const seen = this.firstSeen.map((at, seat) => {
+      let n = 0;
+      for (let k = 0; k < cells; k++) {
+        if (at[k] <= i) {
+          mask[k] |= 1 << seat;
+          n++;
+        }
+      }
+      return n;
+    });
+    this.territoryCache = { i, mask, seen };
+    return this.territoryCache;
   }
 
   play() {
@@ -738,33 +789,116 @@ function count(ants, seat) {
   return n;
 }
 
-function same(a, b) {
-  return Boolean(a && b && a[0] === b[0] && a[1] === b[1]);
-}
-
-function isWater(map, r, c) {
-  if (!map) return false;
-  const target = r * map.cols + c;
-  let i = 0;
-  for (let k = 0; k + 1 < map.water.length; k += 2) {
-    i += map.water[k + 1];
-    if (target < i) return map.water[k] === 1;
-  }
-  return false;
-}
-
-/** Seat labels: what the replay says, else the hash, else the seat number. */
-function seatNames(replay, n) {
+/**
+ * What to call each seat: `{ name, by }`. What the host says, else what the replay says, else the
+ * hash, else the seat number.
+ *
+ * The envelope names a seat as the referee knew it -- by the hash of its weights, or by a label a
+ * local run chose -- and a host usually knows better: the web application knows the model's name
+ * and whose it is, and showed eight characters of a hash here while every other panel on the same
+ * page said "mover by @someone". `by` is the host's own words, shown as given; who owns a model is
+ * the platform's business, not the cartridge's.
+ */
+export function seatLabels(replay, n, given) {
   const out = [];
-  for (let i = 0; i < n; i++) out[i] = `seat ${i}`;
-  const seats = replay.seats;
-  if (Array.isArray(seats)) {
-    for (const s of seats) {
+  for (let i = 0; i < n; i++) out[i] = { name: `seat ${i}`, by: "" };
+  if (Array.isArray(replay.seats)) {
+    for (const s of replay.seats) {
       const i = s.seat ?? 0;
-      out[i] = s.label ?? (s.weights_hash ? s.weights_hash.slice(7, 15) : out[i]);
+      if (!out[i]) continue;
+      out[i].name = s.label ?? (s.weights_hash ? s.weights_hash.slice(7, 15) : out[i].name);
+    }
+  }
+  if (Array.isArray(given)) {
+    for (const g of given) {
+      const seat = out[g?.seat];
+      if (!seat) continue;
+      if (g.name) seat.name = String(g.name);
+      if (g.by) seat.by = String(g.by);
     }
   }
   return out;
+}
+
+/**
+ * How many moves from `from` each cell is, out to `reach`, on a board that wraps; -1 beyond it.
+ *
+ * Water is the only wall. Food blocks a move too, but it comes and goes, and a ring that flickered
+ * as food fell would be drawing the food rather than the danger. This decides nothing about the
+ * match: nothing reads it but the pen that rings a hill.
+ */
+export function stepsFrom(water, rows, cols, from, reach) {
+  const dist = new Int8Array(rows * cols).fill(-1);
+  dist[from] = 0;
+  let edge = [from];
+  for (let d = 1; d <= reach && edge.length; d++) {
+    const next = [];
+    for (const i of edge) {
+      const r = (i / cols) | 0;
+      const c = i - r * cols;
+      const around = [
+        ((r + rows - 1) % rows) * cols + c,
+        ((r + 1) % rows) * cols + c,
+        r * cols + ((c + cols - 1) % cols),
+        r * cols + ((c + 1) % cols),
+      ];
+      for (const j of around) {
+        if (dist[j] !== -1 || water[j]) continue;
+        dist[j] = d;
+        next.push(j);
+      }
+    }
+    edge = next;
+  }
+  return dist;
+}
+
+/**
+ * The hills with an enemy ant within `reach` moves, each with how many moves the nearest one is.
+ *
+ * Moves, not distance as the crow flies: on a maze an enemy one wall away from a hill can be thirty
+ * moves from it, and a ring that lit up for it would point at nothing. Hills never move, so each
+ * one's step counts are worked out once and kept on `board.steps`.
+ */
+export function threatsIn(frame, board, reach) {
+  const out = [];
+  for (const [r, c, owner] of frame.hills) {
+    const at = r * board.cols + c;
+    let steps = board.steps.get(at);
+    if (!steps) {
+      steps = stepsFrom(board.water, board.rows, board.cols, at, reach);
+      board.steps.set(at, steps);
+    }
+    let best = -1;
+    for (const [ar, ac, ao] of frame.ants) {
+      if (ao === owner) continue;
+      const d = steps[ar * board.cols + ac];
+      if (d >= 0 && (best < 0 || d < best)) best = d;
+    }
+    if (best >= 0) out.push({ r, c, owner, steps: best, reach });
+  }
+  return out;
+}
+
+/**
+ * For each seat, the frame at which it first saw each cell, or 65535 where it never did.
+ *
+ * The frames are decoded from turn zero, so the first one's `discovered` is the opening vision and
+ * every cell a seat ever knows is announced exactly once after that.
+ */
+function firstSeen(frames, cols, cells) {
+  const at = frames[0].score.map(() => new Uint16Array(cells).fill(0xffff));
+  frames.forEach((f, i) => {
+    (f.discovered ?? []).forEach((list, seat) => {
+      const mine = at[seat];
+      if (!mine) return;
+      for (const [r, c] of list) {
+        const k = r * cols + c;
+        if (mine[k] === 0xffff) mine[k] = i;
+      }
+    });
+  });
+  return at;
 }
 
 function clamp(v, lo, hi) {

@@ -56,7 +56,7 @@ The component is `tb-ants.wasm`, plugin id `tb.ants`, ABI `orion:plugin@1.0.0`.
 | `tb.ants.observe` | wave_state and optional refs | Views for live seats, with their references echoed |
 | `tb.ants.step` | wave_state and actions | State after one turn for each live match |
 | `tb.ants.finish` | wave_state | Match ranks, scores, ending reasons, and the board each ended match was played on |
-| `tb.ants.replay-decode` | Replay payload and a turn, or a `from`/`to` range | One reconstructed frame, or a range in one pass |
+| `tb.ants.replay-decode` | Replay payload and a turn, or a `from`/`to` range | One reconstructed frame, or a range in one pass; each frame also names the squares every seat saw for the first time that turn |
 
 Keep `wave_state` opaque between calls. Actions may follow the last observation's positional order
 or use explicit match and seat entries; the host tests verify that both forms agree.
@@ -95,7 +95,7 @@ This is a plugin, so there is no server to start. All commands run from this rep
 ./build.sh          # the whole gate, then every artifact, locally
 docker build -t tinybrains/ants:dev .   # the artifact image -- what actually ships
 ./deny.sh           # just the source-level determinism check
-cargo test          # just the host suite -- 75 tests
+cargo test          # just the host suite -- 80 tests
 ```
 
 `build.sh` runs `deny.sh` and the tests before it compiles anything, then writes `tb-ants.wasm`,
@@ -162,6 +162,27 @@ Dockerfile           the artifact image: the build that actually ships
 - **The rules are the 2011 contest's rules.** Where the published specification and the contest engine (`aichallenge/ants/ants.py`) disagree, the engine wins — it is what every bot was scored against. Each rule cites the specification section it comes from, and the Focus Battle page's worked examples ship as named tests (`spec_scenario_*`).
 
 ## Status
+
+**11 September 2026 — the seats are a title bar.** The viewer's seats left the hover tray for a bar
+above the board that is always on screen: each seat's colour, model name and score, then whose it
+is and its ants, hills and share explored, on one line that gives way from the right. The tray keeps
+only the tools — zoom and the territory toggle — and the board's label and the cell readout are
+gone. Viewer only: the component, and so the engine digest, is untouched.
+
+**11 September 2026 — a frame says what each seat saw first, and the viewer draws it.** Every
+`replay-decode` frame now carries `discovered`: per seat, the squares that turn revealed for the
+first time, read off the engine's own `known` mask — the one observations are folded from — rather
+than worked out again anywhere else. It belongs to the turn, not to the call, so a range and a single
+frame still agree; and it is news rather than the mask, so a whole match costs at most one entry per
+square per seat — 1,472 on a 173-turn maze replay whose frames come to 1.3 MB.
+`a_frames_discoveries_add_up_to_exactly_what_its_seat_knows` folds them from turn zero and holds the
+fold to `known` at every turn. The viewer draws them on a toggle, and gains two things that need no
+engine: a ring around any hill an enemy is within eight moves of, and seat names from its host
+(`viz/README.md`). **No rule moved** — `cartridge.json`, `plugin.json` and
+`reference/observations.json` are byte-identical to the image the ladder ran — but **the digest
+did**, to `sha256:a71d24ae…` as the image builds it (a local `./build.sh` lands elsewhere, because
+only the image remaps source paths). The local stack was cut over to it as a patch the same day,
+taking the hot loops with it. `cargo test` is 80.
 
 **11 September 2026 — the hot loops, 2.4-3.2x faster, and the same game byte for byte.** A profile
 of a 16-match wave put the time in whole-board work, not in ants: the food-set scan over every

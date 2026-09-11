@@ -21,6 +21,10 @@ function stubDom() {
     canvas: null,
     createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
     getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+    createRadialGradient: (...args) => {
+      calls.push(["createRadialGradient", ...args]);
+      return { addColorStop() {} };
+    },
   };
   const ctx = new Proxy(real, {
     get(t, k) {
@@ -55,7 +59,7 @@ function check(name, cond, detail) {
 }
 const near = (a, b, eps = 0.001) => Math.abs(a - b) < eps;
 
-const { canvas, makeStubCanvas } = stubDom();
+const { canvas, makeStubCanvas, calls } = stubDom();
 const { Renderer } = await import("./src/render.js");
 const replay = JSON.parse(readFileSync("../tests/fixtures/replay-maze-03.json", "utf8"));
 
@@ -225,12 +229,122 @@ check(
   /:hover/.test(css) && /:focus-within/.test(css) && /\[data-tb-peek\]/.test(css) && /pointerType === "touch"/.test(mod)
 );
 check("the transport is not in it", /mk\("div", "tb-bar"\)/.test(mod));
+// The seats are the other half of what is always on screen: who is playing and the score are read
+// the whole way through, so they sit in a bar of their own above the board rather than in the tray.
+check(
+  "the seats are a bar of their own, always on screen",
+  /this\.seats = mk\("div", "tb-top"\);/.test(mod) &&
+    /\.tb-viz \.tb-top\{/.test(css) &&
+    !/\.tb-top\{[^}]*opacity/.test(css)
+);
+check(
+  "each seat shows its colour, name and score",
+  /"tb-chip"/.test(mod) && /"tb-name"/.test(mod) && /"tb-score"/.test(mod)
+);
+check("the board's label and the cell readout are gone", !/tb-tip|tb-meta|showTip/.test(mod));
 check("seat chips are built once, not per frame", /buildSeats\(\)/.test(mod) && !/this\.seats\.innerHTML = ""/.test(mod));
 check("the stylesheet is per document", /getElementById\(STYLE_ID\)/.test(mod));
 // mount() puts `tb-viz` on the host element rather than making a root of its own, and that class
 // sets display:flex -- which outranks the [hidden] attribute's UA rule. A host that hides the
 // player while it loads a replay depends on this one line.
 check("a host can still hide it", /\.tb-viz\[hidden\]\{display:none\}/.test(css));
+
+// ---------------------------------------------------------------- what is drawn over the board
+//
+// Both are derived without knowing a rule. A hill is ringed when an enemy is within eight MOVES of
+// it -- round water, across the wrap -- and a seat's territory is the fold of what the engine said
+// it saw first, turn by turn.
+console.log("over the board");
+if (shellLoads) {
+  const shell = await import("./dist/shell.js");
+
+  // Five rows by seven, wrapping. Column 0 is all water, so the short way round the left is shut;
+  // column 3 is water but for the bottom row, so the way across is the long way round.
+  const plan = ["#..#...", "#..#...", "#..#...", "#..#...", "#......"];
+  const rows = plan.length;
+  const cols = plan[0].length;
+  const water = Uint8Array.from(plan.join(""), (ch) => (ch === "#" ? 1 : 0));
+  const at = (r, c) => r * cols + c;
+  const d = shell.stepsFrom(water, rows, cols, at(0, 1), 8);
+  check("a step is one move", d[at(0, 2)] === 1);
+  check("the board wraps", d[at(4, 1)] === 1, `${d[at(4, 1)]}`);
+  check("a wall is walked round, not through", d[at(0, 4)] === 5, `${d[at(0, 4)]}`);
+  check("water is never reached", d[at(0, 0)] === -1 && d[at(0, 3)] === -1);
+  check("beyond the reach is not counted", shell.stepsFrom(water, rows, cols, at(0, 1), 4)[at(0, 4)] === -1);
+
+  const board = () => ({ rows, cols, water, steps: new Map() });
+  const hill = [0, 1, 0];
+  const rung = shell.threatsIn({ hills: [hill], ants: [[0, 1, 0], [0, 4, 1]] }, board(), 8);
+  check(
+    "an enemy within reach rings the hill, in its owner's name",
+    rung.length === 1 && rung[0].owner === 0 && rung[0].steps === 5,
+    JSON.stringify(rung)
+  );
+  check("a hill's own ants are no threat to it", shell.threatsIn({ hills: [hill], ants: [[0, 2, 0]] }, board(), 8).length === 0);
+  check("an enemy out of reach is no threat yet", shell.threatsIn({ hills: [hill], ants: [[0, 4, 1]] }, board(), 4).length === 0);
+
+  // The fixture, decoded above: every square a seat knows is announced once, on the turn it first
+  // saw it, and turn zero carries the opening vision.
+  let repeats = 0;
+  const known = frames[0].score.map(() => new Set());
+  for (const f of frames) {
+    (f.discovered ?? []).forEach((list, s) => {
+      for (const [r, c] of list) {
+        if (known[s].has(r * 96 + c)) repeats++;
+        known[s].add(r * 96 + c);
+      }
+    });
+  }
+  check(
+    "every frame says what each seat saw first",
+    frames.every((f) => Array.isArray(f.discovered) && f.discovered.length === f.score.length)
+  );
+  check("the opening vision is turn zero's", frames[0].discovered.every((l) => l.length > 0));
+  check("nothing is announced twice", repeats === 0, `${repeats} repeats`);
+
+  // Territory paints fog where nobody has looked and each seat's colour where it has, mixed where
+  // both have -- and keeps each seat's own frontier.
+  const rt = new Renderer(makeStubCanvas());
+  rt.setBoard(replay.map);
+  const mask = new Uint8Array(96 * 96);
+  mask[0] = 1; // seat 0 alone at (0,0)
+  mask[1] = 3; // both seats at (0,1)
+  rt.setTerritory(mask);
+  const px = calls.filter((c) => c[0] === "putImageData").at(-1)[1].data;
+  check("where nobody has looked is fogged", px[2 * 4 + 3] === 150, `alpha ${px[2 * 4 + 3]}`);
+  check("where a seat has is tinted", px[3] === 64 && px[4 + 3] === 64);
+  check("where two have is both colours", px[4] > 0x5a && px[4] < 0xff, `red ${px[4]}`);
+  check(
+    "each seat's frontier is its own",
+    rt.frontier[0].length === 6 * 3 && rt.frontier[1].length === 4 * 3,
+    `${rt.frontier[0].length / 3} and ${rt.frontier[1].length / 3} edges`
+  );
+
+  // A hill in the corner rings all four corners of a board that wraps, and nothing outside it.
+  rt.resize(900, 500);
+  const before = calls.length;
+  let drew = true;
+  try {
+    rt.render(frames[0], { threats: [{ r: 0, c: 0, owner: 1, steps: 3, reach: 8 }] });
+  } catch (e) {
+    drew = false;
+    console.log(`        ${e.message}`);
+  }
+  const rings = calls.slice(before).filter((c) => c[0] === "createRadialGradient").length;
+  check("a ring near a corner is drawn across the wrap", drew && rings === 4, `${rings} rings`);
+
+  const named = shell.seatLabels(
+    { seats: [{ seat: 0, weights_hash: "sha256:0123456789abcdef" }, { seat: 1, label: "dense" }] },
+    2,
+    [{ seat: 0, name: "mover", by: "@someone" }]
+  );
+  check("the host's name for a seat wins", named[0].name === "mover" && named[0].by === "@someone");
+  check("the envelope's stands where the host says nothing", named[1].name === "dense" && named[1].by === "");
+  check(
+    "and a hash is the last resort",
+    shell.seatLabels({ seats: [{ seat: 0, weights_hash: "sha256:0123456789abcdef" }] }, 1)[0].name === "01234567"
+  );
+}
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall geometry checks passed");
 process.exit(failures ? 1 : 0);

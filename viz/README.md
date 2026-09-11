@@ -14,15 +14,20 @@ It behaves like a media player, because watching a match is what it is for.
 |---|---|
 | **Transport** | first · previous · play/pause · next · last, all clickable, all with keys. The only thing always on screen |
 | **Timeline** | click anywhere to jump, drag to scrub. Coloured ticks mark the turns worth finding — a hill razed, a colony wiped out — in the seat's own colour |
-| **The tray** | seats, zoom buttons, the board's identity and the cell readout, over the board and out of the way until you hover it, focus it or touch it |
+| **Title bar** | every seat, always on screen: its colour, model name and score, then whose it is and its ants, hills and share explored. One line at any width; the name and the score are the last things to give way |
+| **The tray** | zoom buttons and the territory toggle, over the board's top-right corner and out of the way until you hover it, focus it or touch it |
 | **Zoom** | wheel to zoom about the cursor, drag to pan, buttons for −/+/fit. The board opens fitted and stays fitted through a resize until you zoom |
-| **Inspect** | click a cell to see what is on it — whose ant, whose hill, food, land or water — and it stays pinned when the pointer moves on. Click it again to let it go |
-| **Keys** | `space` play/pause · `←` `→` step (hold shift for ten) · `↑` `↓` ten · `Home` `End` · `+` `−` `0` zoom |
+| **Hill rings** | a hill with an enemy ant within eight moves of it is ringed in its owner's colour — the seat about to lose it — and the ring warms as the attacker closes. Moves, not distance: round water and across the wrap |
+| **Territory** | the eye button, or `E`, draws what each seat has explored: fog where nobody has looked, each seat's colour where it has, each seat's frontier traced, and its share of the board on its chip |
+| **Keys** | `space` play/pause · `←` `→` step (hold shift for ten) · `↑` `↓` ten · `Home` `End` · `+` `−` `0` zoom · `E` territory |
 
-**The board gets the whole frame.** Everything but the transport is a layer over the stage, the way
-a video player's chrome is: a 420-pixel frame on a match page used to spend a fifth of its height on
-a strip of seat chips. `chrome: "always"` pins the tray open for a screenshot or a page where the
-viewer is not the thing being hovered.
+**Two bars and a board.** The seats are a title bar above the board and the transport a bar below
+it, and both are always on screen — who is playing and what the score is are read the whole way
+through a match, so they are not something to go and find. That costs the board one line, about 36
+pixels of a 420-pixel frame; it used to be a strip of wrapping chips that took a fifth of it, which
+is why the title bar is one line at any width and gives way from the right. The tools are the only
+layer over the stage, the way a video player's chrome is, and `chrome: "always"` pins them open.
+The board's identity and the cell readout were taken out on 11 September 2026.
 
 ## Light and dark
 
@@ -61,9 +66,16 @@ without renumbering it, which is how a tutorial points at turns 40–60 of a rea
 reader still sees "turn 47".
 
 `opts` in full: `turn`, `from`, `to`, `autoplay`, `speed`, `zoom`, `centre`, `theme`, `chrome`,
-`height`, `onTurn`. `optsFromHash()` reads all of the linkable ones out of a URL — `#turn=84`,
-`#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`, `#chrome=always` — because a replay is
-evidence and evidence gets cited by turn and by corner of the board, not described.
+`height`, `labels`, `explored`, `onTurn`. `optsFromHash()` reads all of the linkable ones out of a
+URL — `#turn=84`, `#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`, `#chrome=always`,
+`#explored=1` — because a replay is evidence and evidence gets cited by turn and by corner of the
+board, not described.
+
+`labels` is what the host calls each seat: `[{ seat, name, by }]`, shown as given. An envelope only
+has the referee's name for a seat — a weights hash, or a label a local run chose — so without it the
+tray said `6fae1212` while every other panel on the page said `mover` `by @someone`. The web
+application passes the model's name and `@owner`; the book and `tinybrains view` pass nothing and
+get the envelope's.
 
 ## Building
 
@@ -92,14 +104,24 @@ show, and `tinybrains view` says so rather than drawing it anyway.
 
 ```text
 src/engine.js   the cartridge in the browser -- decode one frame, or a range in one pass
-src/render.js   pixels: terrain, food, hills, ants, and the zoom/pan geometry. Decides nothing
-src/shell.js    the player: transport, timeline with event marks, the hover tray, the stylesheet
-check.mjs       geometry checks that need no browser
+src/render.js   pixels: terrain, territory, rings, food, hills, ants, and the zoom/pan geometry. Decides nothing
+src/shell.js    the player: title bar, transport, timeline with event marks, the tools tray, the
+                stylesheet, and what is drawn over the board -- the rings' step counts and the
+                territory's fold
+check.mjs       checks that need no browser: geometry, step counts, territory, labels, CSS scoping
 src/index.js    mount() -- built to dist/viz.js, the path the platform loads
 src/react.js    the same viewer as a React component; React is a peer
 ```
 
-## Two choices worth knowing
+## Three choices worth knowing
+
+**Territory comes from the engine; the rings do not need it.** Vision is a rule — a radius, on a
+board that wraps — and a viewer that drew it would be a second engine free to disagree with the
+first. So each `replay-decode` frame says what each seat saw for the first time that turn, out of
+the same `known` mask its observations are built from, and the shell only folds those from turn
+zero. How many moves an ant is from a hill is the other case: it decides nothing about the match, so
+the shell counts them itself — round water, since a ring that lit up for an enemy on the far side of
+a wall would point at nothing, and ignoring food, which comes and goes and would make a ring flicker.
 
 **The shell lives here, not in the web application.** `docs/cartridge.md` §7 used to put it there
 and leave the cartridge "owning pixels". The viewer has three consumers that are not one

@@ -3,7 +3,11 @@
 // A frame is what `replay-decode` returns:
 //
 //   { turn, size: [rows, cols], water: { rle }, ants: [[r, c, owner]], food: [[r, c]],
-//     hills: [[r, c, owner]], score: [], ranks: [], done }
+//     hills: [[r, c, owner]], discovered: [[[r, c]], ...per seat], score: [], ranks: [], done }
+//
+// Two things are drawn that are not in a frame, and both are handed in already decided: the
+// territory each seat has explored (`setTerritory`) and the hills an enemy is closing on (`render`'s
+// `threats`). The shell derives them; this file only knows how they look.
 //
 // The terrain is drawn once, into an offscreen canvas at one pixel per cell, and then scaled — so
 // zooming and panning cost nothing and the per-frame work is tens of shapes rather than sixteen
@@ -35,9 +39,13 @@ const FOOD = "#FFEEC2";
 const GRID = "rgba(255,255,255,0.07)";
 const ANT_RIM = "rgba(5,8,15,0.55)";
 const FOOD_RIM = "rgba(10,15,26,0.5)";
+// Explored territory. Nobody's is fogged rather than left alone: a tint of azure on navy land is a
+// small step in brightness, and it is the fog around it that makes an explored region read as one.
+const FOG = [5, 8, 15, 150];
+const TINT_ALPHA = 64;
 
 /** Expand `[value, run, value, run, ...]` into a row-major flag array. */
-function expandRle(rle, cells) {
+export function expandRle(rle, cells) {
   const out = new Uint8Array(cells);
   let i = 0;
   for (let k = 0; k + 1 < rle.length; k += 2) {
@@ -68,6 +76,8 @@ export class Renderer {
     // runs while the canvas is still zero-sized and that comparison would conclude the view was
     // never fitted — which is how a 96x96 board once opened at four pixels a cell.
     this.fitted = true;
+    this.territory = null; // an offscreen canvas at one pixel per cell, or null when it is off
+    this.frontier = null; // per seat, a flat [r, c, side, ...] list of the edges of what it knows
   }
 
   /**
@@ -109,6 +119,74 @@ export class Renderer {
     }
     g.putImageData(img, 0, 0);
     this.terrain = off;
+    this.territory = null;
+    this.frontier = null;
+  }
+
+  /**
+   * What each seat has explored: one byte per cell, bit `s` set where seat `s` knows it. `null`
+   * takes it off the board.
+   *
+   * Painted as the terrain is -- once, at one pixel per cell, then scaled -- because it changes once
+   * a turn and the board is panned and zoomed far more often than that. Cells nobody has seen are
+   * fogged; the rest are tinted in the colour of whoever has seen them, mixed where two seats have.
+   * A mixed tint says "both" but not where either one's reach ends, so each seat's frontier is kept
+   * as well and traced in its own colour.
+   */
+  setTerritory(mask) {
+    if (!mask || !this.rows) {
+      this.territory = null;
+      this.frontier = null;
+      return;
+    }
+    const { rows, cols } = this;
+    const off = this.territory ?? document.createElement("canvas");
+    off.width = cols;
+    off.height = rows;
+    const g = off.getContext("2d");
+    const img = g.createImageData(cols, rows);
+    const rgb = SEATS.map(hexToRgb);
+    const frontier = SEATS.map(() => []);
+    for (let i = 0; i < mask.length; i++) {
+      const bits = mask[i];
+      const p = i * 4;
+      if (!bits) {
+        img.data.set(FOG, p);
+        continue;
+      }
+      const r = (i / cols) | 0;
+      const c = i - r * cols;
+      // The four neighbours on a board that wraps, so a territory that runs off one edge and on at
+      // the other has no frontier drawn along the seam.
+      const up = ((r + rows - 1) % rows) * cols + c;
+      const right = r * cols + ((c + 1) % cols);
+      const down = ((r + 1) % rows) * cols + c;
+      const left = r * cols + ((c + cols - 1) % cols);
+      let n = 0;
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      for (let s = 0; bits >> s; s++) {
+        if (!((bits >> s) & 1)) continue;
+        const [sr, sg, sb] = rgb[s % rgb.length];
+        n++;
+        red += sr;
+        green += sg;
+        blue += sb;
+        const edges = frontier[s % frontier.length];
+        if (!((mask[up] >> s) & 1)) edges.push(r, c, 0);
+        if (!((mask[right] >> s) & 1)) edges.push(r, c, 1);
+        if (!((mask[down] >> s) & 1)) edges.push(r, c, 2);
+        if (!((mask[left] >> s) & 1)) edges.push(r, c, 3);
+      }
+      img.data[p] = red / n;
+      img.data[p + 1] = green / n;
+      img.data[p + 2] = blue / n;
+      img.data[p + 3] = TINT_ALPHA;
+    }
+    g.putImageData(img, 0, 0);
+    this.territory = off;
+    this.frontier = frontier;
   }
 
   /** Cells that fit across the viewport at the current scale. */
@@ -196,7 +274,12 @@ export class Renderer {
     else this.clamp();
   }
 
-  render(frame) {
+  /**
+   * @param {object} frame
+   * @param {object} [marks]  `threats`: `[{ r, c, owner, steps, reach }]`, a hill and how many moves
+   *                          its nearest enemy is from it, out of the `reach` that counts as close
+   */
+  render(frame, marks = {}) {
     const { ctx } = this;
     const { w, h } = this.viewport();
     ctx.clearRect(0, 0, w, h);
@@ -206,9 +289,11 @@ export class Renderer {
     const x0 = -this.ox;
     const y0 = -this.oy;
 
-    // Terrain: one scaled blit, nearest-neighbour so a cell stays a crisp square.
+    // Terrain: one scaled blit, nearest-neighbour so a cell stays a crisp square. Territory is a
+    // second blit over it, the same way.
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.terrain, x0, y0, this.cols * s, this.rows * s);
+    if (this.territory) ctx.drawImage(this.territory, x0, y0, this.cols * s, this.rows * s);
 
     // Only what is on screen. At high zoom this is a handful of cells rather than the board.
     const c0 = Math.max(0, Math.floor(this.ox / s) - 1);
@@ -233,6 +318,42 @@ export class Renderer {
       }
       ctx.stroke();
     }
+
+    // Each seat's frontier, below every piece. Not at a speck of a scale, where a line per cell edge
+    // is a smear over the whole board rather than an outline.
+    if (this.frontier && s >= 3) {
+      ctx.lineWidth = Math.max(1, Math.min(2, s * 0.12));
+      this.frontier.forEach((edges, seat) => {
+        if (!edges.length) return;
+        const [cr, cg, cb] = hexToRgb(SEATS[seat]);
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.85)`;
+        ctx.beginPath();
+        for (let k = 0; k < edges.length; k += 3) {
+          const r = edges[k];
+          const c = edges[k + 1];
+          if (!onScreen(r, c)) continue;
+          const x = px(c);
+          const y = py(r);
+          const side = edges[k + 2];
+          if (side === 0) {
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + s, y);
+          } else if (side === 1) {
+            ctx.moveTo(x + s, y);
+            ctx.lineTo(x + s, y + s);
+          } else if (side === 2) {
+            ctx.moveTo(x, y + s);
+            ctx.lineTo(x + s, y + s);
+          } else {
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y + s);
+          }
+        }
+        ctx.stroke();
+      });
+    }
+
+    for (const t of marks.threats ?? []) this.threat(t, x0, y0, s);
 
     // Hills first: an ant standing on one has to be visible on top of it, because "who is sitting
     // on whose hill" is usually the thing being read.
@@ -292,6 +413,47 @@ export class Renderer {
     ctx.strokeStyle = BOARD_EDGE;
     ctx.lineWidth = 1;
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, this.cols * s - 1, this.rows * s - 1);
+  }
+
+  /**
+   * A ring around a hill an enemy is closing on, in the colour of the hill's owner -- the seat about
+   * to lose it.
+   *
+   * It covers the whole reach that counts as close, so the attacker is inside it, and it warms as
+   * the attacker gets nearer: faint at the edge of the reach, full on the doorstep. A hill near an
+   * edge has a reach that wraps, so the ring is drawn again across each edge it crosses and clipped
+   * to the board, rather than spilling into the void where no ant can ever stand.
+   */
+  threat(t, x0, y0, s) {
+    const { ctx } = this;
+    const [cr, cg, cb] = hexToRgb(SEATS[t.owner % SEATS.length]);
+    const heat = (t.reach + 1 - t.steps) / (t.reach + 1);
+    // Never smaller than a ring you can see, however far out the board is zoomed.
+    const rad = Math.max(12, (t.reach + 0.5) * s);
+    const bw = this.cols * s;
+    const bh = this.rows * s;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, bw, bh);
+    ctx.clip();
+    for (const dy of [-bh, 0, bh]) {
+      for (const dx of [-bw, 0, bw]) {
+        const x = x0 + (t.c + 0.5) * s + dx;
+        const y = y0 + (t.r + 0.5) * s + dy;
+        if (x + rad < x0 || x - rad > x0 + bw || y + rad < y0 || y - rad > y0 + bh) continue;
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, rad);
+        glow.addColorStop(0, `rgba(${cr},${cg},${cb},${(0.12 + 0.3 * heat).toFixed(3)})`);
+        glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y, rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.5, Math.min(3, s * 0.18));
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${(0.45 + 0.55 * heat).toFixed(3)})`;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   /** Which cell a canvas point is over, or null. */

@@ -129,6 +129,54 @@ fn a_frame_range_agrees_with_the_frames_asked_for_one_at_a_time() {
 }
 
 #[test]
+fn a_frames_discoveries_add_up_to_exactly_what_its_seat_knows() {
+    // The viewer draws each seat's explored territory by folding every frame's `discovered` from
+    // turn zero. That is the engine's own memory -- the `known` mask observations are built from --
+    // only if the fold equals it at every turn the referee played, and nothing is announced twice.
+    let w = invoke("tb.ants.worldgen", json!({"seeds": [31], "preset": "maze", "max_turns": 80}))
+        .unwrap();
+    let mut state = w["wave_state"].as_str().unwrap().to_string();
+    let mut known = vec![unpack(&state).unwrap().matches[0].known.clone()];
+    let mut rng = Rng(11);
+    let mut deltas = Vec::new();
+    loop {
+        let views = invoke("tb.ants.observe", json!({"wave_state": &state})).unwrap();
+        if views["views"].as_array().unwrap().is_empty() {
+            break;
+        }
+        let acts = random_actions(&views, &mut rng);
+        let out = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap();
+        deltas.extend(out["replay_delta"].as_array().unwrap().iter().cloned());
+        state = out["wave_state"].as_str().unwrap().to_string();
+        known.push(unpack(&state).unwrap().matches[0].known.clone());
+    }
+    let fin = invoke("tb.ants.finish", json!({"wave_state": &state})).unwrap();
+    let payload = json!({
+        "seed": 31, "max_turns": 80,
+        "map": fin["results"][0]["map"], "deltas": deltas,
+    });
+
+    let ranged = invoke("tb.ants.replay-decode", json!({"payload": &payload, "from": 0})).unwrap();
+    let frames = ranged["frames"].as_array().unwrap();
+    assert_eq!(frames.len(), known.len(), "a frame for every turn the referee played");
+    let cols = frames[0]["size"][1].as_u64().unwrap() as usize;
+    let mut fold: Vec<Bits> = known[0].iter().map(|k| Bits::zeros(k.len)).collect();
+    let mut explored = false;
+    for (t, frame) in frames.iter().enumerate() {
+        for (seat, cells) in frame["discovered"].as_array().unwrap().iter().enumerate() {
+            for rc in cells.as_array().unwrap() {
+                let i = rc[0].as_u64().unwrap() as usize * cols + rc[1].as_u64().unwrap() as usize;
+                assert!(!fold[seat].get(i), "turn {t} announced a square seat {seat} already knew");
+                fold[seat].set(i);
+                explored |= t > 0;
+            }
+        }
+        assert_eq!(fold, known[t], "the fold is not what the seats knew at turn {t}");
+    }
+    assert!(explored, "the ants must have seen past where they started");
+}
+
+#[test]
 fn a_replay_the_platform_actually_wrote_decodes() {
     // A real envelope, taken from object storage after the local stack played it. The other replay
     // tests build their own envelope in-process and would keep passing if Kalam and the engine

@@ -217,6 +217,13 @@ decoding re-simulates from turn zero, so a scrubber asking frame by frame is qua
 walks the match once. An optional field on a declared function is not a sixth function, so it stays
 inside what §9 permits.
 
+**A frame carries what the viewer must not work out for itself.** Ants' frames name, per seat, the
+squares that turn revealed for the first time (`discovered`), so the viewer can draw what each seat
+has explored without drawing vision — which is a rule, and a viewer that computed it would be the
+second engine §4 forbids. It is news rather than a mask, so a thousand-frame range costs one entry
+per square per seat rather than a thousand copies of a mask that only grows; and it belongs to the
+turn rather than the call, so a range and a single frame still agree.
+
 ---
 
 ## 5. Building it
@@ -285,8 +292,9 @@ export async function mount(target, replay, opts) { /* → { destroy() } */ }
 ```
 
 `opts` carries `turn`, a `from`/`to` range, `autoplay`, `speed`, `zoom`/`centre`, `theme`, `chrome`,
-`height` and an `onTurn` callback. A replay carries its own board (§4.2), so the envelope is the
-whole input.
+`height`, `labels` — what the host calls each seat, because an envelope only has the referee's name
+for one, which is a weights hash — and an `onTurn` callback. Ants adds `explored`. A replay carries
+its own board (§4.2), so the envelope is the whole input.
 
 **`renderFrame` is fed by your own `replay-decode`, running in the browser from the same component
 digest the match recorded** — which is why the viewer and the referee cannot disagree. Transpile
@@ -336,9 +344,9 @@ in and follows the theme switch for free; hard-code the board, and a match looks
 either theme, the way a video does not change colour with the player around it.
 
 **Give the board the frame.** A host embeds a viewer at whatever height its page can spare — 420
-pixels is a realistic one — so anything permanent beside the transport is height the board does not
-get. Ants puts the seats, the zoom buttons and the readouts in a tray over the stage that appears on
-hover, focus or touch.
+pixels is a realistic one — so anything permanent beside the transport has to earn its height. Ants
+keeps one line of it, a title bar of each seat's name and score, because those are read the whole
+way through a match; its tools are a tray over the stage that appears on hover, focus or touch.
 
 **Take the layout question yourself.** Before the tray, the web application carried fourteen rules
 reaching into Ants' class names to float the seat row over the board. It worked, and it was pinned

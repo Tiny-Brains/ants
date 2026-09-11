@@ -25,7 +25,7 @@ All from this repository's root. Needs stable Rust, the `wasm32-unknown-unknown`
 docker build -t tinybrains/ants:dev .   # the artifact image -- the build that ships
 cargo fmt --check && cargo clippy --all-targets -- -D warnings   # edition 2024; rustfmt.toml matches axon's
 ./deny.sh           # just the determinism check (no floating point in game logic)
-cargo test          # just the host suite -- 79 tests, ~20s
+cargo test          # just the host suite -- 80 tests, ~20s
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
 cargo test spec_scenario_                                  # the spec's worked fights
 cargo test measure_what_random_play_produces -- --nocapture  # diagnostic, not a guarantee

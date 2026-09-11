@@ -15,7 +15,9 @@ export const meta = { gameId: "ants", abiVersion: 1 };
  * @param {HTMLElement|string} target   an element, or a selector
  * @param {object|string} replay        the envelope, or a URL to fetch it from
  * @param {object} [opts]  turn, from, to, autoplay, speed, theme ("light"|"dark"),
- *                         chrome ("hover"|"always"), height, onTurn
+ *                         chrome ("hover"|"always"), height, onTurn,
+ *                         labels ([{ seat, name, by }] -- what the host calls each seat),
+ *                         explored (open with each seat's explored territory drawn)
  * @returns {Promise<Viewer>}  call .destroy() when the page is done with it
  */
 export async function mount(target, replay, opts = {}) {
@@ -33,7 +35,7 @@ export async function mount(target, replay, opts = {}) {
  * be linkable rather than described.
  *
  * `#chrome=always` pins the tray of readouts open, for a screenshot or a page where the viewer is
- * not the thing being hovered.
+ * not the thing being hovered. `#explored=1` opens with each seat's explored territory drawn.
  */
 export function optsFromHash(url = location) {
   const q = new URLSearchParams((url.hash || "").replace(/^#/, "") || url.search || "");
@@ -44,6 +46,7 @@ export function optsFromHash(url = location) {
     to: num("to"),
     speed: num("speed"),
     autoplay: q.get("autoplay") === "1" || q.get("autoplay") === "true",
+    explored: q.get("explored") === "1" || q.get("explored") === "true",
     zoom: num("zoom"),
     theme: q.get("theme") || undefined,
     chrome: q.get("chrome") || undefined,

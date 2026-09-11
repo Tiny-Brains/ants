@@ -14,6 +14,7 @@
 
 use serde_json::{Value, json};
 
+use crate::map::Bits;
 use crate::mapfile::MapFile;
 use crate::observe::{rc, rc_owned};
 use crate::state::Match;
@@ -46,6 +47,9 @@ struct Tape<'a> {
     /// How far through `deltas` the match has been played. The stream is in order, so a scan never
     /// needs to start again from the front — which is what keeps `decode_range` linear.
     at: usize,
+    /// What each seat knew before the turn the match is on was played, so a frame can say what
+    /// that turn revealed. Nothing at turn zero, which makes the opening vision turn zero's news.
+    before: Vec<Bits>,
 }
 
 impl<'a> Tape<'a> {
@@ -54,10 +58,13 @@ impl<'a> Tape<'a> {
         let mf = MapFile::from_json(map).map_err(|e| format!("{}: {}", e.code, e.message))?;
         let seed = payload.get("seed").and_then(Value::as_u64).unwrap_or(0);
         let max_turns = payload.get("max_turns").and_then(Value::as_u64).unwrap_or(1000) as u16;
+        let m = mf.build(seed, max_turns).map_err(|e| format!("{}: {}", e.code, e.message))?;
+        let before = (0..m.players).map(|_| Bits::zeros(m.cells())).collect();
         Ok(Tape {
-            m: mf.build(seed, max_turns).map_err(|e| format!("{}: {}", e.code, e.message))?,
+            m,
             deltas: payload.get("deltas").and_then(Value::as_array).map_or(&[], Vec::as_slice),
             at: 0,
+            before,
         })
     }
 
@@ -82,6 +89,7 @@ impl<'a> Tape<'a> {
                         .collect()
                 })
                 .unwrap_or_default();
+            self.before.clone_from(&self.m.known);
             crate::turn::step(&mut self.m, &moves);
         }
     }
@@ -97,11 +105,41 @@ impl<'a> Tape<'a> {
             "food":  m.food.iter().map(|&f| rc(&m.g, f)).collect::<Vec<_>>(),
             "hills": m.hills.iter().filter(|h| !h.razed)
                        .map(|h| rc_owned(&m.g, h.pos, h.owner)).collect::<Vec<_>>(),
+            "discovered": discovered(m, &self.before),
             "score": m.score,
             "ranks": ranks(m),
             "done":  m.done,
         })
     }
+}
+
+/// The squares each seat saw for the first time on the turn a frame shows, seat by seat, as
+/// `[r, c]`.
+///
+/// A property of the turn rather than of the call, so a range and a single frame still agree. The
+/// viewer folds them from turn zero into the territory each seat has explored, and the fold up to
+/// any frame is exactly the `known` mask observations are built from — the engine's memory, not a
+/// second rendering of vision in JavaScript. News rather than the mask itself because a range
+/// carries every frame, and a thousand copies of a mask that only ever grows would be almost all
+/// repetition: this way a whole match costs at most one entry per square per seat.
+fn discovered(m: &Match, before: &[Bits]) -> Vec<Vec<Value>> {
+    m.known
+        .iter()
+        .zip(before)
+        .map(|(now, was)| {
+            let mut out = Vec::new();
+            // A byte at a time, as `reveal` folds them: `visible` never sets a bit past the board.
+            for (i, (&k, &b)) in now.bits.iter().zip(&was.bits).enumerate() {
+                let mut fresh = k & !b;
+                while fresh != 0 {
+                    let j = fresh.trailing_zeros() as usize;
+                    fresh &= fresh - 1;
+                    out.push(rc(&m.g, (i * 8 + j) as u16));
+                }
+            }
+            out
+        })
+        .collect()
 }
 
 /// `tb.ants.replay-decode(payload, turn)` — one frame.
