@@ -14,7 +14,7 @@ It behaves like a media player, because watching a match is what it is for.
 |---|---|
 | **Transport** | first · previous · play/pause · next · last, all clickable, all with keys. The only thing always on screen |
 | **Timeline** | click anywhere to jump, drag to scrub. Coloured ticks mark the turns worth finding — a hill razed, a colony wiped out — in the seat's own colour |
-| **Title bar** | every seat, always on screen: its colour, model name and score, then whose it is and its ants, hills and share explored. One line at any width; the name and the score are the last things to give way |
+| **Title bar** | every seat, always on screen: its colour, its model name and whose it is, then its ants, its hills and its score — the counts in the board's own shapes, a dot and a square, and its share explored beside an eye while territory is on. The owner gives way first and whole, then the name; the numbers never do. Both are in full on hover |
 | **The tray** | zoom buttons and the territory toggle, over the board's top-right corner and out of the way until you hover it, focus it or touch it |
 | **Zoom** | wheel to zoom about the cursor, drag to pan, buttons for −/+/fit. The board opens fitted and stays fitted through a resize until you zoom |
 | **Hill rings** | a hill with an enemy ant within eight moves of it is ringed in its owner's colour — the seat about to lose it — and the ring warms as the attacker closes. Moves, not distance: round water and across the wrap |
@@ -23,11 +23,14 @@ It behaves like a media player, because watching a match is what it is for.
 
 **Two bars and a board.** The seats are a title bar above the board and the transport a bar below
 it, and both are always on screen — who is playing and what the score is are read the whole way
-through a match, so they are not something to go and find. That costs the board one line, about 36
-pixels of a 420-pixel frame; it used to be a strip of wrapping chips that took a fifth of it, which
-is why the title bar is one line at any width and gives way from the right. The tools are the only
-layer over the stage, the way a video player's chrome is, and `chrome: "always"` pins them open.
-The board's identity and the cell readout were taken out on 11 September 2026.
+through a match, so they are not something to go and find. Two seats cost the board one line, about
+34 pixels of a 460-pixel frame; it used to be a strip of wrapping chips that took a fifth of it.
+Four seats and six do not fit one line of the web's home-page frame at any size of type, so the
+seats are a grid whose columns come from the seat count and the width alone (`seatColumns()`): two
+rows of two there, or of three, and one row on the match page. The number of rows never depends on
+the text in them, so nothing a turn changes can move the board. The tools are the only layer over
+the stage, the way a video player's chrome is, and `chrome: "always"` pins them open. The board's
+identity and the cell readout were taken out on 11 September 2026.
 
 **It takes the width its host gives it.** The root has `contain: inline-size`. The title bar is one
 line of text and the canvas is drawn at the pixels it was last given, and without containment

@@ -243,6 +243,24 @@ check(
 );
 check("the board's label and the cell readout are gone", !/tb-tip|tb-meta|showTip/.test(mod));
 check("seat chips are built once, not per frame", /buildSeats\(\)/.test(mod) && !/this\.seats\.innerHTML = ""/.test(mod));
+// Four seats and six do not fit one line of a 505-pixel frame, so the seats are a grid -- and its
+// columns come from the seat count and the width alone, so no turn can change how many rows the
+// bar takes and move the board under it.
+check(
+  "the seats' columns are the layout's, not their text's",
+  /\.tb-viz \.tb-top\{[^}]*grid-template-columns:repeat\(var\(--tb-cols/.test(css) &&
+    /seatColumns\(this\.seatRows\.length, width\)/.test(mod)
+);
+// "12 ants · 1 hill" took a hundred pixels a seat and was the first thing cut: a 505-pixel frame
+// read "1 ant · 1 h…" and never said how many hills anyone had.
+check(
+  "ants and hills are the board's shapes, not words",
+  /"tb-ant"/.test(mod) && /"tb-hill"/.test(mod) && !/row\.nums\.textContent/.test(mod)
+);
+check(
+  "an owner with no room wraps out of sight rather than showing a lone @",
+  /\.tb-viz \.tb-id\{[^}]*flex-wrap:wrap[^}]*height:1\.5em[^}]*overflow:hidden/.test(css)
+);
 check("the stylesheet is per document", /getElementById\(STYLE_ID\)/.test(mod));
 // mount() puts `tb-viz` on the host element rather than making a root of its own, and that class
 // sets display:flex -- which outranks the [hidden] attribute's UA rule. A host that hides the
@@ -351,6 +369,23 @@ if (shellLoads) {
     "and a hash is the last resort",
     shell.seatLabels({ seats: [{ seat: 0, weights_hash: "sha256:0123456789abcdef" }] }, 1)[0].name === "01234567"
   );
+
+  // The seats' layout at the widths the viewer is given: the web's home page (505 pixels), its
+  // match page (1112) and a phone (352).
+  const columns = shell.seatColumns;
+  check("two seats are one row on the home page", columns(2, 505) === 2);
+  check("four there are two rows of two", columns(4, 505) === 2);
+  check("six there are two rows of three, not four over two", columns(6, 505) === 3);
+  check("six on the match page are one row", columns(6, 1112) === 6);
+  check("six on a phone are three rows of two", columns(6, 352) === 2);
+  let roomy = true;
+  for (const n of [1, 2, 3, 4, 5, 6, 8]) {
+    for (const w of [240, 352, 505, 640, 800, 1112]) {
+      const c = columns(n, w);
+      if (c < 1 || c > n || (c > 1 && w / c < 160)) roomy = false;
+    }
+  }
+  check("no seat is laid out narrower than a seat can be", roomy);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall geometry checks passed");

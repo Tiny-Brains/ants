@@ -163,6 +163,16 @@ Dockerfile           the artifact image: the build that actually ships
 
 ## Status
 
+**11 September 2026 — the title bar fits four seats and six.** A seat's counts are the board's own
+shapes — a dot and a number for its ants, a square and a number for its hills — rather than
+"12 ants · 1 hill", and its score comes last. Those words were the first thing a narrow frame cut:
+the web's 505-pixel home-page replay read `1 ant · 1 h…`, with a lone `@` where the owner should
+have been, and never said how many hills anyone had. The owner now gives way first and whole, then
+the name with an ellipsis; the numbers never do. The seats are a grid whose columns come from the
+seat count and the width alone (`seatColumns()`, checked in `viz/check.mjs`): two seats are still
+one row, four and six are two rows on the home page and one on the match page. Viewer only: the
+component, and so the engine digest, is untouched.
+
 **11 September 2026 — the seats are a title bar.** The viewer's seats left the hover tray for a bar
 above the board that is always on screen: each seat's colour, model name and score, then whose it
 is and its ants, hills and share explored, on one line that gives way from the right. The tray keeps

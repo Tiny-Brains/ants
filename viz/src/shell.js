@@ -88,26 +88,51 @@ const CSS = `
 .tb-viz:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
 
 /* ---------- the title bar: every seat, always on screen ----------
-   Colour, name and score first, and never squeezed out; whose it is and the counts after them, and
-   those are what give way when the frame is narrow. One line at any width, so a count that grows by
-   a digit never moves the board under it. */
-.tb-viz .tb-top{display:flex;flex:none;min-width:0;background:var(--tb-panel);
-  border-bottom:1px solid var(--tb-line)}
-.tb-viz .tb-seat{display:flex;align-items:center;gap:8px;flex:1 1 0;min-width:0;padding:8px 12px;
-  white-space:nowrap;overflow:hidden}
-.tb-viz .tb-seat+.tb-seat{border-left:1px solid var(--tb-line)}
+   A seat is its colour, its name and three numbers: its ants, its hills, its score. The counts are
+   the board's own shapes, a dot for an ant and a square for a hill, rather than spelt out -- the
+   words took a hundred pixels a seat and were the first thing cut, so a 505-pixel frame read
+   "1 ant · 1 h…" and never said how many hills anyone had. The chip and the numbers never give
+   way. The owner goes first, and whole; the name after it, with an ellipsis; both are in full on
+   hover.
+
+   A grid rather than a row, because four seats and six do not fit one line of the frames the
+   player is given. seatColumns() picks the columns from the seat count and the width and nothing
+   else, so how many rows there are never depends on the text in them: a count that grows by a
+   digit, or a long name, cannot move the board under it. */
+.tb-viz .tb-top{display:grid;grid-template-columns:repeat(var(--tb-cols,2),minmax(0,1fr));
+  flex:none;min-width:0;background:var(--tb-panel);border-bottom:1px solid var(--tb-line)}
+/* Each seat rules its own right and bottom edges: the root clips the last column's, the last row's
+   lands on the bar's border, and a short last row draws no line where there is no seat. */
+.tb-viz .tb-seat{display:flex;align-items:center;gap:6px;min-width:0;padding:7px 9px;
+  white-space:nowrap;overflow:hidden;box-shadow:1px 0 0 var(--tb-line),0 1px 0 var(--tb-line)}
 .tb-viz .tb-seat[data-out=true]{opacity:.55}
 .tb-viz .tb-chip{width:10px;height:10px;border-radius:3px;flex:none}
-/* The name does not shrink at all: flex shares a squeeze out in proportion, so a name allowed to
-   shrink lost a few pixels of itself while the counts beside it kept a hundred. Only a name too long
-   for its seat is cut, and never so far that the chip and the score lose their room beside it. */
-.tb-viz .tb-name{font-weight:650;overflow:hidden;text-overflow:ellipsis;flex:none;
-  max-width:min(20ch,calc(100% - 60px))}
-.tb-viz .tb-score{font:600 15px/1 var(--tb-mono);font-variant-numeric:tabular-nums;flex:none}
-.tb-viz .tb-by{color:var(--tb-dim);overflow:hidden;text-overflow:ellipsis;flex:0 100 auto;
-  min-width:0}
-.tb-viz .tb-nums{margin-left:auto;font:11px/1 var(--tb-mono);font-variant-numeric:tabular-nums;
-  color:var(--tb-dim);overflow:hidden;text-overflow:ellipsis;flex:0 10 auto;min-width:0}
+/* The name and the owner share what the numbers leave, on a line that wraps but is one line tall.
+   An owner with no room for seven characters beside the name wraps onto the line nobody sees,
+   rather than standing there cut to a lone "@"; a name too long for the line is cut on its own. */
+.tb-viz .tb-id{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;flex:1 1 0;
+  min-width:0;height:1.5em;overflow:hidden}
+.tb-viz .tb-name{font-weight:650;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tb-viz .tb-by{color:var(--tb-dim);flex:1 1 7ch;max-width:max-content;min-width:0;overflow:hidden;
+  text-overflow:ellipsis}
+.tb-viz .tb-nums{display:flex;align-items:center;gap:6px;flex:none;font:11px/1 var(--tb-mono);
+  font-variant-numeric:tabular-nums;color:var(--tb-dim)}
+.tb-viz .tb-n{display:inline-flex;align-items:center;gap:3px}
+.tb-viz .tb-n[hidden]{display:none}
+.tb-viz .tb-n b{font-weight:inherit}
+/* Room held for the digits a count reaches, so ants passing ten do not take a letter off the name. */
+.tb-viz .tb-n-ants b{min-width:2ch}
+.tb-viz .tb-n-seen b{min-width:3ch}
+.tb-viz .tb-ant{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.tb-viz .tb-hill{width:8px;height:8px;border:1.5px solid currentColor;flex:none;
+  background:color-mix(in srgb,currentColor 30%,transparent)}
+.tb-viz .tb-eye svg{display:block}
+/* The score last, where a scoreboard keeps it, and the one figure in the bar's full ink. Held a
+   little apart from the hills beside it, so "1" and "1" never read as "11". No room held for a
+   second digit: every seat starts on one point a hill and gains two a raze, so a score past nine
+   is a rare moment rather than a whole match of empty space. */
+.tb-viz .tb-score{font:600 15px/1 var(--tb-mono);font-variant-numeric:tabular-nums;flex:none;
+  margin-left:3px}
 
 /* ---------- the stage ---------- */
 .tb-viz .tb-stage{position:relative;flex:1 1 auto;min-height:200px;display:flex;overflow:hidden;
@@ -193,6 +218,9 @@ const TURNS_PER_SECOND = 10;
 const PEEK_MS = 2600;
 /** How near an enemy ant has to be to a hill, in moves, before the hill is ringed. */
 const THREAT_STEPS = 8;
+/** The narrowest a seat in the title bar may be: its chip, seven or eight letters of its name and
+ *  its three numbers. Six seats in the web's 505-pixel home-page frame are then two rows of three. */
+const MIN_SEAT = 160;
 
 // Inline SVG rather than glyphs: "⏮" renders as a different width, weight and baseline on every
 // platform, and transport controls that jump about are the first thing that makes a player feel
@@ -211,6 +239,9 @@ const ICON = {
   fit: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.8 6V2.8H6M10 2.8h3.2V6M13.2 10v3.2H10M6 13.2H2.8V10"/></svg>',
   // An eye, because a seat's territory is what it has seen.
   explored: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.6 8s2.4-4.3 6.4-4.3S14.4 8 14.4 8s-2.4 4.3-6.4 4.3S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>',
+  // The tray's eye again, at the size of the title bar's figures: the share beside it is what that
+  // button draws.
+  seen: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.6 8s2.4-4.3 6.4-4.3S14.4 8 14.4 8s-2.4 4.3-6.4 4.3S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>',
 };
 
 export class Viewer {
@@ -374,28 +405,47 @@ export class Viewer {
    */
   buildSeats() {
     const d = this.el.ownerDocument;
-    const span = (row, cls, text) => {
+    const span = (parent, cls, text) => {
       const n = d.createElement("span");
       n.className = cls;
       if (text != null) {
         n.textContent = text;
         n.title = text;
       }
-      row.appendChild(n);
+      parent.appendChild(n);
       return n;
+    };
+    // A count is a shape and a number. The shape is an image with a name, so a screen reader says
+    // "ants 12" where the eye reads a dot and a 12.
+    const count = (parent, kind, shape, label, html) => {
+      const n = span(parent, `tb-n tb-n-${kind}`);
+      const s = span(n, shape);
+      s.setAttribute("role", "img");
+      s.setAttribute("aria-label", label);
+      if (html) s.innerHTML = html;
+      return { n, value: n.appendChild(d.createElement("b")) };
     };
     this.seatRows = this.frames[this.i].score.map((_, seat) => {
       const row = d.createElement("div");
       row.className = "tb-seat";
       span(row, "tb-chip").style.background = SEATS[seat % SEATS.length];
       const { name, by } = this.labels[seat];
-      span(row, "tb-name", name);
-      const score = span(row, "tb-score");
-      if (by) span(row, "tb-by", by);
+      const id = span(row, "tb-id");
+      span(id, "tb-name", name);
+      if (by) span(id, "tb-by", by);
       const nums = span(row, "tb-nums");
+      const ants = count(nums, "ants", "tb-ant", "ants");
+      const hills = count(nums, "hills", "tb-hill", "hills");
+      // Territory is a toggle, so its share is built with the rest and shown only while it is on.
+      const seen = count(nums, "seen", "tb-eye", "explored", ICON.seen);
+      const score = span(row, "tb-score");
+      score.title = "score";
       this.seats.appendChild(row);
-      return { row, score, nums };
+      return { row, score, nums, ants: ants.value, hills: hills.value, seen: seen.n, pct: seen.value };
     });
+    // One row until the first layout says otherwise: see seatColumns().
+    this.seatCols = this.seatRows.length;
+    this.seats.style.setProperty("--tb-cols", String(this.seatCols));
   }
 
   buildTrack(track) {
@@ -453,6 +503,9 @@ export class Viewer {
 
   observe() {
     const fit = () => {
+      // The seats first: the rows they take are what the stage has left.
+      const w = this.el.clientWidth;
+      if (w >= 2) this.layoutSeats(w);
       const r = this.stage.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) return;
       this.renderer.resize(r.width, r.height);
@@ -461,6 +514,14 @@ export class Viewer {
     this.ro = new ResizeObserver(fit);
     this.ro.observe(this.stage);
     fit();
+  }
+
+  /** Lay the title bar's seats out for a width -- see seatColumns() -- writing only a change. */
+  layoutSeats(width) {
+    const cols = seatColumns(this.seatRows.length, width);
+    if (cols === this.seatCols) return;
+    this.seatCols = cols;
+    this.seats.style.setProperty("--tb-cols", String(cols));
   }
 
   /**
@@ -650,11 +711,17 @@ export class Viewer {
     f.score.forEach((score, seat) => {
       const row = this.seatRows[seat];
       if (!row) return;
+      const pct = seen ? Math.round((100 * seen[seat]) / cells) : 0;
       row.row.dataset.out = String(ants[seat] === 0);
       row.score.textContent = String(score);
-      row.nums.textContent =
+      row.ants.textContent = String(ants[seat]);
+      row.hills.textContent = String(hills[seat]);
+      row.seen.hidden = !seen;
+      row.pct.textContent = `${pct}%`;
+      // The words the shapes stand for, on hover.
+      row.nums.title =
         `${ants[seat]} ant${ants[seat] === 1 ? "" : "s"} · ${hills[seat]} hill${hills[seat] === 1 ? "" : "s"}` +
-        (seen ? ` · ${Math.round((100 * seen[seat]) / cells)}% explored` : "");
+        (seen ? ` · ${pct}% explored` : "");
     });
   }
 
@@ -792,6 +859,23 @@ function count(ants, seat) {
   let n = 0;
   for (const a of ants) if (a[2] === seat) n++;
   return n;
+}
+
+/**
+ * How many columns the title bar lays `n` seats out in, in a bar `width` pixels wide: every seat on
+ * one row if each gets `min` pixels there, else the fewest rows that give each seat that much --
+ * which is also the most even split, so six seats in a 505-pixel frame are two rows of three rather
+ * than a row of four over a row of two.
+ *
+ * It reads the seat count and the width and nothing else. A layout that looked at the names or the
+ * numbers could change its row count in the middle of a match, and the board under it would jump.
+ */
+export function seatColumns(n, width, min = MIN_SEAT) {
+  for (let rows = 1; rows < n; rows++) {
+    const cols = Math.ceil(n / rows);
+    if (cols * min <= width) return cols;
+  }
+  return 1;
 }
 
 /**
