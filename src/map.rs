@@ -76,6 +76,11 @@ impl Bits {
 
     /// The protocol's `water` field: `[value, run, value, run, ...]`, row-major. The run lengths
     /// must sum to `rows * cols`, which conformance checks.
+    ///
+    /// Eight cells at a time wherever a whole byte continues the current run, which on a board is
+    /// almost everywhere — open ground and unexplored fog both come in long stretches — and this
+    /// runs once per seat per turn over up to 16,384 cells. A byte that breaks the run, and the
+    /// part of the last byte that lies on the board, go a cell at a time.
     pub fn rle(&self) -> Vec<u32> {
         let mut out: Vec<u32> = Vec::new();
         if self.len == 0 {
@@ -83,20 +88,35 @@ impl Bits {
         }
         let mut cur = self.get(0) as u32;
         let mut run = 0u32;
-        for i in 0..self.len {
-            let v = self.get(i) as u32;
-            if v == cur {
-                run += 1;
-            } else {
-                out.push(cur);
-                out.push(run);
-                cur = v;
-                run = 1;
+        let whole = self.len / 8;
+        for (i, &byte) in self.bits[..whole].iter().enumerate() {
+            if byte == if cur == 1 { 0xFF } else { 0x00 } {
+                run += 8;
+                continue;
             }
+            for j in i * 8..i * 8 + 8 {
+                rle_square(&mut out, &mut cur, &mut run, self.get(j) as u32);
+            }
+        }
+        for j in whole * 8..self.len {
+            rle_square(&mut out, &mut cur, &mut run, self.get(j) as u32);
         }
         out.push(cur);
         out.push(run);
         out
+    }
+}
+
+/// One square of a run-length encoding: the run goes on, or it closes and the next one opens.
+#[inline]
+fn rle_square(out: &mut Vec<u32>, cur: &mut u32, run: &mut u32, v: u32) {
+    if v == *cur {
+        *run += 1;
+    } else {
+        out.push(*cur);
+        out.push(*run);
+        *cur = v;
+        *run = 1;
     }
 }
 
@@ -167,6 +187,12 @@ impl Geom {
     pub fn dist2(&self, a: u16, b: u16) -> i32 {
         let (ar, ac) = self.rc(a);
         let (br, bc) = self.rc(b);
+        self.dist2_rc(ar, ac, br, bc)
+    }
+
+    /// `dist2`, for two squares already known by row and column.
+    #[inline]
+    pub fn dist2_rc(&self, ar: i32, ac: i32, br: i32, bc: i32) -> i32 {
         let dr = (ar - br).abs().min(self.rows - (ar - br).abs());
         let dc = (ac - bc).abs().min(self.cols - (ac - bc).abs());
         dr * dr + dc * dc
@@ -196,6 +222,14 @@ pub const fn isqrt(n: i32) -> i32 {
         r += 1;
     }
     r
+}
+
+/// `Geom::disk` as rows: each row offset `dr` within `r²`, with the half-width of the columns on
+/// that row that are within it too. The same squares, in the shape that lets vision stamp a row as
+/// one run instead of wrapping every square separately.
+pub fn disk_rows(r2: i32) -> Vec<(i32, i32)> {
+    let reach = isqrt(r2);
+    (-reach..=reach).map(|dr| (dr, isqrt(r2 - dr * dr))).collect()
 }
 
 /// The four moves, in the order the protocol names them: N, E, S, W.

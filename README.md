@@ -163,6 +163,20 @@ Dockerfile           the artifact image: the build that actually ships
 
 ## Status
 
+**11 September 2026 — the hot loops, 2.4-3.2x faster, and the same game byte for byte.** A profile
+of a 16-match wave put the time in whole-board work, not in ants: the food-set scan over every
+square whenever food falls due (27%), base64 over the whole wave on every call (32%), and bitmaps
+walked a square at a time (about a fifth). The scan now tests each image of a square directly
+instead of building and sorting its orbit; base64 is one pass with a compile-time table and a
+four-character fast path; run lengths, known water and `reveal` go a byte at a time; and vision
+stamps the disk a row at a time. Natively, per 16-match wave-turn under a greedy policy: cell 3.47 →
+1.08 ms, maze 2.29 → 0.99, standard 1.84 → 0.78. **Every observe, step and finish output is
+identical** across six seeded waves hashed turn by turn, and `cartridge.json`, `plugin.json`,
+`reference/observations.json` and nine generated maps are byte-identical. `src/tests/equivalence.rs`
+keeps each loop's original beside its replacement and compares the two on every committed board;
+`cargo test` is 79. **The digest moved**, as any rebuild does, so the ladder plays the old component
+until it is cut over (`design/tracker.md`, Throughput).
+
 **10 September 2026 — the build output left git, and the crate moved to edition 2024.** Nothing
 generated is committed any more: `tb-ants.wasm`, `plugin.json`, `cartridge.json`, `src/maps_gen.rs`,
 `reference/observations.json` and `viz/dist/` are gitignored and ship in the artifact image

@@ -5,6 +5,7 @@
 //! rule implemented wrongly. Each test names the rule it is for.
 
 mod ending;
+mod equivalence;
 mod food;
 mod maps;
 mod replay;

@@ -1,6 +1,6 @@
 //! One match's state, and how a world is made.
 
-use crate::map::{Bits, Geom, Rng, Symmetry, VIEW_RADIUS2};
+use crate::map::{Bits, Geom, Rng, Symmetry, VIEW_RADIUS2, disk_rows};
 
 /// A hill. Razed hills are kept: a razed hill is a permanent fact of the match, and the score
 /// already charged for it must not be charged twice.
@@ -197,13 +197,26 @@ impl Match {
     }
 
     /// Every square within view radius of at least one living ant of `owner`.
+    ///
+    /// Stamped a row of the disk at a time: the same 241 squares an ant at radius² 77, with one
+    /// wrap per row instead of two per square. It runs twice per seat per turn — `reveal` folds it
+    /// into `known`, and the view reads it again — so it is on every call's path.
     pub fn visible(&self, owner: u8) -> Bits {
         let mut v = Bits::zeros(self.cells());
-        let disk = self.g.disk(VIEW_RADIUS2);
+        let rows = disk_rows(VIEW_RADIUS2);
+        let (h, w) = (self.g.rows, self.g.cols);
         for a in self.ants_of(owner) {
             let (r, c) = self.g.rc(a.pos);
-            for (dr, dc) in &disk {
-                v.set(self.g.at(r + dr, c + dc) as usize);
+            for &(dr, half) in &rows {
+                let base = (r + dr).rem_euclid(h) * w;
+                let mut col = (c - half).rem_euclid(w);
+                for _ in 0..=2 * half {
+                    v.set((base + col) as usize);
+                    col += 1;
+                    if col == w {
+                        col = 0;
+                    }
+                }
             }
         }
         v
@@ -211,13 +224,13 @@ impl Match {
 
     /// Fold this turn's vision into what the player knows. Water never changes, so anything already
     /// seen stays true.
+    ///
+    /// A byte at a time: `visible` never sets a bit past the board, so OR-ing the bytes is OR-ing
+    /// the squares.
     pub fn reveal(&mut self, owner: u8) {
         let vis = self.visible(owner);
-        let k = &mut self.known[owner as usize];
-        for i in 0..vis.len {
-            if vis.get(i) {
-                k.set(i);
-            }
+        for (k, v) in self.known[owner as usize].bits.iter_mut().zip(&vis.bits) {
+            *k |= v;
         }
     }
 
@@ -252,18 +265,44 @@ impl Match {
 /// its pending queue for ever. Following the comment rather than the code is the one deliberate
 /// departure here, and it is the difference between a maze board's food rate meaning what it says
 /// and being quietly cut by the water fraction.
+///
+/// This is a pass over every square of the board, run each time food falls due, and it was the
+/// engine's largest single cost. It gives the same answer without building any orbit, because each
+/// exclusion is a test on one image at a time: the square is its orbit's smallest member when no
+/// image is smaller, and a set is clear of water, hills and touching when every image is. The square
+/// is itself image 0, so water and hills — one bitmap, since a hill never moves and a razed one
+/// keeps its square — settle most of the board before any image is looked at. And along a row only
+/// the column moves, so each image's row is wrapped once a row and its column once a board, instead
+/// of two divisions for every image of every square.
 pub fn food_sets(m: &Match) -> Vec<u16> {
+    let (rows, cols) = (m.g.rows, m.g.cols);
+    let mut blocked = m.water.clone();
+    for h in &m.hills {
+        blocked.set(h.pos as usize);
+    }
+    // Image k of (r, c) is `at(r + dr·k, c + dc·k)`, as `Symmetry::image` has it.
+    let ks: Vec<i32> = (1..m.players as i32).collect();
+    let col_shift: Vec<i32> = ks.iter().map(|&k| (m.sym.dc * k).rem_euclid(cols)).collect();
+    let mut image_row = vec![0i32; ks.len()];
+
     let mut out = Vec::new();
-    let mut buf = [0u16; 16];
-    for pos in 0..m.cells() as u16 {
-        let k = orbit_into(m, pos, &mut buf);
-        let orbit = &buf[..k];
-        let usable = orbit[0] == pos
-            && !orbit.iter().any(|&p| m.water.get(p as usize))
-            && !orbit.iter().any(|&p| m.hills.iter().any(|h| h.pos == p))
-            && !orbit[1..].iter().any(|&p| m.g.dist2(orbit[0], p) == 1);
-        if usable {
-            out.push(pos);
+    for r in 0..rows {
+        for (i, &k) in ks.iter().enumerate() {
+            image_row[i] = (r + m.sym.dr * k).rem_euclid(rows);
+        }
+        'square: for c in 0..cols {
+            let pos = r * cols + c;
+            if blocked.get(pos as usize) {
+                continue;
+            }
+            for (&ir, &shift) in image_row.iter().zip(&col_shift) {
+                let ic = if c + shift >= cols { c + shift - cols } else { c + shift };
+                let p = ir * cols + ic;
+                if p < pos || blocked.get(p as usize) || m.g.dist2_rc(r, c, ir, ic) == 1 {
+                    continue 'square;
+                }
+            }
+            out.push(pos as u16);
         }
     }
     out

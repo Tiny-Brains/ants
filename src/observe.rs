@@ -72,12 +72,12 @@ pub fn view(m: &Match, seat: u8) -> Value {
     let vis = m.visible(seat);
     let known = &m.known[seat as usize];
 
-    let mut seen_water = Bits::zeros(m.cells());
-    for i in 0..m.cells() {
-        if m.water.get(i) && known.get(i) {
-            seen_water.set(i);
-        }
-    }
+    // `water AND known`, a byte at a time: both bitmaps are the board's length, and `rle` reads
+    // nothing past the board.
+    let seen_water = Bits {
+        bits: m.water.bits.iter().zip(&known.bits).map(|(w, k)| w & k).collect(),
+        len: m.cells(),
+    };
 
     json!({
         "size":  [m.g.rows, m.g.cols],

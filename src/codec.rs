@@ -248,41 +248,83 @@ pub fn unpack(s: &str) -> Option<Wave> {
 
 const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-pub fn b64_encode(data: &[u8]) -> String {
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for c in data.chunks(3) {
-        let b = [c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0)];
-        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
-        out.push(A[(n >> 18) as usize & 63] as char);
-        out.push(A[(n >> 12) as usize & 63] as char);
-        out.push(if c.len() > 1 { A[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if c.len() > 2 { A[n as usize & 63] as char } else { '=' });
+/// `A` inverted, at compile time; 255 marks a byte outside the alphabet.
+const REV: [u8; 256] = {
+    let mut rev = [255u8; 256];
+    let mut i = 0;
+    while i < 64 {
+        rev[A[i] as usize] = i as u8;
+        i += 1;
     }
-    out
+    rev
+};
+
+/// Every call carries the whole wave in and out through here, so both directions run once per
+/// plugin invocation over tens of kilobytes. They are written for that: one pass, no copy of the
+/// input, output sized up front.
+pub fn b64_encode(data: &[u8]) -> String {
+    let mut out = Vec::with_capacity(data.len().div_ceil(3) * 4);
+    let (whole, rest) = data.as_chunks::<3>();
+    for c in whole {
+        let n = ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32;
+        out.extend_from_slice(&[
+            A[(n >> 18) as usize & 63],
+            A[(n >> 12) as usize & 63],
+            A[(n >> 6) as usize & 63],
+            A[n as usize & 63],
+        ]);
+    }
+    if !rest.is_empty() {
+        let n = ((rest[0] as u32) << 16) | ((*rest.get(1).unwrap_or(&0) as u32) << 8);
+        out.push(A[(n >> 18) as usize & 63]);
+        out.push(A[(n >> 12) as usize & 63]);
+        out.push(if rest.len() > 1 { A[(n >> 6) as usize & 63] } else { b'=' });
+        out.push(b'=');
+    }
+    String::from_utf8(out).expect("the alphabet is ASCII")
 }
 
+/// Padding and whitespace are skipped wherever they fall, and a short final group decodes as a
+/// whole one would have been cut: two characters carry one byte, three carry two.
 pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
-    let mut rev = [255u8; 256];
-    for (i, &c) in A.iter().enumerate() {
-        rev[c as usize] = i as u8;
-    }
-    let src: Vec<u8> = s.bytes().filter(|&b| b != b'=' && !b.is_ascii_whitespace()).collect();
+    let src = s.as_bytes();
     let mut out = Vec::with_capacity(src.len() / 4 * 3);
-    for c in src.chunks(4) {
-        let mut n = 0u32;
-        for (k, &b) in c.iter().enumerate() {
-            let v = rev[b as usize];
-            if v == 255 {
-                return None;
-            }
-            n |= (v as u32) << (18 - 6 * k);
+
+    // Whole groups of four alphabet characters first, which is everything `b64_encode` writes but
+    // its last group. Any byte outside the alphabet — padding and whitespace included — maps to
+    // 255, so one OR over the four finds it and hands the rest to the loop below, which then starts
+    // on a group boundary exactly where this stopped.
+    let mut at = 0;
+    for g in src.as_chunks::<4>().0 {
+        let v = [REV[g[0] as usize], REV[g[1] as usize], REV[g[2] as usize], REV[g[3] as usize]];
+        if (v[0] | v[1] | v[2] | v[3]) >= 64 {
+            break;
         }
+        let n = (v[0] as u32) << 18 | (v[1] as u32) << 12 | (v[2] as u32) << 6 | v[3] as u32;
+        out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+        at += 4;
+    }
+
+    let (mut n, mut k) = (0u32, 0u32);
+    for &b in &src[at..] {
+        if b == b'=' || b.is_ascii_whitespace() {
+            continue;
+        }
+        let v = REV[b as usize];
+        if v == 255 {
+            return None;
+        }
+        n |= (v as u32) << (18 - 6 * k);
+        k += 1;
+        if k == 4 {
+            out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            (n, k) = (0, 0);
+        }
+    }
+    if k > 0 {
         out.push((n >> 16) as u8);
-        if c.len() > 2 {
+        if k > 2 {
             out.push((n >> 8) as u8);
-        }
-        if c.len() > 3 {
-            out.push(n as u8);
         }
     }
     Some(out)
