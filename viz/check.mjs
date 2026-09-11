@@ -248,6 +248,13 @@ check("the stylesheet is per document", /getElementById\(STYLE_ID\)/.test(mod));
 // sets display:flex -- which outranks the [hidden] attribute's UA rule. A host that hides the
 // player while it loads a replay depends on this one line.
 check("a host can still hide it", /\.tb-viz\[hidden\]\{display:none\}/.test(css));
+// The host decides the width. The title bar is a line of text that does not wrap and the canvas is
+// sized in pixels, so without containment either became the viewer's minimum width and a grid column
+// holding it grew to fit -- the web's home-page replay was 871 pixels wide in a 410-pixel column.
+check(
+  "the host decides the width, not the viewer's content",
+  /\.tb-viz\{[^}]*contain:inline-size/.test(css)
+);
 
 // ---------------------------------------------------------------- what is drawn over the board
 //

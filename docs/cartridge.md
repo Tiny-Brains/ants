@@ -330,7 +330,7 @@ inheriting the evaluator's security surface.
 
 ### What a viewer owes the page it is on
 
-Four rules, learned from having three hosts. They are not enforced by the ABI, and each of them was
+Five rules, learned from having three hosts. They are not enforced by the ABI, and each of them was
 a bug first.
 
 **Scope every rule to your root class.** A viewer mounts by putting its class on the host element
@@ -352,6 +352,13 @@ way through a match; its tools are a tray over the stage that appears on hover, 
 reaching into Ants' class names to float the seat row over the board. It worked, and it was pinned
 to names this repository owns: a release that renamed one would have silently undone it. If a host
 needs the viewer laid out differently, that is an option on `mount()`.
+
+**Take the width you are given.** A host places a viewer in a column and expects it to fill that
+column; it does not expect the viewer to decide how wide the column is. Anything in the viewer
+that does not wrap — a line of names, a canvas sized in pixels — becomes its minimum width, and a
+grid column holding it grows to fit: Ants' title bar put the web home page's replay at 871 pixels
+in a 410-pixel column. `contain: inline-size` on the root takes the viewer's content out of its
+width entirely.
 
 ---
 

@@ -167,7 +167,9 @@ Dockerfile           the artifact image: the build that actually ships
 above the board that is always on screen: each seat's colour, model name and score, then whose it
 is and its ants, hills and share explored, on one line that gives way from the right. The tray keeps
 only the tools — zoom and the territory toggle — and the board's label and the cell readout are
-gone. Viewer only: the component, and so the engine digest, is untouched.
+gone. The root takes `contain: inline-size`, because the title bar's one line of text otherwise
+became the viewer's minimum width and pushed the web application's grid columns past what they
+were given. Viewer only: the component, and so the engine digest, is untouched.
 
 **11 September 2026 — a frame says what each seat saw first, and the viewer draws it.** Every
 `replay-decode` frame now carries `discovered`: per seat, the squares that turn revealed for the

@@ -53,7 +53,12 @@ const CSS = `
   color:var(--tb-ink);background:var(--tb-panel);
   display:flex;flex-direction:column;min-height:0;
   font:13px/1.5 var(--tb-sans);
-  overflow:hidden;-webkit-font-smoothing:antialiased}
+  overflow:hidden;-webkit-font-smoothing:antialiased;
+  contain:inline-size}
+/* Its width is the host's, never its content's. The title bar is one line of text and the canvas
+   is drawn at the pixels it was last given, and either would otherwise become the viewer's minimum
+   width: a grid column holding it grew to fit, which put the web application's home-page replay at
+   871 pixels in a 410-pixel column. A host that sizes to its content has to give it a width. */
 /* No border and no radius of its own. mount() styles the host element rather than making a root
    inside it, so a frame the host has already drawn -- the web application's card, the book's figure
    -- is the frame, and a second one drawn here would sit inside it. Clipping is this side's: the

@@ -29,6 +29,12 @@ is why the title bar is one line at any width and gives way from the right. The 
 layer over the stage, the way a video player's chrome is, and `chrome: "always"` pins them open.
 The board's identity and the cell readout were taken out on 11 September 2026.
 
+**It takes the width its host gives it.** The root has `contain: inline-size`. The title bar is one
+line of text and the canvas is drawn at the pixels it was last given, and without containment
+either became the viewer's minimum width: the day the title bar arrived, the web application's
+home-page replay grew from its 410-pixel column to 871 and squeezed the headline beside it into
+280. A host that sizes to its content — an inline-block, a float — has to give the viewer a width.
+
 ## Light and dark
 
 **The chrome follows the page.** Every colour of the frame is one of the platform's design tokens
