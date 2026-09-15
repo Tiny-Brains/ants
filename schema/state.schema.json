@@ -6,7 +6,7 @@
   "description": "Everything a model needs to choose this turn's moves, and nothing else. Authored and published by the game developer for model developers; the platform never loads it. Coordinates are [row, col], zero-indexed, row-major, and the map wraps on both axes. Owners are OBSERVER-RELATIVE: 0 is always you.",
 
   "type": "object",
-  "required": ["size", "mine", "foes", "food", "hills", "water"],
+  "required": ["size", "mine", "foes", "food", "hills", "water", "vis"],
   "additionalProperties": false,
 
   "properties": {
@@ -53,7 +53,7 @@
         ],
         "items": false
       },
-      "description": "Hills you know about, standing or razed-and-visible."
+      "description": "Hills VISIBLE THIS TURN, standing. A razed hill is gone from the map and is never in the view; a standing hill you cannot see this turn is not either, so this list is filtered by `vis` exactly as `foes` and `food` are."
     },
 
     "water": {
@@ -68,7 +68,22 @@
           "description": "Flat [value, run, value, run, …] over cells in row-major order. Values are 0 or 1. THE RUNS MUST SUM TO rows*cols — a cross-field invariant JSON Schema cannot express, so conformance checks it."
         }
       },
-      "description": "KNOWN water only, accumulated as the map is explored. Note the consequence of there being no visibility mask: a 0 means 'not known to be water', which conflates 'known empty' with 'never seen'. A model that cares about the exploration frontier must carry that in its recurrent state."
+      "description": "KNOWN water only, accumulated as the map is explored. A 0 means 'not known to be water'. Against `vis` it separates: water AND NOT vis is remembered water, and a 0 inside vis is a cell seen empty this turn."
+    },
+
+    "vis": {
+      "type": "object",
+      "required": ["rle"],
+      "additionalProperties": false,
+      "properties": {
+        "rle": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Flat [value, run, value, run, …] over cells in row-major order. Values are 0 or 1. THE RUNS MUST SUM TO rows*cols, as water's do."
+        }
+      },
+      "description": "What you can see THIS TURN: the union of the view-radius disks around `mine`, wrapping. It is the same bitmap the engine filters foes/food/hills through, sent rather than derived because the radius is a rule of the game and the adapter language cannot build the disk union (docs/protocol.md §1)."
     }
   },
 

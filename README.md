@@ -21,7 +21,7 @@ other colonies' hills; the cartridge implements the world in which those decisio
 **It does not**
 
 - Schedule or host matches; [Kalam](https://github.com/Tiny-Brains/kalam) runs the cartridge.
-- Evaluate models or adapters; [Axon](https://github.com/Tiny-Brains/axon) produces actions.
+- Evaluate models or adapters; Orion's `models` entity runs the graph and the manifest, and Kalam reads the head.
 - Admit competitors or maintain ratings; [Jodi](https://github.com/Tiny-Brains/jodi) owns those decisions.
 - Run matches or ONNX models; the `tinybrains` CLI in [DevOps](https://github.com/Tiny-Brains/devops) plays a wave locally.
 
@@ -226,8 +226,8 @@ the bytes) and passes `--remap-path-prefix`, so the digest is a function of the 
 
 The crate is now **edition 2024**. `cargo fix --edition` took two match-ergonomics fixes in
 `turn.rs`, clippy took two `collapsible_if` sites into let-chains (`lib.rs`, `turn.rs`), and
-`rustfmt.toml` was added — the same `max_width = 100` / `use_small_heuristics = "Max"` axon uses,
-because without it `cargo fmt` reformats every file away from the style this crate is written in.
+`rustfmt.toml` was added — `max_width = 100` / `use_small_heuristics = "Max"`, the style the
+platform's Rust is written in — because without it `cargo fmt` reformats every file away from the style this crate is written in.
 `cargo test` (75), `cargo clippy -D warnings` on both targets, `cargo audit` and `deny.sh` are clean.
 **The engine digest moved**, as any rebuild does; `cartridge.json` and `reference/observations.json`
 are byte-identical across the change, which is what says no rule moved with it.
@@ -269,6 +269,6 @@ the offset rather than ignoring it, until a platform run on the current digest r
 
 - Local references: [plugin ABI](plugin.toml), [registration manifest](cartridge.json), and [rule tests](src/tests/).
 - Design docs: [`docs/cartridge.md`](docs/cartridge.md) (the plugin ABI and the determinism law) and [`docs/protocol.md`](docs/protocol.md) (the JSON shapes a model sees). [`schema/`](schema/) holds the JSON Schemas and `validate.py`.
-- [The competitor guide](https://github.com/Tiny-Brains/docs) — the reader-facing half: the rules, the model format, the adapter dialect, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
-- Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Axon](https://github.com/Tiny-Brains/axon), [Jodi](https://github.com/Tiny-Brains/jodi), [DevOps](https://github.com/Tiny-Brains/devops).
+- [The competitor guide](https://github.com/Tiny-Brains/docs) — the reader-facing half: the rules, the model format, the manifest, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
+- Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Jodi](https://github.com/Tiny-Brains/jodi), [DevOps](https://github.com/Tiny-Brains/devops).
 - Apache-2.0: see [LICENSE](LICENSE).

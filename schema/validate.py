@@ -116,7 +116,22 @@ for c in CASES:
     check(sum(runs[1::2]) == rows * cols,
           f"ants/{c}: runs sum to {sum(runs[1::2])}, map has {rows * cols} cells")
     check(all(v in (0, 1) for v in runs[0::2]), f"ants/{c}: run values must be 0 or 1")
-print(f"cross-field: {len(CASES)} x 4 invariants checked")
+    # `vis` is the same encoding over the same board, and it is what `foes`, `food` and `hills`
+    # were filtered through -- so every one of those must sit on a cell the mask marks.
+    vruns = st["vis"]["rle"]
+    check(len(vruns) % 2 == 0, f"ants/{c}: vis run-length list must be pairs")
+    check(sum(vruns[1::2]) == rows * cols,
+          f"ants/{c}: vis runs sum to {sum(vruns[1::2])}, map has {rows * cols} cells")
+    check(all(v in (0, 1) for v in vruns[0::2]), f"ants/{c}: vis run values must be 0 or 1")
+    seen = []
+    for v, n in zip(vruns[0::2], vruns[1::2]):
+        seen.extend([v] * n)
+    for field in ("foes", "food", "hills"):
+        for cell in st[field]:
+            r, col = cell[0], cell[1]
+            check(seen[r * cols + col] == 1,
+                  f"ants/{c}: {field} at [{r},{col}] is outside vis, which filtered it")
+print(f"cross-field: {len(CASES)} x 8 invariants checked")
 
 # ---- payload rules (root may be ANY JSON value: Ants actions are arrays, Tron's is a string) ----
 canon = lambda o: json.dumps(o, sort_keys=True, separators=(",", ":"))

@@ -28,7 +28,7 @@ same way, since the SDK drives the loop and knows the last state it sent.
 ## 1. What a state contains
 
 Only what the model needs to choose this turn's moves. For Ants that is the map size, your ants,
-the enemy ants you can see, food, hills, and known water:
+the enemy ants you can see, food, hills, known water, and what you can see this turn:
 
 ```json
 {
@@ -37,7 +37,8 @@ the enemy ants you can see, food, hills, and known water:
   "foes":  [[12,33,1], [11,34,1]],
   "food":  [[11,31], [40,80]],
   "hills": [[20,20,0], [44,76,1]],
-  "water": { "rle": [0,812, 1,6, 0,4110, 1,12, 0,1204] }
+  "water": { "rle": [0,812, 1,6, 0,4110, 1,12, 0,1204] },
+  "vis":   { "rle": [0,240, 1,17, 0,79, 1,21, 0,5766] }
 }
 ```
 
@@ -56,15 +57,30 @@ empty array, which is always valid.
 | `turn` | Ants has no scoring cliff at the turn limit, so a move rarely turns on how many turns remain. Planet Wars **keeps** it, because it scores at the limit — the principle is *send what the model needs to decide*, not *strip everything*. |
 | `wrap` | Ants maps always wrap. A constant of the game, baked into the weights. |
 | `view2`, `attack2`, `spawn2` | Same — constants, not state. |
-| `vis` (visibility mask) | Derivable: visible cells are the union of view-radius disks around `mine`, and the radius is a constant. Same reasoning that made Planet Wars send coordinates instead of a distance matrix. |
+| ~~`vis` (visibility mask)~~ | **Put back on 14 September 2026 — see below.** It is derivable in a trainer and *not* derivable in the language a submitted adapter is written in. |
 | `scores` | Derivable from hills and history, and not an input to a move. |
 | `rejected` | Feedback about last turn's illegal moves. A stateless model cannot act on it anyway. |
 | terminal state | The engine stops sending. There is nothing to say. |
 
-The `vis` removal has a real consequence worth stating: with no explored mask, a `0` in `water`
-conflates *known empty* with *never seen*. A model that cares about the exploration frontier has to
-carry that in its recurrent state. That is the cost of the trade, and it is the model's problem
-rather than the protocol's.
+### Why `vis` came back
+
+The removal argument was *derivable from `mine` and a constant*, and it is sound for any encoder
+written in a general-purpose language: a trainer builds the disk union in numpy in four lines. It is
+**false for the expression language a submitted adapter is written in.** An adapter is JSONLogic
+evaluated by the platform's engine, and that engine cannot address an enclosing iterator's element
+from inside a nested one — verified, not assumed: inside `map` over ants, a nested `map` over the
+241 disk offsets reads the offset at every scope level and the root above that, and the ant is
+unreachable. So the disk union is either a 241-fold unrolled kernel in every entrant's manifest or
+it is not expressible at all.
+
+The engine already computes this bitmap twice per seat per turn — `reveal` folds it into `known` and
+the view filters `foes`, `food` and `hills` through it — so sending it costs one run-length encode of
+a bitmap already in hand. A rule of the game is now computed once, by the thing that owns the rules,
+rather than re-implemented by every competitor who wants a visibility plane.
+
+It also closes the gap the removal note named: `water AND NOT vis` is remembered water, so a model
+can now tell *known empty* from *never seen* without carrying it in a recurrent state it does not
+have.
 
 ---
 
@@ -252,7 +268,16 @@ thing simpler.
    A million is about three times the richest adapter written so far, and at a measured 1.8 ms per
    million operations it is 1.8 ms a seat — 58 ms for 32 seats run serially, against a `turn_ms` of
    1000. The budget is a fairness rule rather than a performance one, and at that price there is no
-   reason to make it tight. See [axon/docs/dialect.md](https://github.com/Tiny-Brains/axon/blob/main/docs/dialect.md) §4 and `axon/tests/ants_adapter.rs`.
+   reason to make it tight.
+
+   **Superseded in part, 14 September 2026.** The finding above — the mask "was not expressible
+   *correctly*, because Ants maps wrap and the modulo needs a map size that is not in scope where
+   the ant is" — was right, and stays right on the platform's new expression engine, which was
+   checked rather than assumed. What changed is the answer. An operator was the wrong fix for a
+   plane that is a **rule of this game**: the engine computes exactly that bitmap twice a turn
+   already, so §1 now sends it as `vis` and every adapter reads it with the same `rle_expand` it
+   uses for `water`. The 32,777 operations the operator bought back become approximately zero, and
+   there is no operator to specify, price or port.
 
    Related and now decided: **a resign value in the action schema — not yet.** A forfeited seat
    plays no-ops until the engine ends the match; Kalam already ranks forfeits last, so a

@@ -21,9 +21,10 @@ fn main() {
         // and by turn_ms above, and unable to catch the exploit it was introduced for. The turn
         // deadline is the compute bound, and the loader gives each row its own share of it.
         "budgets": {
-            // Measured, not argued: a reference six-plane adapter costs 197,272 operations against
-            // a real worst-case observation, and a visibility-deriving one did not fit 200,000 at
-            // all. See axon/tests/ants_adapter.rs.
+            // Measured, not argued. A shipped seven-plane manifest costs 86,051 operations at
+            // 64x96 and 229,415 at 128x128 -- about 14 a cell -- so a million is 4.4x headroom on
+            // the largest board the catalogue ships. The number must equal the Kalam node's
+            // `engine.ops_budget`, which is what actually refuses one (devops checks it).
             "adapter_ops_max": 1000000
         }
     });

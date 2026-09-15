@@ -10,8 +10,19 @@
 //!   "foes":  [[12,33,1], [11,34,1]],
 //!   "food":  [[11,31], [40,80]],
 //!   "hills": [[20,20,0], [44,76,1]],
-//!   "water": { "rle": [0,812, 1,6, 0,4110, 1,12, 0,1204] } }
+//!   "water": { "rle": [0,812, 1,6, 0,4110, 1,12, 0,1204] },
+//!   "vis":   { "rle": [0,240, 1,17, 0,79, 1,21, 0,5766] } }
 //! ```
+//!
+//! `vis` is **this turn's visibility**: the union of the view-radius disks around `mine`, wrapping,
+//! which is the same bitmap `view` already filters `foes`, `food` and `hills` through. It is sent
+//! rather than derived because the radius is a rule of the game, and a model's encoder deriving it
+//! is a second implementation of that rule — the thing this platform refuses everywhere else. It
+//! was left out of the first protocol on the grounds that it is derivable from `mine` and a
+//! constant, which is true of a trainer in numpy and **false of the expression language a submitted
+//! adapter is written in**: that language cannot reach an enclosing iterator's element, so the
+//! per-ant disk is a 241-fold unrolled kernel or nothing. The engine already holds the bitmap when
+//! it builds this view, so sending it costs one run-length encode and removes the kernel.
 //!
 //! `water` carries **known water** — `water AND seen`, per player. Water never changes, so anything
 //! already seen stays true. The alternatives were rejected for one reason: a model here is a pure
@@ -25,10 +36,11 @@
 //! a partially explored map is more fragmented than either an empty or a full one, the run-length
 //! encoding grows over a match.
 //!
-//! Two consequences are visible to a model. A `0` in `water` conflates *known empty* with *never
-//! seen*, which is the cost of dropping the `vis` mask. And `water` is the only field with memory —
-//! `foes`, `food` and `hills` are strictly what is visible this turn — which is not an
-//! inconsistency but the rules: only water is permanent.
+//! One consequence is visible to a model. `water` is the only field with memory — `foes`, `food`,
+//! `hills` and `vis` are strictly what is visible this turn — which is not an inconsistency but the
+//! rules: only water is permanent. `water AND NOT vis` is therefore *remembered* water, and the
+//! frontier between explored and unexplored is `vis` against what the model has seen before; both
+//! were unavailable while `vis` was not sent.
 
 use serde_json::{Value, json};
 
@@ -94,5 +106,8 @@ pub fn view(m: &Match, seat: u8) -> Value {
                    .map(|h| rc_owned(&m.g, h.pos, relative(h.owner, seat, m.players)))
                    .collect::<Vec<_>>(),
         "water": { "rle": seen_water.rle() },
+        // This turn's disks, the same bitmap the three fields above are filtered through. The
+        // engine has it in hand; an adapter cannot cheaply build it. See the module docs.
+        "vis":   { "rle": vis.rle() },
     })
 }

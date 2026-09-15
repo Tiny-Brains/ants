@@ -1,12 +1,30 @@
 {
-  "_note": "Every one of your ants died last turn. The state still arrives, mine is empty, and the only valid action is an empty array. The engine keeps sending states while the match runs; it simply stops when the match ends, and the model is never told why.",
+  "_note": "Every one of your ants died last turn. The state still arrives, and with no ants there is no vision: `mine` is empty, so `vis` is all zeros and `foes`, `food` and `hills` are empty with it. The only valid action is an empty array. The engine keeps sending states while the match runs; it simply stops when the match ends, and the model is never told why.",
   "state": {
-    "size": [64, 96],
-    "mine":  [],
-    "foes":  [[20, 20, 1], [21, 20, 1]],
-    "food":  [],
-    "hills": [[20, 20, 0], [44, 76, 1]],
-    "water": { "rle": [0, 812, 1, 6, 0, 5326] }
+    "size": [
+      64,
+      96
+    ],
+    "mine": [],
+    "foes": [],
+    "food": [],
+    "hills": [],
+    "water": {
+      "rle": [
+        0,
+        812,
+        1,
+        6,
+        0,
+        5326
+      ]
+    },
+    "vis": {
+      "rle": [
+        0,
+        6144
+      ]
+    }
   },
   "action": []
 }

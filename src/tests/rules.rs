@@ -413,6 +413,50 @@ fn vision_shrinks_when_your_ants_die() {
 }
 
 #[test]
+fn the_view_carries_the_mask_it_filtered_through() {
+    // `vis` is sent rather than derived (docs/protocol.md §1): it is the same bitmap `foes`, `food`
+    // and `hills` are filtered by, so nothing in those lists can sit on a cell the mask leaves at
+    // zero, and the runs cover the board exactly the way `water`'s do.
+    let mut m = bare(40, 40, 2);
+    m.ants.push(Ant { pos: at(&m, 10, 10), owner: 0 });
+    m.ants.push(Ant { pos: at(&m, 30, 30), owner: 1 });
+    m.food.push(at(&m, 10, 12));
+    m.food.push(at(&m, 30, 32));
+    m.hills.push(Hill { pos: at(&m, 10, 11), owner: 0, razed: false, last_touched: 0 });
+    m.reveal(0);
+    let v = crate::observe::view(&m, 0);
+
+    let runs: Vec<i64> =
+        v["vis"]["rle"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+    assert_eq!(runs.len() % 2, 0, "runs are [value, length] pairs");
+    assert_eq!(runs.iter().skip(1).step_by(2).sum::<i64>(), 1600, "the runs cover every cell");
+    assert!(runs.iter().step_by(2).all(|&x| x == 0 || x == 1), "a mask is zeros and ones");
+
+    let mut mask = Vec::with_capacity(1600);
+    for pair in runs.chunks(2) {
+        mask.extend(std::iter::repeat_n(pair[0], pair[1] as usize));
+    }
+    assert_eq!(mask.iter().filter(|&&b| b == 1).count(), m.visible(0).count(), "it is `visible`");
+    for field in ["foes", "food", "hills"] {
+        for cell in v[field].as_array().unwrap() {
+            let (r, c) = (cell[0].as_i64().unwrap(), cell[1].as_i64().unwrap());
+            assert_eq!(
+                mask[(r * 40 + c) as usize],
+                1,
+                "{field} at [{r},{c}] must be inside the mask"
+            );
+        }
+    }
+    assert_eq!(v["food"].as_array().unwrap().len(), 1, "only the food beside your ant is in view");
+
+    // Lose every ant and the mask goes with the vision, which is what the wiped example shows.
+    m.ants.retain(|a| a.owner != 0);
+    let blind = crate::observe::view(&m, 0);
+    assert_eq!(blind["vis"]["rle"], serde_json::json!([0, 1600]), "no ants, no vision");
+    assert_eq!(blind["foes"].as_array().unwrap().len(), 0, "and nothing to see with it");
+}
+
+#[test]
 fn water_is_remembered_and_everything_else_is_not() {
     // The decision in observe.rs: `water` is what you have seen; foes, food and hills are what you
     // can see now. Only water is permanent (*Bot Input*).
