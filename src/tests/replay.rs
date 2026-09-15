@@ -181,6 +181,10 @@ fn a_replay_the_platform_actually_wrote_decodes() {
     // A real envelope, taken from object storage after the local stack played it. The other replay
     // tests build their own envelope in-process and would keep passing if Kalam and the engine
     // drifted apart about what a replay is — which has happened, silently, once already.
+    //
+    // Re-captured 15 September 2026 from a `tb-match` run on the current engine: `maze-03`, 256
+    // turns, `rank_stabilized` 3–0. So it also pins the POST-REBUILD envelope shape — `orion_version`
+    // where `evaluator_digest` and `dialect_version` used to be.
     let raw = include_str!("../../tests/fixtures/replay-maze-03.json");
     let payload: serde_json::Value = serde_json::from_str(raw).expect("the fixture is JSON");
 
@@ -204,17 +208,12 @@ fn a_replay_the_platform_actually_wrote_decodes() {
     assert_eq!(last["frame"]["turn"].as_u64().unwrap() as u16, turns);
     assert_eq!(last["frame"]["ranks"], payload["engine_ranks"], "the verdict re-simulates");
 
-    // This envelope predates the scoring fix: the engine that wrote it started a match on zero
-    // rather than on one point per hill, so every score is one short per hill owned. Ranks still
-    // agree exactly and the scores differ by precisely that, which is what makes it a stale fixture
-    // rather than a re-simulation bug. Asserted rather than ignored so the offset cannot grow;
-    // regenerate the fixture on the current digest and this goes back to a plain equality.
-    let stored: Vec<i64> =
-        payload["scores"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
-    let resim: Vec<i64> =
-        last["frame"]["score"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
-    let shifted: Vec<i64> = stored.iter().map(|s| s + 1).collect();
-    assert_eq!(resim, shifted, "one hill each, so one point each, and no other difference");
+    // A plain equality again. The fixture this replaced was written by an engine that opened a
+    // match on zero rather than on one point per hill, so it had to assert that offset instead;
+    // this one was played on the digest the cartridge currently ships, so the scores re-simulate
+    // exactly. If this ever needs an offset again, the fixture is stale -- re-capture it rather
+    // than widening the assertion.
+    assert_eq!(last["frame"]["score"], payload["scores"], "and so do the scores");
 
     // And the range form walks the same match in one pass.
     let ranged =
