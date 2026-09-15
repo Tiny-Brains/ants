@@ -208,7 +208,7 @@ identical** across six seeded waves hashed turn by turn, and `cartridge.json`, `
 `reference/observations.json` and nine generated maps are byte-identical. `src/tests/equivalence.rs`
 keeps each loop's original beside its replacement and compares the two on every committed board;
 `cargo test` is 79. **The digest moved**, as any rebuild does, so the ladder plays the old component
-until it is cut over (`design/tracker.md`, Throughput).
+until it is cut over.
 
 **10 September 2026 — the build output left git, and the crate moved to edition 2024.** Nothing
 generated is committed any more: `tb-ants.wasm`, `plugin.json`, `cartridge.json`, `src/maps_gen.rs`,

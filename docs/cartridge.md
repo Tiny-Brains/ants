@@ -315,7 +315,7 @@ for the application that is.
 
 **The cost is real and is not hidden: the second cartridge writes its own scrubber.** That is the
 trade, taken while there is one cartridge and one viewer to reason from. The extraction point is
-the second cartridge (tracker §7): whatever turns out to be genuinely game-independent becomes a
+the second cartridge: whatever turns out to be genuinely game-independent becomes a
 shared package *then*, informed by two real viewers instead of one imagined one. If you are that
 second author and this feels like a lot of scrubber to write, say so — that is the signal the
 extraction is due, and it is a better signal than a shell designed in advance for one game.

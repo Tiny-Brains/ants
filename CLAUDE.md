@@ -13,7 +13,7 @@ ratings, not admission, not models, not matches as scheduling units.
 The parent `tinybrains/CLAUDE.md` describes the nine-repo platform this sits in; read it for
 anything crossing a repo boundary. `README.md` here is the canonical page and is maintained in the
 platform's standard shape (Scope / Where it sits / Interface / Run it, test it / Layout / What must
-stay true / Status) — update **Status** and `../design/tracker.md` when work lands.
+stay true / Status) — update **Status** when work lands.
 
 ## Commands
 
