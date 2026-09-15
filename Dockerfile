@@ -115,6 +115,9 @@ LABEL org.opencontainers.image.title="tb.ants cartridge artifacts" \
       org.opencontainers.image.description="tb-ants.wasm, its manifests, the board catalogue, the reference observations, and the replay viewer"
 
 COPY --from=engine /src/tb-ants.wasm /src/plugin.json /src/cartridge.json /artifacts/
+# plugin.toml, not just the generated plugin.json: a consumer compiles this component into an
+# Orion package, and `orion-server compile` reads a set's plugins from their plugin.toml.
+COPY plugin.toml /artifacts/
 COPY --from=engine /src/maps/      /artifacts/maps/
 COPY --from=engine /src/reference/ /artifacts/reference/
 COPY --from=viz    /src/viz/dist/  /artifacts/viz/
