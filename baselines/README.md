@@ -40,7 +40,7 @@ same gate as anyone else. It was `Tiny-Brains/ants-baselines` until 16 September
 
 ```text
 tinybrains/
-  ants/             <- the cartridge; games.toml resolves it from `..`
+  ants/             <- the cartridge; games.toml resolves its build output, `../dist`
     baselines/      <- you are here
   devops/           <- the `tinybrains` CLI, which is the whole toolchain
 ```
@@ -63,7 +63,7 @@ What this directory produces, and what reads it:
 ## Run it, test it
 
 ```sh
-(cd .. && ./build.sh)                    # the cartridge games.toml resolves: component, manifest, reference set
+(cd .. && ./build.sh)                    # ../dist, which games.toml resolves: component, manifest, reference set
 cargo install --path ../../devops/cli    # or export TINYBRAINS=../../devops/cli/target/release/tinybrains
 pip install -e '.[dev]'
 

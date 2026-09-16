@@ -61,7 +61,7 @@ const near = (a, b, eps = 0.001) => Math.abs(a - b) < eps;
 
 const { canvas, makeStubCanvas, calls } = stubDom();
 const { Renderer } = await import("./src/render.js");
-const replay = JSON.parse(readFileSync("../tests/fixtures/replay-maze-03.json", "utf8"));
+const replay = JSON.parse(readFileSync("../engine/src/tests/fixtures/replay-maze-03.json", "utf8"));
 
 console.log("geometry");
 const r = new Renderer(canvas);
@@ -142,9 +142,9 @@ globalThis.ResizeObserver = class {
   observe() {}
   disconnect() {}
 };
-// From dist/, because that is where the transpiled component lives -- src/engine.js imports it
-// by a path that only exists after build.sh has run.
-const { allFrames } = await import("./dist/engine.js");
+// From ../dist/viz/, because that is where the transpiled component lives -- src/engine.js imports
+// it by a path that only exists after build.sh has run.
+const { allFrames } = await import("../dist/viz/engine.js");
 const frames = allFrames(replay);
 check("every turn has a frame", frames.length === replay.turns + 1, `${frames.length}`);
 
@@ -172,7 +172,7 @@ check("the stylesheet was found", css.length > 500, `${css.length} chars`);
 // is the only file here that no other check imports.
 let shellLoads = true;
 try {
-  const shell = await import("./dist/shell.js");
+  const shell = await import("../dist/viz/shell.js");
   shellLoads = typeof shell.Viewer === "function";
 } catch (e) {
   shellLoads = false;
@@ -281,7 +281,7 @@ check(
 // it saw first, turn by turn.
 console.log("over the board");
 if (shellLoads) {
-  const shell = await import("./dist/shell.js");
+  const shell = await import("../dist/viz/shell.js");
 
   // Five rows by seven, wrapping. Column 0 is all water, so the short way round the left is shut;
   // column 3 is water but for the bottom row, so the way across is the long way round.

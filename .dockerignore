@@ -1,20 +1,9 @@
-# The build tree, and the artifacts this image exists to produce. Copying either in would let a
-# stale local build shadow the one this Dockerfile makes -- the exact failure the image removes.
-#
-# reference/ is excluded by FILE, not by directory: build.sh redirects `cargo run --bin reference`
-# into reference/observations.json, and a redirect into a directory that is not there fails.
-target/
-tb-ants.wasm
-plugin.json
-cartridge.json
-reference/observations.json
-viz/dist/
-src/maps_gen.rs
-
+# The build tree, and a local dist/: copying either in would let a stale local build shadow the one
+# this Dockerfile makes -- the exact failure the image removes.
+engine/target/
+dist/
 .git/
-.run/
 
 # The baselines are trained entries with their own Python toolchain, not an input to this image.
-# Excluding them keeps the build context what it was before they moved in -- 85 MB of regenerable
-# dataset included -- so a training edit neither re-runs the gate nor can reach the component.
+# Excluding them keeps a training edit from re-running the gate, or from reaching the component.
 baselines/

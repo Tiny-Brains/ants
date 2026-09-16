@@ -89,7 +89,7 @@ get the envelope's.
 ## Building
 
 ```sh
-./build.sh          # jco transpile, geometry checks, copy; writes dist/
+./build.sh          # jco transpile, geometry checks, copy; writes ../dist/viz/ (needs ../build.sh first)
 node check.mjs      # just the checks
 ```
 
@@ -104,10 +104,11 @@ depends on to hide the player while it fetches a replay. And it imports the buil
 backtick inside a CSS comment ends the template literal and `node --check` on a `.js` file reads the
 wreckage as a script and says nothing.
 
-`dist/` is committed exactly as `tb-ants.wasm` is, so a clone with no Node still runs the viewer
-and only someone changing it needs the toolchain. `dist/engine.json` records the component digest
-the bundle carries: a replay naming a different `engine_digest` is one this build cannot faithfully
-show, and `tinybrains view` says so rather than drawing it anyway.
+The bundle is not committed. It lands in `../dist/viz/` beside the component it was transpiled
+from, and ships in the artifact image under `/artifacts/viz/`, so only someone changing the viewer
+needs Node. `engine.json` records the component digest the bundle carries: a replay naming a
+different `engine_digest` is one this build cannot faithfully show, and `tinybrains view` says so
+rather than drawing it anyway.
 
 ## Layout
 
@@ -118,7 +119,7 @@ src/shell.js    the player: title bar, transport, timeline with event marks, the
                 stylesheet, and what is drawn over the board -- the rings' step counts and the
                 territory's fold
 check.mjs       checks that need no browser: geometry, step counts, territory, labels, CSS scoping
-src/index.js    mount() -- built to dist/viz.js, the path the platform loads
+src/index.js    mount() -- built to viz.js, the path the platform loads
 src/react.js    the same viewer as a React component; React is a peer
 ```
 
@@ -132,11 +133,11 @@ zero. How many moves an ant is from a hill is the other case: it decides nothing
 the shell counts them itself — round water, since a ring that lit up for an enemy on the far side of
 a wall would point at nothing, and ignoring food, which comes and goes and would make a ring flicker.
 
-**The shell lives here, not in the web application.** `docs/cartridge.md` §7 used to put it there
-and leave the cartridge "owning pixels". The viewer has three consumers that are not one
+**The shell lives here, not in the web application.** The first contract put it in the platform
+and left the cartridge "owning pixels". The viewer has three consumers that are not one
 application, and a shell split across three of them is a shell maintained in three places. The
-trade is that a second cartridge writes its own scrubber; §7 says so, and the extraction point is
-whenever that cartridge exists and there are two real viewers to generalise from.
+trade is that a second cartridge writes its own scrubber, and the extraction point is whenever that
+cartridge exists and there are two real viewers to generalise from.
 
 **It is framework-free, with a React wrapper.** This is a canvas, a slider and a few readouts;
 React buys it nothing and would tie the cartridge to a React version. `react.js` is the only file

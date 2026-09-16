@@ -209,8 +209,8 @@ class Env:
     def step(self, actions: list[str]) -> Step:
         """`actions[i]` is for `seats[i]`: one character an ant, in `mine`'s order.
 
-        The compact form is the replay's own (`ants/src/replay.rs`), not an invention, and it is
-        four times smaller on the wire than an array of strings.
+        The compact form is the replay's own (`ants/engine/src/replay.rs`), not an invention, and it
+        is four times smaller on the wire than an array of strings.
         """
         self._write({"op": "step", "actions": actions})
         return self._pack(self._read())

@@ -1,289 +1,217 @@
 # ants
 
-Ants is the reference game cartridge for TinyBrains: a deterministic contest between colonies
-on a wrapping grid. This Rust crate ships a WebAssembly component, its Orion plugin manifest,
-and the registration data the platform uses to schedule and admit models for the game.
-
-## The name
-
-**Ants** describes the game itself. Each colony gathers food, grows its population, and attacks
-other colonies' hills; the cartridge implements the world in which those decisions take effect.
+Ants is the reference game cartridge for TinyBrains: a deterministic contest between colonies on a
+wrapping grid, after the 2011 Google AI Challenge. This repository builds the WebAssembly component
+the platform plays, its manifests, the boards, and the replay viewer — and keeps the platform's own
+trained entries for the game beside the rules they encode.
 
 ## Scope
 
 **It owns**
 
-- The board catalogue, its validation, and player symmetry.
-- Turn resolution, visibility, end conditions, ranks, and scores.
-- Packed game state and replay reconstruction from recorded actions.
-- The plugin ABI and generated cartridge registration manifest.
+- The rules: turn resolution, visibility, end conditions, ranks and scores.
+- The boards: the catalogue under `maps/`, its validation, and player symmetry.
+- The packed game state, and replay reconstruction from recorded actions.
+- The plugin ABI (`engine/plugin.toml`) and the generated registration manifest (`cartridge.json`).
 - The replay viewer (`viz/`), which re-simulates through the component.
-- The platform's trained entries for this game and the pipeline that trains them
-  ([`baselines/`](baselines/README.md)): competitor entries with no special access, kept here so
-  an observation change and the encoding that reads it land together. They are not the cartridge,
-  and the component knows nothing about them.
+- The platform's trained entries and the pipeline that trains them ([`baselines/`](baselines/README.md)):
+  competitor entries with no special access, kept here so an observation change and the encoding
+  that reads it land together. They are not the cartridge, and the component knows nothing of them.
 
 **It does not**
 
-- Schedule or host matches; [Kalam](https://github.com/Tiny-Brains/kalam) runs the cartridge.
-- Evaluate models or adapters; Orion's `models` entity runs the graph and the manifest, and Kalam reads the head.
-- Admit competitors or maintain ratings; [Soma](https://github.com/Tiny-Brains/soma)'s clocks own those decisions.
-- Run matches or ONNX models; the `tinybrains` CLI in [DevOps](https://github.com/Tiny-Brains/devops) plays a wave locally.
+- Schedule or play ladder matches; [Kalam](https://github.com/Tiny-Brains/kalam) runs the cartridge.
+- Run models or evaluate adapters; Orion's `models` entity does, and Kalam reads the policy head.
+- Admit competitors or keep ratings; [Soma](https://github.com/Tiny-Brains/soma)'s clocks do.
+- Document the game for competitors; [the competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs)
+  does, and is where the protocol is published.
 
 ## Where it sits
 
 ```text
-[Ants source] -- build.sh --> [component + manifests]
-                                      |           |
-                                 vendored      registered
-                                      v           v
-                                   [Kalam]     [DevOps loader]
+[ants] --docker build--> tinybrains/ants:<tag>   /artifacts/ == dist/
+                               |
+         +---------------------+----------------------+---------------------+
+         v                     v                      v                     v
+  [Kalam package]       [DevOps loader]          [web + book]        [tinybrains CLI]
+   tb-ants.wasm          cartridge.json,          viz/                 a games registry
+   plugin.toml/json      reference/, the digest                        `path` at dist/
 ```
 
 | Direction | Party | Over | What moves |
 |---|---|---|---|
-| called by | Kalam | Orion plugin ABI | Worlds, observations, actions, and results for a wave |
-| reads | Caller | Plugin inputs | Seeds, preset, turn limit, an optional board, and opaque seat references |
-| writes | DevOps registration loader | cartridge.json | Presets, seat counts, the board catalogue, limits, and admission budgets |
-| writes | Admission | reference/observations.json | The payloads an adapter is validated against |
-
-Kalam vendors the built artifacts, so running a replica does not require this repository or Rust.
-The [system map](https://github.com/Tiny-Brains/devops#where-it-sits) describes the surrounding services.
+| called by | Kalam | Orion plugin ABI | Worlds, observations, actions and results |
+| read by | DevOps loader | `cartridge.json` | Presets, seat counts, the board catalogue, limits, the adapter budget |
+| read by | Admission | `reference/observations.json` | The payloads an adapter is validated against |
+| read by | web, the book, `tinybrains view` | `viz/` | The viewer bundle and the digest it was transpiled from |
+| read by | `tinybrains` | a registry `path` | The component, the manifest, `maps/`, `reference/` and `viz/` |
 
 ## Interface
 
 The component is `tb-ants.wasm`, plugin id `tb.ants`, ABI `orion:plugin@1.0.0`.
-[plugin.toml](plugin.toml) declares each function's input fields and required values.
+[`engine/plugin.toml`](engine/plugin.toml) declares each function's input fields.
 
-| Export | Input contract | Result |
+| Export | Input | Result |
 |---|---|---|
-| `tb.ants.worldgen` | Seeds and one preset; optional players check, max_turns, and a board by id or inline | Initial packed wave state |
-| `tb.ants.observe` | wave_state and optional refs | Views for live seats, with their references echoed |
-| `tb.ants.step` | wave_state and actions | State after one turn for each live match |
-| `tb.ants.finish` | wave_state | Match ranks, scores, ending reasons, and the board each ended match was played on |
-| `tb.ants.replay-decode` | Replay payload and a turn, or a `from`/`to` range | One reconstructed frame, or a range in one pass; each frame also names the squares every seat saw for the first time that turn |
+| `tb.ants.worldgen` | Seeds and a preset; optionally `players`, `max_turns`, and a board by id or inline (`map`, or `maps` per seed) | The initial packed `wave_state` |
+| `tb.ants.observe` | `wave_state`, and opaque per-seat `refs` | A view per live seat, its ref echoed |
+| `tb.ants.step` | `wave_state` and actions | The next `wave_state`, `done`, `ended` and the replay delta |
+| `tb.ants.finish` | `wave_state` | Ranks, scores, the ending reason, and the board each ended match was played on |
+| `tb.ants.replay-decode` | A replay envelope, and a `turn` or a `from`/`to` range | One frame, or a range in one pass |
 
-Keep `wave_state` opaque between calls. Actions may follow the last observation's positional order
-or use explicit match and seat entries; the host tests verify that both forms agree.
-The export is spelled `replay-decode`, including the hyphen.
+`wave_state` is opaque to every caller. Actions follow the last observation's order, or name
+`{m, seat, action}` explicitly. The hyphen in `replay-decode` is part of the name.
 
-| Artifact | Authored or generated | Consumer |
+What a view contains, what an action is and what a cartridge must honour are published in the
+competitor guide: *What your model sees*, *What your model answers*, and *Adding a game*.
+
+### The artifact set
+
+`./build.sh` writes `dist/`, and the image carries the same tree under `/artifacts/`:
+
+| Path | What it is | Made by |
 |---|---|---|
-| plugin.toml | Authored ABI declaration | Orion tooling and build.sh |
-| plugin.json | Generated from plugin.toml | Orion admin API |
-| cartridge.json | Generated by src/bin/manifest.rs, plus the catalogue and `about` from tools/cartridge.py | Platform game registration |
-| tb-ants.wasm | Generated from Rust by build.sh | Kalam's plugin host |
-
-The manifest names `standard`, `maze`, and `cell`, each with two seats and eight boards. Runtime limits are
-`limits.max_turns` and `limits.turn_ms`; admission policy uses `budgets.adapter_ops_max` from
-[cartridge.json](cartridge.json). There is no compute budget — `turn_ms` is the compute bound, and
-the loader divides it among the rows of one call.
-
-Check the replay contract without an Orion instance:
-
-```sh
-cargo test a_replay_re_simulates_the_match_it_recorded
-```
+| `tb-ants.wasm` | The component; its sha256 is the **engine digest** | `cargo build` + `wasm-tools component new` |
+| `plugin.toml`, `plugin.json` | The ABI, authored and as JSON | `engine/plugin.toml`; `tools/package.py` |
+| `cartridge.json` | Presets, limits, the adapter budget, the board catalogue, `about` | `engine/src/bin/manifest.rs`; `tools/package.py` adds `maps` and `engine/about.json` |
+| `maps/` | The boards, as committed | copied from `maps/` |
+| `reference/observations.json` | The observations admission validates an adapter against | `engine/src/bin/reference.rs` |
+| `viz/` | The viewer bundle and `engine.json`, the digest it carries | `viz/build.sh` |
 
 ## Run it, test it
 
-This is a plugin, so there is no server to start. All commands run from this repository's root.
-
-- Stable Rust with Cargo; no minimum Rust version is declared in Cargo.toml.
-- Python 3.11 or newer, for the build script's `tomllib` import.
-- The wasm32-unknown-unknown Rust target and `wasm-tools`, for component builds.
-- `jsonschema`, optionally: `build.sh` runs `schema/validate.py` when it is importable and says so
-  when it is not.
-- No database, object store, or running platform is needed for the host tests.
+This is a plugin, so there is no server. The build needs stable Rust with the
+`wasm32-unknown-unknown` target, `wasm-tools`, and Python 3.11 or newer; the viewer also needs Node.
+No database, object store or running platform is needed.
 
 ```sh
-./build.sh          # the whole gate, then every artifact, locally
-docker build -t tinybrains/ants:dev .   # the artifact image -- what actually ships
-./deny.sh           # just the source-level determinism check
-cargo test          # just the host suite -- 80 tests
+./build.sh                              # the gate, then every artifact, into dist/
+viz/build.sh                            # the viewer, into dist/viz/ -- after ./build.sh
+docker build -t tinybrains/ants:dev .   # the artifact image: what actually ships
+tools/deny.sh                           # just the determinism check
+
+cd engine                               # the crate is its own Cargo workspace
+cargo test                              # just the host suite
+cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
-`build.sh` runs `deny.sh` and the tests before it compiles anything, then writes `tb-ants.wasm`,
-`plugin.json`, `cartridge.json`, `src/maps_gen.rs` and `reference/observations.json`, and prints the
-engine digest the platform will load the component under.
+`build.sh` runs the determinism check and the tests before it compiles anything, and ends by
+printing the engine digest. **A local digest is not the platform's.** Only the image pins rustc
+exactly and remaps build paths, so only the image's digest is reproducible — `docker build
+--no-cache` lands on the same one every time. Build it once and let every consumer take that image.
 
-**None of that output is committed.** It ships in the artifact image `Dockerfile` builds, under
-`/artifacts/`: the component, its manifests, the board catalogue, the reference observations and the
-built viewer. Consumers name an image rather than a path — `tinybrains/ants:dev` built from this
-directory, or `ghcr.io/tiny-brains/ants:<tag>` pulled — so no one needs this repository checked out
-beside theirs. What `build.sh` writes locally is for working here.
+To play or check against this checkout rather than an image, point a games registry at `dist/`:
 
-The image pins rustc exactly and remaps build paths, because rustc bakes the absolute path of every
-source file a panic can name into the binary: without that, the digest is a fingerprint of the
-machine rather than of the source. `docker build --no-cache` lands on the same digest every time.
-Build it **once** and let every consumer take that image.
+```toml
+[games.ants]
+name = "Ants"
+path = "../ants/dist"
+```
 
-A rebuilt component is a **new engine digest**, which `games.active_engine_digest`, the season and
-the plugin signatures all have to move with.
+An image's `/artifacts/` copied out works the same way:
 
-The optional measurement test is `cargo test measure_what_random_play_produces -- --nocapture`. It
-samples random play; its outcomes are diagnostics rather than balance guarantees.
+```sh
+id=$(docker create tinybrains/ants:dev) && docker cp "$id":/artifacts/. dist && docker rm "$id"
+```
+
+## What a deployment owes it
+
+- **One image, pinned.** `ANTS_REF` reaches Kalam's package, the loader and web, and they must
+  agree: a replica on another digest claims nothing, and a viewer on another digest draws a match
+  that never happened.
+- **A signature per build.** Every rebuild is a new digest, and a component whose Ed25519
+  signature does not match brings the node up `degraded`.
+- **A declared digest.** `games.active_engine_digest` and each replica's `engine_digest` move with
+  the component — as a patch when the rules did not change, on a new season when they did.
 
 ## Layout
 
+One directory per toolchain — `engine/` (Rust), `viz/` (Node), `baselines/` (Python) — and at the
+root only what spans them: the boards, the build, and the image.
+
 ```text
-src/lib.rs           plugin dispatch: the five exported functions and nothing else
-src/map.rs           wrapping grid, presets, symmetry, and distances
-src/state.rs         a match while it is played, and food at the hidden rate
-src/turn.rs          turn resolution and ending conditions
-src/observe.rs       visibility and per-seat observations
-src/mapfile.rs       the board as a file: parsing, validation, the catalogue
-src/maps_gen.rs      generated (gitignored): every board under maps/, compiled in
-src/codec.rs         packed wave-state encoding
-src/replay.rs        action recording and replay reconstruction
-src/authoring.rs     host-only: the board factory and the artifact generators
-src/bin/             manifest, mapgen, reference -- the three generators
-src/tests/           the host suite, one file per area
-maps/                the boards themselves, one JSON file each
-reference/           generated (gitignored): the observations admission validates against
-tests/fixtures/      a replay the platform actually wrote, for the decode test
-tools/               build steps: embed the boards, write the manifests, report
-schema/              JSON Schemas, worked examples, and validate.py
-viz/                 the viewer: one bundle for the web app, the book, and the CLI
-baselines/           the platform's trained entries, and how they were trained (Python; not in the image)
-plugin.toml          authored Orion ABI declaration
-deny.sh              source check for floating-point game logic
-build.sh             the gate, then every artifact, locally
-Dockerfile           the artifact image: the build that actually ships
+engine/                    the cartridge: a Rust crate compiled to the wasm component
+  src/lib.rs               plugin dispatch: the five exports and their JSON shapes, no rules
+  src/grid.rs              wrapping, distances, symmetry, directions, bitmaps, the seeded RNG
+  src/maps.rs              the board as a file: parsing, validation, the catalogue, the presets
+  src/state.rs             one match while it is played
+  src/turn.rs              a turn in its fixed order, the cutoff counter, the end conditions, ranks
+  src/food.rs              food at the hidden rate, in shuffled symmetric sets
+  src/observe.rs           what a seat sees, and what it has been shown
+  src/codec.rs             the packed, base64 wave_state
+  src/replay.rs            the action stream, and re-simulating it into frames
+  src/authoring.rs         host-only: the board factory and the reference observations
+  src/bin/                 manifest, mapgen, reference -- the generators
+  src/tests/               the host suite, one file per area; fixtures/ holds a platform-written replay
+  build.rs                 compiles ../maps/ into the component
+  plugin.toml              the authored Orion ABI
+  about.json               the game's introduction, folded into cartridge.json
+viz/                       the replay viewer: one bundle for the web app, the book and the CLI
+baselines/                 the trained entries, and how they were trained (not in the image)
+maps/                      the boards, one JSON file each
+tools/deny.sh              the determinism check
+tools/package.py           finishes dist/: plugin.json, the catalogue, the boards, the report
+build.sh                   the gate, then every artifact, into dist/
+Dockerfile                 the artifact image
+dist/                      build output, gitignored; the image's /artifacts/
 ```
 
 ## What must stay true
 
-- **Game logic uses integer arithmetic.** deny.sh checks for floating-point constructs, and replay tests check reconstruction.
-- **Seeds and actions determine the match.** Seed-repeatability tests guard against introducing ambient randomness or time.
-- **Exploring is remembered.** `turn.rs` folds each seat's vision into what it knows every turn; a model is a pure function of one observation, so the engine remembers on its behalf or scouting buys nothing.
-- **World generation preserves player symmetry.** The symmetry test covers terrain, hills, and initial resources.
-- **Seat references remain opaque.** The observe test checks that caller handles are echoed without interpretation.
-- **Registration follows the preset implementation.** build.sh regenerates cartridge.json instead of maintaining a second preset table.
-- **Every committed board is symmetric.** A file cannot be symmetric by construction, so `mapfile.rs` asserts it and the corpus test checks every board that ships.
-- **A replay carries the board it was played on.** The envelope is self-sufficient, and the decode test runs against an envelope the platform actually wrote.
-- **The viewer re-simulates with the cartridge, never a copy of it.** `viz/` drives the transpiled component; a JavaScript re-implementation of a rule would be a second engine.
-- **Artifacts travel together.** Review must ensure a source change includes the rebuilt component and generated manifests.
-- **The schemas keep up with the manifest.** `schema/tb-cartridge.schema.json` describes what `build.sh` actually writes; `validate.py` runs in the build so the two cannot drift apart unnoticed.
-- **The rules are the 2011 contest's rules.** Where the published specification and the contest engine (`aichallenge/ants/ants.py`) disagree, the engine wins — it is what every bot was scored against. Each rule cites the specification section it comes from, and the Focus Battle page's worked examples ship as named tests (`spec_scenario_*`).
+- **Game logic uses integer arithmetic.** `tools/deny.sh` refuses floating point in `engine/src/`, and the
+  replay tests check reconstruction. It is what lets a replay be an action stream.
+- **Seeds and actions determine the match.** No ambient randomness, no clock. The seed chooses the
+  board from the preset's pool when the caller names none, so a competitor cannot train against a
+  board they picked.
+- **Exploring is remembered.** A model is a pure function of one observation, so the engine folds
+  each seat's vision into what it knows every turn, and a view carries known water.
+- **A view is observer-relative.** Relabel every seat and ask the same player again, and the bytes
+  are identical; `a_view_is_observer_relative` checks the engine rather than a stand-in.
+- **Every committed board is symmetric.** A file cannot be symmetric by construction, so
+  `engine/src/maps.rs` asserts it and the corpus test checks every board that ships.
+- **A replay carries the board it was played on**, and the decode test runs against an envelope the
+  platform actually wrote.
+- **The viewer re-simulates with the cartridge, never a copy of it.** A JavaScript
+  re-implementation of a rule would be a second engine.
+- **Nothing generated is committed, and everything generated is in `dist/`.** The registration
+  manifest is generated from the preset table and the boards, so it cannot disagree with them.
+- **The protocol is published, and moves with the engine.** A change to what a view carries is a
+  change to the competitor guide and to `baselines/planes.py` in the same batch.
+- **The rules are the 2011 contest's rules.** Where the published specification and the contest
+  engine (`aichallenge/ants/ants.py`) disagree, the engine wins. The Focus Battle page's worked
+  examples ship as `spec_scenario_*` tests.
 
 ## Status
 
-**16 September 2026 — the baselines live here.** `Tiny-Brains/ants-baselines` moved in as
-[`baselines/`](baselines/README.md) (devops decision N20): the rules, the viewer and the entries
-trained against them now come from one repository, where an observation change and the encoding
-that reads it used to be a commit in each on the same day. It keeps its own Python toolchain and
-resolves the cartridge at `..`. **Nothing reaches the component:** `.dockerignore` excludes
-`baselines/`, and the image built after the move carries the same `tb-ants.wasm`,
-`sha256:185a2845…`, as the one built before it. ants-starter installs `tb_baselines` from this
-repository with `#subdirectory=baselines`, so that path is now public.
+**16 September 2026 — restructured, and the same game.** Every generated file now lands in one
+gitignored `dist/`, laid out exactly as the image's `/artifacts/`, so a games registry can point at
+a checkout's `dist/` or an extracted image and read the same tree; the CLI's viewer lookup and every
+sibling's registry `path` moved with it. The crate moved into `engine/`, beside `viz/` and
+`baselines/`, so the root holds only what spans the three. `engine/build.rs` embeds `maps/`,
+replacing a generated `src/maps_gen.rs` and the build step that had to run before `cargo test`.
+`docs/` and `schema/` are gone: the protocol and the cartridge contract are published in the
+competitor guide, and the schema checks of hand-written examples became
+`a_view_carries_exactly_the_fields_a_model_is_promised`, which checks engine output. `map.rs` is
+`grid.rs`, `mapfile.rs` is `maps.rs` and holds the presets, and food spawning left `state.rs` for
+`food.rs`. **No rule moved**: `cartridge.json`, `plugin.json`, `reference/observations.json`,
+`mapgen` output and a hash of every `observe`, `step`, `finish` and `replay-decode` output over nine
+seeded waves, random and greedy, are byte-identical to the previous commit, as are the image's
+`/artifacts/` layout and viewer bundle. **The digest moved**, as any source edit does: the image
+builds `sha256:281a84f1…` where it built `sha256:185a2845…`, reproducibly under `--no-cache`. The
+ladder plays the old component until it is cut over as a patch, and the book's
+`tutorials/replays/real-match.json` has to be re-captured on the new one. `cargo test` is 82.
 
-**11 September 2026 — the title bar fits four seats and six.** A seat's counts are the board's own
-shapes — a dot and a number for its ants, a square and a number for its hills — rather than
-"12 ants · 1 hill", and its score comes last. Those words were the first thing a narrow frame cut:
-the web's 505-pixel home-page replay read `1 ant · 1 h…`, with a lone `@` where the owner should
-have been, and never said how many hills anyone had. The owner now gives way first and whole, then
-the name with an ellipsis; the numbers never do. The seats are a grid whose columns come from the
-seat count and the width alone (`seatColumns()`, checked in `viz/check.mjs`): two seats are still
-one row, four and six are two rows on the home page and one on the match page. Viewer only: the
-component, and so the engine digest, is untouched.
+**16 September 2026 — the baselines live here** ([`baselines/`](baselines/README.md), devops
+decision N20). ants-starter installs `tb_baselines` with `#subdirectory=baselines`, so that path is
+public.
 
-**11 September 2026 — the seats are a title bar.** The viewer's seats left the hover tray for a bar
-above the board that is always on screen: each seat's colour, model name and score, then whose it
-is and its ants, hills and share explored, on one line that gives way from the right. The tray keeps
-only the tools — zoom and the territory toggle — and the board's label and the cell readout are
-gone. The root takes `contain: inline-size`, because the title bar's one line of text otherwise
-became the viewer's minimum width and pushed the web application's grid columns past what they
-were given. Viewer only: the component, and so the engine digest, is untouched.
-
-**11 September 2026 — a frame says what each seat saw first, and the viewer draws it.** Every
-`replay-decode` frame now carries `discovered`: per seat, the squares that turn revealed for the
-first time, read off the engine's own `known` mask — the one observations are folded from — rather
-than worked out again anywhere else. It belongs to the turn, not to the call, so a range and a single
-frame still agree; and it is news rather than the mask, so a whole match costs at most one entry per
-square per seat — 1,472 on a 173-turn maze replay whose frames come to 1.3 MB.
-`a_frames_discoveries_add_up_to_exactly_what_its_seat_knows` folds them from turn zero and holds the
-fold to `known` at every turn. The viewer draws them on a toggle, and gains two things that need no
-engine: a ring around any hill an enemy is within eight moves of, and seat names from its host
-(`viz/README.md`). **No rule moved** — `cartridge.json`, `plugin.json` and
-`reference/observations.json` are byte-identical to the image the ladder ran — but **the digest
-did**, to `sha256:a71d24ae…` as the image builds it (a local `./build.sh` lands elsewhere, because
-only the image remaps source paths). The local stack was cut over to it as a patch the same day,
-taking the hot loops with it. `cargo test` is 80.
-
-**11 September 2026 — the hot loops, 2.4-3.2x faster, and the same game byte for byte.** A profile
-of a 16-match wave put the time in whole-board work, not in ants: the food-set scan over every
-square whenever food falls due (27%), base64 over the whole wave on every call (32%), and bitmaps
-walked a square at a time (about a fifth). The scan now tests each image of a square directly
-instead of building and sorting its orbit; base64 is one pass with a compile-time table and a
-four-character fast path; run lengths, known water and `reveal` go a byte at a time; and vision
-stamps the disk a row at a time. Natively, per 16-match wave-turn under a greedy policy: cell 3.47 →
-1.08 ms, maze 2.29 → 0.99, standard 1.84 → 0.78. **Every observe, step and finish output is
-identical** across six seeded waves hashed turn by turn, and `cartridge.json`, `plugin.json`,
-`reference/observations.json` and nine generated maps are byte-identical. `src/tests/equivalence.rs`
-keeps each loop's original beside its replacement and compares the two on every committed board;
-`cargo test` is 79. **The digest moved**, as any rebuild does, so the ladder plays the old component
-until it is cut over.
-
-**10 September 2026 — the build output left git, and the crate moved to edition 2024.** Nothing
-generated is committed any more: `tb-ants.wasm`, `plugin.json`, `cartridge.json`, `src/maps_gen.rs`,
-`reference/observations.json` and `viz/dist/` are gitignored and ship in the artifact image
-`Dockerfile` builds, under `/artifacts/`. Consumers name an image — `tinybrains/ants:dev` built from
-here, `ghcr.io/tiny-brains/ants:<tag>` pulled — instead of reading a sibling checkout, so this
-repository no longer has to sit beside theirs.
-
-That made a latent problem visible: **the component this repository used to commit was not
-reproducible by anyone else.** rustc bakes the absolute path of every source file a panic can name
-into the binary, so the committed artifact carried one machine's `~/.cargo` and `~/.rustup` paths.
-The image pins rustc exactly (`rust:1.98-trixie` floats to the newest patch, and a patch bump moves
-the bytes) and passes `--remap-path-prefix`, so the digest is a function of the source;
-`docker build --no-cache` lands on the same one every time.
-
-The crate is now **edition 2024**. `cargo fix --edition` took two match-ergonomics fixes in
-`turn.rs`, clippy took two `collapsible_if` sites into let-chains (`lib.rs`, `turn.rs`), and
-`rustfmt.toml` was added — `max_width = 100` / `use_small_heuristics = "Max"`, the style the
-platform's Rust is written in — because without it `cargo fmt` reformats every file away from the style this crate is written in.
-`cargo test` (75), `cargo clippy -D warnings` on both targets, `cargo audit` and `deny.sh` are clean.
-**The engine digest moved**, as any rebuild does; `cartridge.json` and `reference/observations.json`
-are byte-identical across the change, which is what says no rule moved with it.
-
-**Decision 46, 10 September 2026 — no compute cap.** `cartridge.json` declares `adapter_ops_max`
-alone; `budgets.flop_caps` is gone from the manifest, from `schema/tb-cartridge.schema.json`'s
-`required` block (a manifest still declaring one is now refused, not ignored), and from both
-`other-games/` sketches. `turn_ms` is the compute bound and its schema description says so. Only
-`src/bin/manifest.rs` changed, so **the component and the engine digest are untouched.**
-
-**9 September 2026.** The five exports and the committed component are implemented and `cargo test`
-passes 75 host tests. Boards are files: 24 committed under `maps/`, eight per preset, validated at
-build time and compiled in, with the seed choosing within a preset's pool. A replay carries the
-board it was played on, and the decode test runs against an envelope the local stack actually wrote.
-The viewer ships as one bundle for the web application, the book and `tinybrains view`, styled to
-the platform's design tokens and scoped to `.tb-viz`, which `viz/check.mjs` enforces.
-
-The rules were audited line by line against the contest engine and the published specification and
-nine divergences closed: food blocks movement as water does, a player starts on one point per hill,
-the two stalemate counters became the reference's single population-share counter with its hill-kill
-stall and its reset on razing, hill spawn priority follows `last_touched`, the rank-stabilized
-cutoff is the reference's pairwise test, the turn limit is checked last, and the food model is the
-reference's own — a hidden per-match rate accruing into shuffled symmetric sets, rather than topping
-the board back up to a fixed count.
-
-The repository was then cleaned up: the match engine and the board factory are separate modules, the
-host suite is one file per area, every build step is a named script rather than a heredoc, and
-`schema/validate.py` runs in the build — which caught a cartridge schema that had never been told
-about `about`. **Both the rules audit and the cleanup changed the engine digest**, so Kalam's
-vendored component, `games.active_engine_digest`, the season and the plugin signatures all have to
-move with it.
-
-Cross-host determinism is checked in the small — the transpiled component decodes a recorded match
-and agrees with it — but the 10,000-match conformance run is still owed, as are ordinary-release
-baselines. The fixture under `tests/fixtures/` predates the scoring fix and its decode test asserts
-the offset rather than ignoring it, until a platform run on the current digest replaces it.
+**Owed.** The 10,000-match cross-host conformance run: the transpiled component decodes a recorded
+match and agrees with it, but determinism across the platform's runtime and the browser is checked
+in the small only. No release is cut, so drill and ants-starter still resolve a checkout.
 
 ## More
 
-- Local references: [plugin ABI](plugin.toml), [registration manifest](cartridge.json), and [rule tests](src/tests/).
-- Design docs: [`docs/cartridge.md`](docs/cartridge.md) (the plugin ABI and the determinism law) and [`docs/protocol.md`](docs/protocol.md) (the JSON shapes a model sees). [`schema/`](schema/) holds the JSON Schemas and `validate.py`.
-- [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs) — the reader-facing half: the rules, the model format, the manifest, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
+- [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs): the rules, what a model
+  sees and answers, and *Adding a game*.
 - Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Soma](https://github.com/Tiny-Brains/soma), [DevOps](https://github.com/Tiny-Brains/devops).
 - Apache-2.0: see [LICENSE](LICENSE).

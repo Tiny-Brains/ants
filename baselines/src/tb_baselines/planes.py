@@ -20,7 +20,7 @@ is the visibility mask — and since 14 September 2026 **the engine sends it**. 
 from `mine` with a `tb.dilate` operator that existed for exactly this plane; the expression language
 a node evaluates an adapter on cannot address an enclosing iterator's element, so the per-ant disk
 was a 241-fold unrolled kernel or nothing. The radius is a rule of the game, so the cartridge now
-computes it once and `vis` arrives beside `water` (`ants/docs/protocol.md` §1, decision R5). This
+computes it once and `vis` arrives beside `water` (decision R5; *What your model sees* in the competitor guide). This
 plane is an `rle_expand` like any other.
 
 Owners are relative to the observer — you are always 0 — which is what makes `hills` splittable at
@@ -208,7 +208,7 @@ PLANES: tuple[Plane, ...] = (
         "visible",
         "what you can see RIGHT NOW, so a 0 in `water` stops meaning both known-empty and "
         "never-seen. SENT BY THE ENGINE since 14 September 2026 -- the radius is a rule of the "
-        "game and an adapter cannot build the disk union (ants/docs/protocol.md §1).",
+        "game and an adapter cannot build the disk union.",
         lambda size: {"rle_expand": [var("vis.rle"), size, DTYPE]},
         lambda o, b: b.rle(o["vis"]["rle"]),
     ),

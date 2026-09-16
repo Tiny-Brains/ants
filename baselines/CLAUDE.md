@@ -37,13 +37,13 @@ a `metrics.json` of what the platform said about it, and a `card.md` a person ca
 
 ```text
 tinybrains/
-  ants/             <- games.toml resolves the cartridge from `..`; run ./build.sh there first
+  ants/             <- games.toml resolves the cartridge from `../dist`; run ./build.sh there first
     baselines/      <- you are here
   devops/           <- the `tinybrains` CLI is built from devops/cli
 ```
 
 ```sh
-(cd .. && ./build.sh)                    # the component, cartridge.json, reference observations
+(cd .. && ./build.sh)                    # into ../dist: the component, cartridge.json, reference observations
 cargo install --path ../../devops/cli    # or: export TINYBRAINS=../../devops/cli/target/release/tinybrains
 pip install -e '.[dev]'                  # torch, numpy, onnx, pytest
 ```

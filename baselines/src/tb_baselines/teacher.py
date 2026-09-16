@@ -23,8 +23,9 @@ Three refinements, each of which changes the games it produces rather than its s
 * **Targets are weighted by a head start**, not by a multiplier. Food seeds the queue at distance 0,
   an enemy hill at `-hill_lead`, so hills win ties out to that many steps. A multiplier on a
   distance field would break the BFS's monotonicity and is the usual bug here.
-* **No two ants take one square.** They would both die (`ants/src/turn.rs`: every ant finishing on a
-  shared square dies, your own included), which is the single cheapest way to lose a colony.
+* **No two ants take one square.** They would both die (`ants/engine/src/turn.rs`: every ant
+  finishing on a shared square dies, your own included), which is the single cheapest way to lose
+  a colony.
 * **Nothing is random.** Given a seed and an engine the teacher is a pure function of the
   observation, and that is not tidiness — it is what makes it imitable at all. See below.
 
@@ -156,8 +157,9 @@ class Teacher:
 
         rows, cols = obs["size"]
         dist = self.field(obs, water, seen)
-        # Food blocks movement as surely as water does (`ants/src/turn.rs`), so an ant ordered onto
-        # food simply stays -- which wastes the turn and, worse, teaches the network that it does not.
+        # Food blocks movement as surely as water does (`ants/engine/src/turn.rs`), so an ant ordered
+        # onto food simply stays -- which wastes the turn and, worse, teaches the network that it does
+        # not.
         blocked = np.zeros((rows, cols), dtype=bool)
         for r, c in obs["food"]:
             blocked[r, c] = True

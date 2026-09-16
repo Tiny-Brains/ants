@@ -113,14 +113,13 @@ def test_the_generated_manifest_is_byte_stable():
 
 
 def test_the_encoder_handles_an_empty_colony():
-    """Zero ants is always valid (`ants/docs/protocol.md` §1) and is what a wiped-out seat sends
+    """Zero ants is always valid (*What your model sees*) and is what a wiped-out seat sends
     right up until its match ends. An encoder that indexes into an empty list dies there."""
     obs = {
         "size": [64, 96],
         "mine": [], "foes": [], "food": [], "hills": [],
         "water": {"rle": [0, 64 * 96]},
-        # No ants, no vision: the engine sends an all-zero mask, which is what the wiped example in
-        # `ants/schema/examples/` shows and what `ants` asserts in
+        # No ants, no vision: the engine sends an all-zero mask, which is what `ants` asserts in
         # `the_view_carries_the_mask_it_filtered_through`.
         "vis": {"rle": [0, 64 * 96]},
     }
@@ -158,7 +157,7 @@ def test_the_manifest_reads_the_output_the_export_names():
 
 
 def test_the_visibility_plane_reads_the_engines_mask():
-    """`vis` is SENT now (ants/docs/protocol.md §1, decision R5), not derived.
+    """`vis` is SENT now (decision R5), not derived.
 
     The old plane was `tb.dilate(scatter(mine), 77)` and existed because a model cannot tell *known
     empty* from *never seen* without it. The expression language cannot address an enclosing
