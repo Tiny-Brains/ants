@@ -7,7 +7,7 @@ This is the document for someone adding a game. What a model sees is [`protocol.
 where the cartridge sits in the running system is
 [devops/docs/architecture.md](https://github.com/Tiny-Brains/devops/blob/main/docs/architecture.md);
 the competitor-facing walkthrough is
-[the book](https://github.com/Tiny-Brains/docs), *The platform → Adding a game*.
+[the book](https://github.com/Tiny-Brains/web/tree/main/docs), *The platform → Adding a game*.
 
 `ants` is the reference implementation of everything on this page: `src/` is the engine,
 `build.sh` generates `plugin.json` and `cartridge.json`, and `deny.sh` is the determinism law

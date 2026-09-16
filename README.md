@@ -269,6 +269,6 @@ the offset rather than ignoring it, until a platform run on the current digest r
 
 - Local references: [plugin ABI](plugin.toml), [registration manifest](cartridge.json), and [rule tests](src/tests/).
 - Design docs: [`docs/cartridge.md`](docs/cartridge.md) (the plugin ABI and the determinism law) and [`docs/protocol.md`](docs/protocol.md) (the JSON shapes a model sees). [`schema/`](schema/) holds the JSON Schemas and `validate.py`.
-- [The competitor guide](https://github.com/Tiny-Brains/docs) — the reader-facing half: the rules, the model format, the manifest, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
+- [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs) — the reader-facing half: the rules, the model format, the manifest, submitting, ranking and seasons. The platform section is the high-level design for someone new to the codebase.
 - Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Jodi](https://github.com/Tiny-Brains/jodi), [DevOps](https://github.com/Tiny-Brains/devops).
 - Apache-2.0: see [LICENSE](LICENSE).
