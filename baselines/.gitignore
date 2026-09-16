@@ -1,0 +1,10 @@
+# Regenerable from a seed and 90 MB of it: `python -m tb_baselines.collect`.
+data/
+# Checkpoints are not artifacts. What ships is models/<class>-<method>/.
+runs/
+replays/
+tensors/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/

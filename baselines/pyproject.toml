@@ -1,0 +1,26 @@
+[project]
+name = "tb-baselines"
+version = "0.1.0"
+description = "Trained baselines for TinyBrains Ants, and the worked example of how they were trained"
+requires-python = ">=3.11"          # tomllib
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+    # Graph surgery only: the fp16 initializer rewrite in export.py. The graph is never RUN here --
+    # `tinybrains check` runs it, through the same datalogic and tract the fleet uses, which is what
+    # keeps this repository from acquiring a second opinion about what its own model does.
+    "onnx>=1.16",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

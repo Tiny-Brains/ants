@@ -17,6 +17,11 @@ other colonies' hills; the cartridge implements the world in which those decisio
 - Turn resolution, visibility, end conditions, ranks, and scores.
 - Packed game state and replay reconstruction from recorded actions.
 - The plugin ABI and generated cartridge registration manifest.
+- The replay viewer (`viz/`), which re-simulates through the component.
+- The platform's trained entries for this game and the pipeline that trains them
+  ([`baselines/`](baselines/README.md)): competitor entries with no special access, kept here so
+  an observation change and the encoding that reads it land together. They are not the cartridge,
+  and the component knows nothing about them.
 
 **It does not**
 
@@ -140,6 +145,7 @@ tests/fixtures/      a replay the platform actually wrote, for the decode test
 tools/               build steps: embed the boards, write the manifests, report
 schema/              JSON Schemas, worked examples, and validate.py
 viz/                 the viewer: one bundle for the web app, the book, and the CLI
+baselines/           the platform's trained entries, and how they were trained (Python; not in the image)
 plugin.toml          authored Orion ABI declaration
 deny.sh              source check for floating-point game logic
 build.sh             the gate, then every artifact, locally
@@ -162,6 +168,15 @@ Dockerfile           the artifact image: the build that actually ships
 - **The rules are the 2011 contest's rules.** Where the published specification and the contest engine (`aichallenge/ants/ants.py`) disagree, the engine wins — it is what every bot was scored against. Each rule cites the specification section it comes from, and the Focus Battle page's worked examples ship as named tests (`spec_scenario_*`).
 
 ## Status
+
+**16 September 2026 — the baselines live here.** `Tiny-Brains/ants-baselines` moved in as
+[`baselines/`](baselines/README.md) (devops decision N20): the rules, the viewer and the entries
+trained against them now come from one repository, where an observation change and the encoding
+that reads it used to be a commit in each on the same day. It keeps its own Python toolchain and
+resolves the cartridge at `..`. **Nothing reaches the component:** `.dockerignore` excludes
+`baselines/`, and the image built after the move carries the same `tb-ants.wasm`,
+`sha256:185a2845…`, as the one built before it. ants-starter installs `tb_baselines` from this
+repository with `#subdirectory=baselines`, so that path is now public.
 
 **11 September 2026 — the title bar fits four seats and six.** A seat's counts are the board's own
 shapes — a dot and a number for its ants, a square and a number for its hills — rather than

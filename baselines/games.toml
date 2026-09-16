@@ -1,0 +1,12 @@
+# The cartridge these baselines train against: the checkout they live in, one directory up. Same
+# shape as drill's and the starter's, which resolve a sibling checkout instead, and `tinybrains
+# games` always reports which way it resolved. `..` needs `./build.sh` run there first -- the
+# component, cartridge.json and reference/observations.json are build output, not committed.
+#
+# THE ENGINE DIGEST IS PART OF EVERY MODEL CARD. A baseline trained against one engine and played
+# under another is a baseline nobody can reproduce, which is why `tinybrains env` prints the digest
+# in its first line and `export.py` writes it into the card.
+
+[games.ants]
+name = "Ants"
+path = ".."

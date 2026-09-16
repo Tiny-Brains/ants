@@ -1,0 +1,172 @@
+## The weight classes, and what each one is allowed to spend.
+##
+## Every number below is either read from the platform or measured on this machine, and the
+## measurement is written down beside it. Nothing here is a guess, and nothing here is a rule the
+## platform enforces: the platform enforces `max_bytes` and the turn deadline, and this file is how
+## THIS repository chooses to sit inside them.
+
+[metric]
+## S' = artifact_bytes + len(manifest). The WHOLE .onnx file and the whole manifest document, raw
+## -- not zstd, and not initializers only. `tinybrains check` reports it as `size_metric_bytes`.
+##
+## WHY IT CHANGED, 14 September 2026 (devops decision R4). The old `S` compressed
+## `GraphProto.initializer` and the adapter, and both halves were wrong: a graph can carry its
+## weights in `Constant` node attributes instead of initializers -- eight lines of `onnx.helper`,
+## same arithmetic -- and measure as nothing, and nothing on the platform could compress a document
+## on the admission path anyway. `artifact_bytes` is what the node weighed after re-hashing the
+## object, so it cannot be understated by where the weights sit.
+##
+## Bytes per parameter under the new metric, measured 14 September 2026 on the shipped artifacts:
+##   fp32   (11,350 - 0) / 3,006  = 3.78   (nano-bc)
+##   fp16   (53,496 - 0) / 24,077 = 2.22   (micro-bc)
+## Graph structure is no longer free -- it is a few hundred bytes of protobuf, which is why these
+## are a little above the raw 4.0 and 2.0.
+fp32_bytes_per_param = 3.78
+fp16_bytes_per_param = 2.22
+## The manifest is the second term now, whole and uncompressed.
+## `python -m tb_baselines.adapters | wc -c`. Regenerate when the plane set changes.
+manifest_bytes = 931
+
+[target]
+## What fraction of its cap a baseline aims at. A baseline is a REFERENCE POINT, so it should show
+## what the class holds rather than sit in the middle of it -- but not at the ceiling either, or a
+## re-export that moves a few hundred bytes pushes it into the next class and changes which ladder
+## it is on. 70% leaves room for that and still reads as "a full entry in this class".
+##
+## A class may override it, and `small` does: see its entry. Filling a class is only a goal while
+## the deadline allows it, and `max_share` below is what decides that.
+fraction = 0.70
+
+## The most of a seat's deadline share an artifact may use, measured at the worst reference board.
+## `export.py` refuses one that goes over. It is a headroom rule, not the platform's: the platform
+## strikes a seat that misses the clock, and a baseline that needs 95% of its share on this machine
+## has none left for a busier board or a slower host.
+max_share = 0.70
+
+[dtype]
+## fp16 initializers with a `Cast` to float32 at each use. The runtime constant-folds the Cast at graph
+## optimisation, so what shrinks is the FILE -- which is exactly what the size metric reads.
+##
+## Measured, and better than predicted: 2.03x the parameters for the same S, inference 5.16 ms ->
+## 5.35 ms (inside the noise of one warm-up-inclusive run), operator set unchanged (Cast, Conv,
+## Relu -- all allowlisted), and 396 of 396 per-ant orders identical to the fp32 graph across three
+## played matches. There is no reason to ship fp32.
+default = "fp16"
+
+[compute]
+## THE BYTE CAP IS NOT THE BINDING CONSTRAINT ABOVE `mini`. THE TURN DEADLINE IS.
+##
+## A SEAT'S SHARE IS THE WHOLE TURN since 14 September 2026 (devops decision R7). The wave is gone:
+## `tb-match` plays one match and calls `model_infer` once per seat, each with its own
+## `timeout_ms`, so nothing is batched and nothing is divided. It used to be `turn_ms / rows` with
+## `wave_k` 16 and two seats -- 31.2 ms -- and this repository still holds itself to a fraction of
+## the turn rather than all of it, because a model that needs 95% of the clock on this machine has
+## nothing left for a slower host.
+##
+## 70 GFLOP/s is this machine, measured on the artifacts themselves at the WORST reference board
+## (128x128, which is what `infer_us_max` reports):
+##
+##   micro-bc      24,001 params  14.33 ms  ->  55 GFLOP/s   full resolution
+##   micro-percell 24,953 params  10.75 ms  ->  76           full resolution, 1x1 only
+##   mini probe   196,149 params  21.09 ms  ->  76           bulk at stride 2
+##   small probe  633,829 params  18.37 ms  ->  71           bulk at stride 4
+##
+## An earlier version of this file said 1.85e11, from `ants-dense` at 1.18 ms a seat-turn. That was
+## wrong by about three times and the mistake is worth naming: 1.18 ms was the MEAN over a wave
+## whose boards were mostly `standard` (64x96, 2.7x fewer cells), compared against a budget that has
+## to hold at the LARGEST board. The same fixture measures 3.54 ms at 128x128 -- 62 GFLOP/s, which
+## agrees with everything above.
+turn_ms = 1000
+## ONE seat per call now -- kept as a named constant because `share_us = turn_ms / rows_per_call`
+## is what `export.py` measures against, and 1 is the honest value rather than a deleted line.
+rows_per_call = 1
+flops_per_second = 7.0e10
+## => 2.2 GFLOP a seat-turn => about 67,000 parameters fully-convolutional at 128x128. So `micro` is
+## already near the full-resolution ceiling, not `mini` -- every architecture in this file was right
+## while the constant explaining them was not.
+
+## ---------------------------------------------------------------------------------------------
+## The five classes. `max_bytes` is the platform's (soma/migrations/0001_init.sql, per season -- and a season may now offer only some of them, so a class here that its `classes.allow` does not list is rejected CLASS_NOT_OFFERED);
+## everything else is this repository's choice, and `export.py` refuses an artifact that misses it.
+
+[[class]]
+name = "nano"
+max_bytes = 16384
+## 5,340 bytes of weights -> ~2,900 fp16 parameters. 0.1 GFLOP: the deadline is nowhere near.
+arch = "trunk"
+channels = 9
+blocks = 3            # four 3x3s at dilations 1, 2, 4, 8: reach 15 cells each way
+## THE FIRST NANO WAS 30 CHANNELS AND ONE 3x3 -- ten times the width and a reach of ONE CELL. It
+## plateaued at 44.6% agreement with the teacher inside one epoch and grew colonies of 5 ants where
+## the teacher grows 33. Nine channels that can see fifteen cells is the better trade, and finding
+## that out is most of what this repository is for.
+target_params = 2939
+
+[[class]]
+name = "micro"
+max_bytes = 131072
+## ~24,900 fp16 parameters, 0.8 GFLOP. The class the existing `ants-dense` fixture sits in, so
+## everything here is directly comparable to a known artifact.
+arch = "trunk"
+channels = 28
+blocks = 3            # reach 15 cells, as nano
+## The first micro was 48 channels and a 5x5 reach: 26,453 parameters, 47.2% agreement, and it LOST
+## to the 3,005-parameter nano over 18 boards while growing bigger colonies. Capacity was not what
+## it was short of.
+target_params = 24001
+
+[[class]]
+name = "mini"
+max_bytes = 1048576
+## ~201,000 fp16 parameters. Fully convolutional at 128x128 this is 6.6 GFLOP against a 5.8 GFLOP
+## share -- THE FIRST CLASS WHERE THE DEADLINE BINDS BEFORE THE BYTES DO. So the middle of the
+## trunk runs at stride 2, where a parameter costs a quarter as much, and the bytes get spent.
+arch = "encdec"
+channels = 64
+stride = 2
+blocks = 5
+## Measured at blocks = 4: 159,221 parameters, S = 287,763 (55%), 16.8 ms (54% of a share). The
+## fifth block is what fills the class; the deadline still allows it, just.
+target_params = 196000
+
+[[class]]
+name = "small"
+max_bytes = 8388608
+## ~1,610,000 fp16 parameters: 52.8 GFLOP at full resolution, nine times the share. The bulk moves
+## to stride 4 (16x cheaper), which brings it to about 3.3 GFLOP.
+arch = "encdec"
+channels = 128
+stride = 4
+blocks = 4
+## **`small` does not reach 70% of its cap, and the reason is worth reading.** Measured at stride 4:
+##
+##   channels 128, 6 blocks   907,317 params   S 1,635,399 (39% of cap)   26.9 ms = 86% of a share
+##   channels 128, 10 blocks  1,497,653        S 2,697,338 (64%)          53.5 ms = 171%  REFUSED
+##   channels 160, 8 blocks   1,878,145        S 3,370,663 (80%)          60.0 ms = 192%  REFUSED
+##
+## The class allows four million bytes and the turn allows about one million parameters' worth of
+## work. Bytes are not the binding constraint here and no amount of tuning makes them one -- the
+## answer is a different KIND of parameter, which is what `large`'s note is about. Until then
+## `small` is honestly a quarter-full, and says so on its card. Five blocks measured 75% of a share
+## and `export.py` refused it, which is the check doing its job rather than a setback.
+fraction = 0.27
+target_params = 634000
+
+[[class]]
+name = "large"
+max_bytes = 134217728
+## ~25,800,000 fp16 parameters, and 844 GFLOP at full resolution: 145 times the share. NO DENSE
+## ARCHITECTURE REACHES 70% OF THIS CAP INSIDE THE DEADLINE -- even at stride 8 it is 71 ms.
+##
+## That is the interesting fact about the top of the ladder rather than a problem with it: large is
+## byte-rich and FLOP-poor, so its bytes have to buy KNOWLEDGE rather than arithmetic. The planned
+## shape is a learned pattern table -- hash the local neighbourhood to an index, `Gather` an
+## embedding, run a small head -- where bytes scale with the table and FLOPs scale only with the
+## embedding width. `Gather` is allowlisted and the whole thing is trainable end to end.
+##
+## Highest-risk cell in the matrix and the last one built. Until it is, `target_params` here is a
+## placeholder that `export.py` will refuse to certify.
+arch = "lookup"
+fraction = 0.35
+target_params = 0
+phase = "not built"

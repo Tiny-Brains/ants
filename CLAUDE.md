@@ -10,7 +10,15 @@ There is no server, no database, no network, and no clock — the component impo
 the rules of Ants (the 2011 Google AI Challenge game) and knows nothing about the platform: not
 ratings, not admission, not models, not matches as scheduling units.
 
-The parent `tinybrains/CLAUDE.md` describes the nine-repo platform this sits in; read it for
+**The repository is everything Ants; the component is only the rules.** Two subdirectories carry
+their own toolchains and are not the cartridge: `viz/`, the replay viewer (Node), and `baselines/`,
+the platform's trained entries and the pipeline that trains them (Python, with its own
+[CLAUDE.md](baselines/CLAUDE.md)). The baselines know the platform thoroughly — weight classes, the
+adapter dialect, the turn deadline, `tinybrains check` — and that is fine *because* they are not
+the component: the rule above is about `src/`, and `deny.sh`, the build and the image never see
+`baselines/`. It was `Tiny-Brains/ants-baselines` until 16 September 2026 (devops decision N20).
+
+The parent `tinybrains/CLAUDE.md` describes the platform this sits in; read it for
 anything crossing a repo boundary. `README.md` here is the canonical page and is maintained in the
 platform's standard shape (Scope / Where it sits / Interface / Run it, test it / Layout / What must
 stay true / Status) — update **Status** when work lands.
@@ -49,6 +57,19 @@ The viewer (`viz/`) has its own toolchain and its own `dist/` (gitignored; built
 cd viz && ./build.sh   # jco transpile + copy + geometry checks; writes dist/ and dist/engine.json
 cd viz && node check.mjs   # just the checks -- geometry, and CSS scoping
 ```
+
+The baselines (`baselines/`) have their own toolchain too, and resolve the cartridge at `..`, so
+they need `./build.sh` run here first. Their guide has the training commands:
+
+```sh
+cd baselines && pytest tests/ -q   # the adapter conformance gate; needs `tinybrains` on PATH
+```
+
+**An observation change is a baselines change.** `planes.py` encodes what `src/observe.rs` sends,
+and the conformance test runs over `reference/observations.json`, so a change to either lands with
+the encoding and its regenerated manifest in the same commit — that pairing is why they share a
+repository. A retrained model is not a rebuild: `baselines/models/` is committed, like `maps/`,
+because training is neither cheap nor bit-reproducible.
 
 ## Architecture
 
@@ -134,6 +155,11 @@ A *wave* is many matches advanced together in one call.
   header).
 - **`wave_state` stays opaque** to every caller, and turn order in `turn.rs` is a rule, not an
   implementation detail.
+- **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
+  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and `devops`'
+  `seed-baselines.sh` reads `../ants/baselines/models`. Renaming the directory or the package
+  breaks every starter clone. It stays out of the image: `.dockerignore` excludes it, so no edit
+  there can move the engine digest.
 
 ## Conventions
 

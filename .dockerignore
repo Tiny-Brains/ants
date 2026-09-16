@@ -13,3 +13,8 @@ src/maps_gen.rs
 
 .git/
 .run/
+
+# The baselines are trained entries with their own Python toolchain, not an input to this image.
+# Excluding them keeps the build context what it was before they moved in -- 85 MB of regenerable
+# dataset included -- so a training edit neither re-runs the gate nor can reach the component.
+baselines/
