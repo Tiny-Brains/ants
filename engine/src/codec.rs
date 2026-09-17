@@ -15,7 +15,7 @@
 //! ```text
 //! wave    u16 matches, then each match in order
 //! match   u64 seed · u16 turn · u16 max_turns · u8 players · u8 done · u8 reason
-//!         u8  rows · u8 cols
+//!         u8  rows · u8 cols · u8 sym_dr · u8 sym_dc   (the board's shift, `grid::Symmetry`)
 //!         u8  cutoff_bot · u16 cutoff_turns
 //!         u16 food_rate · u16 food_turn · u32 food_extra
 //!         u16 food_rotation · u16 food_cursor
@@ -80,6 +80,8 @@ pub fn pack(w: &Wave) -> String {
         o.u8(m.reason);
         o.u8(m.g.rows as u8);
         o.u8(m.g.cols as u8);
+        o.u8(m.sym.dr as u8);
+        o.u8(m.sym.dc as u8);
         o.u8(m.cutoff_bot);
         o.u16(m.cutoff_turns);
         o.u16(m.food_rate);
@@ -168,6 +170,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let done = r.u8()? != 0;
         let reason = r.u8()?;
         let g = Geom::new(r.u8()?, r.u8()?);
+        let sym = Symmetry::new(players, r.u8()? as i32, r.u8()? as i32);
         let cutoff_bot = r.u8()?;
         let cutoff_turns = r.u16()?;
         let food_rate = r.u16()?;
@@ -216,7 +219,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
             max_turns,
             players,
             g,
-            sym: Symmetry::for_preset(&g, players),
+            sym,
             done,
             reason,
             water,

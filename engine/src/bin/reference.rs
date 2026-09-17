@@ -6,18 +6,25 @@
 //! competitor for more than it checks.
 //!
 //!     cargo run --bin reference > reference/observations.json
-//!     cargo run --bin reference -- --only cell:20260908:600
+//!     cargo run --bin reference -- --only rooms-4:20260909:600
 mod args;
 
 /// `preset:seed:turn`. An early turn is the sparse case — one ant, nothing known, no enemy — and a
 /// late one is the crowded case, where the known-water run-length encoding is at its most
-/// fragmented and an observation is at its largest.
-const DEFAULT: [&str; 5] = [
-    "standard:20260908:20",
-    "standard:20260908:400",
-    "maze:20260908:400",
-    "cell:20260908:20",
-    "cell:20260908:600",
+/// fragmented and an observation is at its largest. Every preset appears, and the four-seat one
+/// twice, because it is the largest board.
+///
+/// **No view here numbers an opponent past 1.** On `rooms-4` the greedy colonies stay walled apart
+/// for the whole match, so its four-seat views show no foes at all, and an adapter that mishandled
+/// owner 2 or 3 would still be admitted. Seed 20260909 is the busiest of the seeds tried (nine ants a
+/// seat by turn 334); covering the four-seat numbering needs a walker that seeks contact.
+const DEFAULT: [&str; 6] = [
+    "open-2:20260908:20",
+    "open-2:20260908:400",
+    "maze-2:20260908:400",
+    "cave-2:20260908:300",
+    "rooms-4:20260909:20",
+    "rooms-4:20260909:600",
 ];
 
 fn main() {

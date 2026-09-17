@@ -1,9 +1,9 @@
 //! Emit `cartridge.json`, the registration manifest.
 //!
-//! Generated from the preset table rather than hand-written, because the two must not be able to
+//! Generated from the board catalogue rather than hand-written, because the two must not be able to
 //! disagree: the manifest is read once at registration and decides how many seats a preset is
 //! played at, and a manifest that said something the engine refuses would fail at pairing time, per
-//! match, in production.
+//! match, in production. A preset is listed because boards declare it (`maps::presets`).
 //!
 //! `tools/cartridge.py` folds the board catalogue and about.json into what this prints.
 fn main() {

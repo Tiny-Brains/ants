@@ -10,7 +10,8 @@ trained entries for the game beside the rules they encode.
 **It owns**
 
 - The rules: turn resolution, visibility, end conditions, ranks and scores.
-- The boards: the catalogue under `maps/`, its validation, and player symmetry.
+- The boards: the catalogue under `maps/`, its validation and player symmetry, and the generator that
+  writes it from one recipe a preset ([`mapgen/`](mapgen/recipes)).
 - The packed game state, and replay reconstruction from recorded actions.
 - The plugin ABI (`engine/plugin.toml`) and the generated registration manifest (`cartridge.json`).
 - The replay viewer (`viz/`), which re-simulates through the component.
@@ -93,7 +94,21 @@ tools/deny.sh                           # just the determinism check
 cd engine                               # the crate is its own Cargo workspace
 cargo test                              # just the host suite
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
+
+cd mapgen                               # the board factory, a crate of its own
+cargo run -- generate                   # every recipe under recipes/, into ../maps/
+cargo run -- generate recipes/maze-2.toml
+cargo run -- check                      # every board is what its recipe makes, byte for byte
+cargo run --release -- check --play 6   # ...and play each, the same walker in every seat
+cargo run -- show ../maps/maze-2-00.json
+MAPGEN_DEBUG=1 cargo run -- generate    # say why each refused attempt was refused
 ```
+
+**A board is a recipe and a seed.** `mapgen/recipes/<preset>.toml` describes a preset's boards in
+area knobs — area size, coverage, closure, wall thickness, loops, fill, hills, food — plus windows the
+finished board must fall in; `generate` draws each board until it passes, and records its seed and
+measurements in the file. Edit a recipe and regenerate; never edit a board. `build.sh` runs
+`mapgen`'s tests, which regenerate every committed board and compare bytes.
 
 `build.sh` runs the determinism check and the tests before it compiles anything, and ends by
 printing the engine digest. **A local digest is not the platform's.** Only the image pins rustc
@@ -138,26 +153,32 @@ re-cut: registries pin the archive, and a replaced file would break every one of
 
 ## Layout
 
-One directory per toolchain — `engine/` (Rust), `viz/` (Node), `baselines/` (Python) — and at the
-root only what spans them: the boards, the build, and the image.
+One directory per toolchain — `engine/` (Rust), `mapgen/` (Rust, host-only), `viz/` (Node),
+`baselines/` (Python) — and at the root only what spans them: the boards, the build, and the image.
 
 ```text
 engine/                    the cartridge: a Rust crate compiled to the wasm component
   src/lib.rs               plugin dispatch: the five exports and their JSON shapes, no rules
   src/grid.rs              wrapping, distances, symmetry, directions, bitmaps, the seeded RNG
-  src/maps.rs              the board as a file: parsing, validation, the catalogue, the presets
+  src/maps.rs              the board as a file: parsing, validation, the catalogue, presets derived from it
   src/state.rs             one match while it is played
   src/turn.rs              a turn in its fixed order, the cutoff counter, the end conditions, ranks
   src/food.rs              food at the hidden rate, in shuffled symmetric sets
   src/observe.rs           what a seat sees, and what it has been shown
   src/codec.rs             the packed, base64 wave_state
   src/replay.rs            the action stream, and re-simulating it into frames
-  src/authoring.rs         host-only: the board factory and the reference observations
-  src/bin/                 manifest, mapgen, reference -- the generators
+  src/authoring.rs         host-only: the reference observations
+  src/bin/                 manifest, reference -- the generators
   src/tests/               the host suite, one file per area; fixtures/ holds a platform-written replay
   build.rs                 compiles ../maps/ into the component
   plugin.toml              the authored Orion ABI
   about.json               the game's introduction, folded into cartridge.json
+mapgen/                    the board factory: its own crate, so tuning it moves no engine digest
+  recipes/                 one TOML file a preset: the knobs, and the windows a board must fall in
+  src/make.rs              one board: areas, homes, coverage, walls, doors, hills, fill, food
+  src/measure.rs           a board in numbers, and the rules every board obeys, checked on the board
+  src/set.rs               a recipe's whole set, the file format, and the engine's own validation
+  src/play.rs              the seat-bias smoke check: one walker in every seat
 viz/                       the replay viewer: one bundle for the web app, the book and the CLI
 baselines/                 the trained entries, and how they were trained (not in the image)
 maps/                      the boards, one JSON file each
@@ -179,14 +200,18 @@ dist/                      build output, gitignored; the image's /artifacts/
   each seat's vision into what it knows every turn, and a view carries known water.
 - **A view is observer-relative.** Relabel every seat and ask the same player again, and the bytes
   are identical; `a_view_is_observer_relative` checks the engine rather than a stand-in.
-- **Every committed board is symmetric.** A file cannot be symmetric by construction, so
-  `engine/src/maps.rs` asserts it and the corpus test checks every board that ships.
+- **Every committed board is fair and whole.** A file cannot be symmetric by construction, so
+  `engine/src/maps.rs` asserts that it is congruent under its own shift, that all its land is one
+  walkable body and that every hill has a way off, and the corpus test checks every board that
+  ships. `mapgen` holds the boards to more — clearings, no enemy hill in view — and proves each is
+  what its recipe makes.
 - **A replay carries the board it was played on**, and the decode test runs against an envelope the
   platform actually wrote.
 - **The viewer re-simulates with the cartridge, never a copy of it.** A JavaScript
   re-implementation of a rule would be a second engine.
 - **Nothing generated is committed, and everything generated is in `dist/`.** The registration
-  manifest is generated from the preset table and the boards, so it cannot disagree with them.
+  manifest is generated from the boards — a preset exists because boards declare it — so it cannot
+  disagree with them.
 - **The protocol is published, and moves with the engine.** A change to what a view carries is a
   change to the competitor guide and to `baselines/planes.py` in the same batch.
 - **The rules are the 2011 contest's rules.** Where the published specification and the contest
@@ -225,6 +250,35 @@ in the small only.
 `/artifacts/` as one archive, cut by the new `tools/release.sh`, and drill and ants-starter pin it —
 so a competitor no longer clones this repository, or builds it, to play or check a model (devops
 decision N21). No source changed and the digest did not move.
+
+**17 September 2026 — boards are generated from recipes, and a board carries its shift.** The 24
+boards are gone and 32 replace them, eight a preset in four presets: `open-2` (64 × 96, open ground),
+`maze-2` (96 × 96, a tight lattice maze), `cave-2` (96 × 96, caverns, two hills a seat) and `rooms-4`
+(128 × 128, walled rooms, **four seats**). They come from `mapgen/`, a crate of its own driven by one
+recipe a preset, which replaces `authoring::worldgen`, `src/bin/mapgen.rs` and the `PRESETS` table;
+the presets in `cartridge.json` are now derived from the boards. The old generator delivered half the
+water it was asked for, left every map in a preset with the same hill geometry and no detour at all,
+and left sealed pockets food could spawn in on three maze boards. In the engine: the map file's
+`symmetry` is read rather than re-derived, so seats may be half the rows, half the columns or both
+apart (and it travels in `wave_state`); hills are whole orbits, so a seat may have several; and
+validation refuses land that cannot be walked to and a hill with no way off (the old check included
+the hill's own square and could not fail). A board named inline no longer needs its preset to be a
+pool. **No rule moved**: every `observe`, `step` delta and `finish` output over five inline boards,
+random and food-seeking play, four seeds, up to 400 turns, hashes the same on this engine and the
+previous commit's. **The digest moved**, and the boards with it: a local build prints
+`sha256:f684c0d9…`; the image's is not built yet. `cargo test` is 88, and `mapgen`'s is 5.
+
+**Owed, from the boards.** A release, and ants-starter's `games.toml` and match files moved from
+`standard` to the new names on it. Seasons name presets: the deploy's list (devops
+`soma.toml.tmpl`) now names the three two-seat presets and not `rooms-4`, because the pairing clock
+picks a preset before it seats anyone and spends a version's want when the roster cannot fill four
+seats, so on a small roster a four-seat preset starves every version of pairings; that is Soma's to
+fix before `rooms-4` is played. Five to eight seats generate and validate (`mapgen`'s tests cover
+every count) but Kalam claims at most four, so none ship. The reference observations cover every
+preset, but no view in them numbers an opponent past 1: the greedy walker's `rooms-4` colonies never
+meet, so an adapter that mishandled owner 2 or 3 would still be admitted. And the greedy walker's
+colonies stay at two to four ants on `maze-2`, whose two-square corridors punish ants ordered into
+each other — tight by design, and worth watching once models play it.
 
 ## More
 

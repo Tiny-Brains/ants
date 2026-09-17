@@ -1,0 +1,33 @@
+# Open ground: no walls, rocks scattered through it. The nearest thing to the boards the catalogue
+# shipped before, with the water it asked for actually delivered and the seats shifted three ways.
+[preset]
+name = "open-2"
+seats = 2
+count = 8
+seed = 2026091701
+
+[board]
+rows = 64
+cols = 96
+shifts = ["diagonal", "cols", "rows"]
+
+[areas]
+size = [300, 600]
+
+[fill]
+style = "scatter"
+pct = 12
+blob = [2, 5]
+
+[hills]
+clearing = 3
+
+[food]
+per_seat = 12
+bootstrap = 4
+bootstrap_walk = [2, 7]
+bias = "uniform"
+
+[accept]
+water_pct = [9, 14]
+enemy_walk = [32, 96]

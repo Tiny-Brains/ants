@@ -67,10 +67,10 @@ class Group:
     """Every live seat on one board size, stacked.
 
     **A batch is per board size, and that is not an implementation detail.** The pool holds several
-    waves, `worldgen` takes one preset a wave, and the three presets are three sizes — 64x96, 96x96
+    waves, `worldgen` takes one preset a wave, and the presets come in three sizes — 64x96, 96x96
     and 128x128. The policy is fully convolutional so it runs on any of them, but a single tensor
-    cannot hold two, so a trainer loops the groups. The ladder never has this problem: a match is
-    two seats and each is its own `model_infer` call.
+    cannot hold two, so a trainer loops the groups. The ladder never has this problem: every seat of
+    a match is its own `model_infer` call.
     """
 
     size: tuple[int, int]

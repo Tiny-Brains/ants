@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def env():
-    e = Env(waves=1, matches_per_wave=4, max_turns=40, seed=7, preset="standard")
+    e = Env(waves=1, matches_per_wave=4, max_turns=40, seed=7, preset="open-2")
     yield e
     e.close()
 

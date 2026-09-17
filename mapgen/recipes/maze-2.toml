@@ -1,0 +1,32 @@
+# A tight maze: square rooms three squares across, walls one thick, joined by a tree of one-square
+# doors with a few loops. Walls this thin stop walking, not fighting.
+[preset]
+name = "maze-2"
+seats = 2
+count = 8
+seed = 2026091702
+
+[board]
+rows = 96
+cols = 96
+shifts = ["diagonal", "rows", "cols"]
+
+[areas]
+size = [9, 9]
+grid = true
+closure_pct = 100
+wall = 1
+
+[connectivity]
+loops_pct = 8
+door_min = 1
+
+[hills]
+clearing = 2
+room = true
+home_doors_min = 2
+
+[food]
+per_seat = 10
+bootstrap = 3
+bootstrap_walk = [2, 8]

@@ -12,8 +12,7 @@ mod rules;
 mod spec;
 mod wave;
 
-use crate::authoring::worldgen;
-use crate::grid::{Bits, Geom, Rng};
+use crate::grid::{Bits, Geom, Rng, Symmetry};
 use crate::state::{Ant, Hill, Match};
 use crate::turn::step;
 use crate::*;
@@ -24,7 +23,7 @@ use serde_json::{Value, json};
 /// the reference's `do_food_none`.
 fn bare(rows: u8, cols: u8, players: u8) -> Match {
     let g = Geom::new(rows, cols);
-    let mut m = Match::new(1, g, players, 1000, Bits::zeros(g.cells()));
+    let mut m = Match::new(1, g, Symmetry::diagonal(&g, players), 1000, Bits::zeros(g.cells()));
     m.food_rate = 0;
     m.food_turn = 0;
     m

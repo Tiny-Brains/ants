@@ -10,10 +10,10 @@ There is no server, no database, no network, and no clock — the component impo
 the rules of Ants (the 2011 Google AI Challenge game) and knows nothing about the platform: not
 ratings, not admission, not models, not matches as scheduling units.
 
-**The repository is everything Ants; the component is only the rules.** Two subdirectories carry
-their own toolchains and are not the cartridge: `viz/`, the replay viewer (Node), and `baselines/`,
-the platform's trained entries and the pipeline that trains them (Python, with its own
-[CLAUDE.md](baselines/CLAUDE.md)). The baselines know the platform thoroughly — weight classes, the
+**The repository is everything Ants; the component is only the rules.** Three subdirectories carry
+their own toolchains and are not the cartridge: `mapgen/`, the board factory (a host-only Rust crate
+of its own), `viz/`, the replay viewer (Node), and `baselines/`, the platform's trained entries and
+the pipeline that trains them (Python, with its own [CLAUDE.md](baselines/CLAUDE.md)). The baselines know the platform thoroughly — weight classes, the
 adapter dialect, the turn deadline, `tinybrains check` — and that is fine *because* they are not
 the component: the rule above is about `src/`, and the determinism check, the build and the image
 never see `baselines/`.
@@ -41,7 +41,7 @@ tools/deny.sh       # just the determinism check (no floating point in game logi
 
 cd engine
 cargo fmt --check && cargo clippy --all-targets -- -D warnings   # edition 2024; rustfmt.toml is not the default
-cargo test          # just the host suite -- 82 tests
+cargo test          # just the host suite -- 88 tests
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
 cargo test spec_scenario_                                  # the spec's worked fights
 cargo test measure_what_random_play_produces -- --nocapture  # diagnostic, not a guarantee
@@ -54,13 +54,32 @@ wasm, runs the `manifest` and `reference` generators into `dist/`, then `tools/p
 `dist/viz/`, on purpose: a viewer transpiled from the previous component is a viewer for some other
 engine.
 
-The three host binaries are generators (from `engine/`):
+The two host binaries are generators (from `engine/`):
 
 ```sh
 cargo run --bin manifest > ../dist/cartridge.json                  # then tools/package.py folds in maps + about
-cargo run --bin reference > ../dist/reference/observations.json    # -- --only cell:20260908:600 for one spec
-cargo run --bin mapgen -- --preset cell --seed 7 --id cell-07 > ../maps/cell-07.json
+cargo run --bin reference > ../dist/reference/observations.json    # -- --only rooms-4:20260909:600 for one spec
 ```
+
+The boards come from `mapgen/`, a crate of its own (from `mapgen/`):
+
+```sh
+cargo run -- generate                    # every recipe under recipes/, into ../maps/ -- replaces a preset's boards whole
+cargo run -- generate recipes/maze-2.toml
+cargo run -- check                       # every committed board is what its recipe makes, byte for byte
+cargo run --release -- check --play 6    # ...and play each one, the same walker in every seat
+cargo run -- show ../maps/maze-2-00.json # draw a board and its metrics
+cargo test                               # 5 tests; build.sh runs them. MAPGEN_DEBUG=1 says why attempts fail
+```
+
+**A board is a recipe and a seed; never edit one.** A recipe (`mapgen/recipes/<preset>.toml`) is
+area knobs — size, `grid`, `warp`, `coverage_pct`, `closure_pct`, `wall`, `loops_pct`, `fill`, hills,
+food — plus `accept` windows a finished board must fall in. `check` regenerates every set and
+compares bytes, so a hand edit or a generator change nobody regenerated for fails `build.sh`. It is a
+separate crate so tuning it is not an engine-digest change; regenerating the boards is one, because
+`build.rs` compiles them in. `mapgen` links this crate and validates through `tb.ants.worldgen`, so
+`build.rs` must keep building with an empty `maps/` (it warns; `tools/package.py` refuses to ship
+one).
 
 The baselines resolve the cartridge at `../dist` (`baselines/games.toml`), so they need `./build.sh`
 run here first. Their guide has the training commands:
@@ -98,14 +117,14 @@ A *wave* is many matches advanced together in one call.
 |---|---|
 | `src/lib.rs` | Plugin dispatch and JSON shapes. No rules |
 | `src/grid.rs` | Wrapping geometry, distances, symmetry, directions, the view/attack/spawn radii, `Bits`, `Rng` |
-| `src/maps.rs` | The board as a file: parsing, validation, symmetry assertion; the catalogue (`MAPS`, embedded by `build.rs`); `PRESETS` |
+| `src/maps.rs` | The board as a file: parsing, validation (the board's own shift, whole hill orbits, one walkable body of land); the catalogue (`MAPS`, embedded by `build.rs`); presets, derived from it |
 | `src/state.rs` | One match while it is played; the cutoff counter's constants |
 | `src/turn.rs` | Turn resolution in a fixed order: move → attack → raze → spawn → gather → spawn food; ending; ranks |
 | `src/food.rs` | Food at the hidden rate: the rate, the symmetric sets, their shuffled rotation, the pending queue |
 | `src/observe.rs` | One seat's view: fog, known water, `vis`, observer-relative owners |
 | `src/codec.rs` | The packed, base64 `wave_state`. Opaque outside this file; no version field |
 | `src/replay.rs` | Action-stream recording and re-simulation into frames |
-| `src/authoring.rs` | Host-only: procedural worldgen (the board factory) and the reference observations — unreachable from a plugin call, so the linker drops it from the component |
+| `src/authoring.rs` | Host-only: the reference observations — unreachable from a plugin call, so the linker drops it from the component. The board factory is `../mapgen/` |
 | `build.rs` | Embeds every board under `../maps/`; Cargo re-runs it when they change |
 | `plugin.toml`, `about.json` | The authored ABI, and the game's introduction folded into `cartridge.json` |
 
@@ -121,10 +140,14 @@ A *wave* is many matches advanced together in one call.
 3. **Exploring is remembered.** A model is a pure function of one observation with no state channel,
    so `turn.rs` folds each seat's vision into `known` every turn and observations carry *known
    water*. The per-player seen-masks are ~60% of `wave_state`; that cost is the point.
-4. **Boards are files.** 24 committed under `maps/` at the root (content, not source — `mapgen`
-   writes them and `dist/maps/` ships them), eight per preset, validated and asserted
-   symmetric, and compiled in. A replay envelope carries its own board *and* its seed, so it
-   re-simulates correctly after the catalogue or preset table moves on.
+4. **Boards are files.** 32 committed under `maps/` at the root (content, not source — `mapgen/`
+   writes them from its recipes and `dist/maps/` ships them), eight per preset across `open-2`,
+   `maze-2`, `cave-2` and `rooms-4`, validated and compiled in. A board carries its **shift**
+   (`symmetry`): seat `k`'s board is seat 0's moved `k` times by it, it travels in `wave_state`, and
+   `food::sets` and observer-relative owners both follow it. Hills are listed in orbits, so hill `i`
+   is seat `i % players`'s. A preset exists because boards declare it, and has one seat count. A
+   replay envelope carries its own board *and* its seed, so it re-simulates correctly after the
+   catalogue moves on.
 
 ## What breaks if you forget it
 
@@ -153,8 +176,14 @@ A *wave* is many matches advanced together in one call.
   a registry pins the archive's bytes. The archive is the image's `/artifacts/`, never `dist/` —
   only the image's digest is the ladder's.
 - **Never hand-edit a generated file.** `engine/plugin.toml` is the authored ABI (`plugin.json` is
-  derived); `PRESETS` in `engine/src/maps.rs` is authored (`cartridge.json`'s presets are derived);
-  `engine/about.json` is the one hand-written input folded into the manifest.
+  derived); `mapgen/recipes/` are authored and `maps/` is generated from them (`mapgen check` fails on
+  a hand edit); `cartridge.json`'s presets are derived from the boards; `engine/about.json` is the one
+  hand-written input folded into the manifest.
+- **A preset name is a contract with other repositories.** Seasons and the deploy's `[vars]` list
+  presets by name (devops `compose/orion/soma.toml.tmpl`, soma `docs/config.md`), match files name
+  them (ants-starter, the book's tutorials and *Testing*), and baselines' tests pin one. Renaming or
+  retiring a preset is a change to each, and the starter's only through a release. A preset with more
+  seats than a small roster can fill starves pairing, and Kalam claims at most four seats.
 - **Rules changes cite the reference.** Where the published specification and the 2011 contest
   engine (`aichallenge/ants/ants.py`) disagree, **the engine wins** — it is what every bot was
   scored against. Comments carry `ants.py:NNN` line cites; keep that habit. The Focus Battle page's

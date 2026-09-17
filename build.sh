@@ -22,6 +22,11 @@ target="${CARGO_TARGET_DIR:-$here/engine/target}"
 cd "$here/engine"
 cargo test
 
+# The boards: every one under maps/ is what its recipe under mapgen/recipes/ makes, byte for byte,
+# and obeys the rules every board obeys. A crate of its own, so tuning the generator is not an
+# engine-digest change -- regenerating the boards is.
+(cd "$here/mapgen" && cargo test)
+
 # From scratch: a board deleted from maps/ must not survive in dist/maps/, and a viewer transpiled
 # from the previous component is a viewer for some other engine.
 rm -rf "$dist"

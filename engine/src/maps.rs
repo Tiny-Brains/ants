@@ -1,17 +1,18 @@
 //! The boards: the map file, its validation, the catalogue that ships, and the presets that pool it.
 //!
-//! A map fixes the **board** — its size, its water, its hills, and the food on it at turn zero. It
-//! does not fix the match: the hidden food rate and every respawn after turn zero are drawn from
-//! the seed, so a board played at two seeds is two matches. Both are carried in the replay.
+//! A map fixes the **board** — its size, its shift, its water, its hills, and the food on it at
+//! turn zero. It does not fix the match: the hidden food rate and every respawn after turn zero are
+//! drawn from the seed, so a board played at two seeds is two matches. Both are carried in the
+//! replay.
 //!
-//! `authoring::worldgen` builds one fundamental domain and translates it, so symmetry is true by
-//! the shape of the code. A file cannot make that promise — someone will hand-author one — so the
-//! guarantee moves here, to `validate`, which every map passes through before it is played. Its
+//! The generator (`mapgen/`, beside this crate) writes every orbit whole, so its boards are
+//! symmetric by construction. A file cannot make that promise — someone will hand-author one — so
+//! the guarantee lives here, in `validate`, which every map passes through before it is played. Its
 //! refusals are `caller_input`: the same map can never succeed, so nothing retries it.
 
 use serde_json::{Value, json};
 
-use crate::grid::{Bits, Geom, SPAWN_RADIUS2, Symmetry};
+use crate::grid::{Bits, DIRS, Geom, Symmetry};
 use crate::state::Match;
 
 /// A board, in the shape the JSON file has.
@@ -26,7 +27,12 @@ pub struct MapFile {
     pub rows: u8,
     pub cols: u8,
     pub players: u8,
+    /// The shift seat `k`'s board is moved by, `k` times: `(dr, dc)`. A file that names none gets
+    /// `Symmetry::diagonal`, which is what every board was before the shift was the board's.
+    pub symmetry: (i32, i32),
     pub water: Vec<u32>,
+    /// In orbits: seat 0's hill, then its image for each other seat, then the next orbit. So hill
+    /// `i` is seat `i % players`'s, and a board with two hills a seat lists `2 · players`.
     pub hills: Vec<(i32, i32)>,
     pub food: Vec<(i32, i32)>,
     /// How much food the board carries at turn zero. Board metadata: the engine plays from `food`
@@ -96,12 +102,29 @@ impl MapFile {
         if water.iter().any(|&n| n > u32::MAX as u64) {
             return Err(err("MAP_BAD_SHAPE", "'water' holds a value that is not a run length"));
         }
+        let (rows, cols, players) =
+            (u8_field(v, "rows")?, u8_field(v, "cols")?, u8_field(v, "players")?);
+        let symmetry = match v.get("symmetry") {
+            None | Some(Value::Null) => {
+                let s = Symmetry::diagonal(&Geom::new(rows, cols), players);
+                (s.dr, s.dc)
+            }
+            Some(s) => {
+                let axis = |k: &str| {
+                    s.get(k).and_then(Value::as_i64).and_then(|n| i32::try_from(n).ok()).ok_or_else(
+                        || err("MAP_BAD_SHAPE", format!("'symmetry' has no numeric '{k}'")),
+                    )
+                };
+                (axis("dr")?, axis("dc")?)
+            }
+        };
         let m = MapFile {
             id: v.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
             preset: v.get("preset").and_then(Value::as_str).unwrap_or("").to_string(),
-            rows: u8_field(v, "rows")?,
-            cols: u8_field(v, "cols")?,
-            players: u8_field(v, "players")?,
+            rows,
+            cols,
+            players,
+            symmetry,
             water: water.into_iter().map(|n| n as u32).collect(),
             hills: pairs(v, "hills")?,
             food: pairs(v, "food")?,
@@ -116,7 +139,7 @@ impl MapFile {
     }
 
     pub fn to_json(&self) -> Value {
-        let sym = Symmetry::for_preset(&self.geom(), self.players);
+        let (dr, dc) = self.symmetry;
         json!({
             "id": self.id,
             "preset": self.preset,
@@ -127,12 +150,16 @@ impl MapFile {
             "hills": self.hills.iter().map(|&(r, c)| json!([r, c])).collect::<Vec<_>>(),
             "food":  self.food.iter().map(|&(r, c)| json!([r, c])).collect::<Vec<_>>(),
             "food_target": self.food_target,
-            "symmetry": { "dr": sym.dr, "dc": sym.dc },
+            "symmetry": { "dr": dr, "dc": dc },
         })
     }
 
     pub fn geom(&self) -> Geom {
         Geom::new(self.rows, self.cols)
+    }
+
+    pub fn sym(&self) -> Symmetry {
+        Symmetry::new(self.players, self.symmetry.0, self.symmetry.1)
     }
 
     /// Every hill, and every food, as grid positions.
@@ -176,23 +203,34 @@ impl MapFile {
         Ok(b)
     }
 
-    /// Everything `worldgen`'s construction used to guarantee, asserted instead.
+    /// Everything a board must be before it is played, asserted.
+    ///
+    /// These are the rules no tuning may relax, because breaking any of them makes a match unfair or
+    /// unplayable rather than merely different: the board is congruent for every seat, every seat's
+    /// hills are whole orbits on land with a way off them, and every square of land can be walked to
+    /// from every other. The last is what keeps food honest — `food::sets` draws from every land
+    /// square, and food spawned in a sealed pocket can never be gathered while it still counts as
+    /// loose food for the idle-food ending. The generator holds itself to more (hill spacing, vision,
+    /// door widths); those are design, and they live with it.
     pub fn validate(&self) -> Result<(), MapError> {
         let g = self.geom();
         let (rows, cols, players) = (g.rows, g.cols, self.players as i32);
+        let sym = self.sym();
 
-        // The translation is by whole cells, so the board must divide by the seat count. Without
-        // this the orbit of a cell is not a partition and no map of this size is symmetric.
-        if rows % players != 0 || cols % players != 0 {
+        // A shift of any other order does not partition the board into orbits of one size, so no
+        // assignment of water to it can be symmetric.
+        if !sym.is_exact(&g) {
+            let (dr, dc) = self.symmetry;
             return Err(err(
                 "MAP_BAD_SHAPE",
-                format!("a {rows}x{cols} board does not divide by {players} seats"),
+                format!(
+                    "a shift of ({dr}, {dc}) on a {rows}x{cols} board does not come back to the start \
+                     after exactly {players} steps, so it cannot seat {players} players"
+                ),
             ));
         }
 
         let water = self.bits()?;
-        let sym = Symmetry::for_preset(&g, self.players);
-
         for i in 0..g.cells() {
             let img = sym.image(&g, i as u16, 1) as usize;
             if water.get(i) != water.get(img) {
@@ -203,38 +241,62 @@ impl MapFile {
             }
         }
 
-        if self.hills.len() != self.players as usize {
+        // Hills, in whole orbits: `open_on` hands hill `i` to seat `i % players`.
+        let n = self.hills.len();
+        if n == 0 || !n.is_multiple_of(self.players as usize) || n > u8::MAX as usize {
             return Err(err(
                 "MAP_UNPLAYABLE",
                 format!(
-                    "{} hills for {} seats; each seat needs exactly one",
-                    self.hills.len(),
-                    self.players
+                    "{n} hills for {players} seats; each seat needs the same number, at least one"
                 ),
             ));
         }
         let hills = self.cells_of(&self.hills);
-        for (k, &pos) in hills.iter().enumerate() {
-            if pos != sym.image(&g, hills[0], k as i32) {
+        for (i, &pos) in hills.iter().enumerate() {
+            let (orbit, k) = (i / self.players as usize, (i % self.players as usize) as i32);
+            let first = hills[orbit * self.players as usize];
+            if pos != sym.image(&g, first, k) {
                 return Err(err(
                     "MAP_NOT_SYMMETRIC",
-                    format!("seat {k}'s hill is not the {k}th image of seat 0's"),
+                    format!(
+                        "hill {i} (seat {k}) is not the {k}th image of hill {}",
+                        i - k as usize
+                    ),
                 ));
             }
         }
+        let mut distinct = hills.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        if distinct.len() != hills.len() {
+            return Err(err("MAP_BAD_SHAPE", "'hills' names the same square twice"));
+        }
 
-        // Nobody starts in a lake, or walled into one.
-        let clear = g.disk(SPAWN_RADIUS2);
-        for (k, &(r, c)) in self.hills.iter().enumerate() {
+        // Nobody starts in a lake, or walled into one. A hill's ant leaves it by one of the four
+        // moves, so a hill with water on all four sides spawns ants that can never go anywhere.
+        for (i, &(r, c)) in self.hills.iter().enumerate() {
+            let seat = i % self.players as usize;
             if water.get(g.at(r, c) as usize) {
-                return Err(err("MAP_UNPLAYABLE", format!("seat {k}'s hill stands on water")));
+                return Err(err(
+                    "MAP_UNPLAYABLE",
+                    format!("seat {seat}'s hill {i} stands on water"),
+                ));
             }
-            if clear.iter().all(|&(dr, dc)| water.get(g.at(r + dr, c + dc) as usize)) {
-                return Err(err("MAP_UNPLAYABLE", format!("seat {k}'s hill is walled in")));
+            if DIRS.iter().all(|&(dr, dc)| water.get(g.at(r + dr, c + dc) as usize)) {
+                return Err(err("MAP_UNPLAYABLE", format!("seat {seat}'s hill {i} is walled in")));
             }
         }
 
-        // Food is whole orbits, on land, named once each.
+        // One body of land. Ants move in four directions, so two squares touching only at a corner
+        // are not connected, and the wrap is.
+        if let Some((r, c)) = unreachable_land(&g, &water, hills[0]) {
+            return Err(err(
+                "MAP_UNPLAYABLE",
+                format!("land at [{r}, {c}] cannot be walked to from seat 0's hill"),
+            ));
+        }
+
+        // Food is whole orbits, on open land, named once each.
         let mut have = self.cells_of(&self.food);
         have.sort_unstable();
         have.dedup();
@@ -245,6 +307,9 @@ impl MapFile {
             let pos = g.at(r, c);
             if water.get(pos as usize) {
                 return Err(err("MAP_UNPLAYABLE", format!("food at [{r}, {c}] is under water")));
+            }
+            if distinct.binary_search(&pos).is_ok() {
+                return Err(err("MAP_UNPLAYABLE", format!("food at [{r}, {c}] is on a hill")));
             }
             for k in 0..players {
                 if have.binary_search(&sym.image(&g, pos, k)).is_err() {
@@ -264,7 +329,7 @@ impl MapFile {
     /// `known` folded in from what it can see. A map file that carried them could disagree with the
     /// rules, and there would be no way to tell which was right.
     pub fn build(&self, seed: u64, max_turns: u16) -> Result<Match, MapError> {
-        let mut m = Match::new(seed, self.geom(), self.players, max_turns, self.bits()?);
+        let mut m = Match::new(seed, self.geom(), self.sym(), max_turns, self.bits()?);
         m.food = self.cells_of(&self.food);
         m.food0 = m.food.clone();
         m.map_id = self.id.clone();
@@ -274,10 +339,9 @@ impl MapFile {
 
     /// Read the board back off a match, at any turn.
     ///
-    /// This is how `mapgen` turns the procedural generator into a file, and how `finish` hands the
-    /// board to the replay envelope. It takes the food from `food0`, because by then the board's
-    /// food has been eaten and respawned many times over and the current set is the position rather
-    /// than the board.
+    /// This is how `finish` hands the board to the replay envelope. It takes the food from `food0`,
+    /// because by then the board's food has been eaten and respawned many times over and the
+    /// current set is the position rather than the board.
     pub fn from_match(m: &Match, id: &str, preset: &str) -> MapFile {
         let rc = |p: u16| m.g.rc(p);
         MapFile {
@@ -286,6 +350,7 @@ impl MapFile {
             rows: m.g.rows as u8,
             cols: m.g.cols as u8,
             players: m.players,
+            symmetry: (m.sym.dr, m.sym.dc),
             water: m.water.rle(),
             hills: m.hills.iter().map(|h| rc(h.pos)).collect(),
             food: m.food0.iter().map(|&f| rc(f)).collect(),
@@ -294,42 +359,47 @@ impl MapFile {
     }
 }
 
-// ---------------------------------------------------------------- the presets
-
-/// A preset names a pool of boards and how many seats play them; the rest is what the board
-/// factory grew them from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Preset {
-    pub name: &'static str,
-    pub rows: u8,
-    pub cols: u8,
-    /// Seats are a property of the map, not of the game (decision 14), so there is no game-level
-    /// constant and a four-seat map is content rather than code.
-    pub players: u8,
-    /// Roughly what fraction of the map is water, in percent, before symmetry.
-    pub water_pct: u32,
-    /// How much food the board is stocked with at turn zero, per player.
-    pub food_per_player: u32,
-    /// The blob size water is grown in. A maze wants long thin walls; a cave wants fat ones.
-    pub blob: u32,
-    /// Food placed within reach of each hill at turn zero.
-    ///
-    /// Without it a colony cannot bootstrap: a player starts with one ant, an ant collects only
-    /// from an adjacent square, and a lone ant that has to *find* its first food usually will not.
-    /// Measured before it existed: random play finished with an average of two ants and ended as a
-    /// food stalemate twenty times in twenty-four.
-    pub hill_food: u32,
+/// The first square of land that cannot be walked to from `from`, if there is one.
+fn unreachable_land(g: &Geom, water: &Bits, from: u16) -> Option<(i32, i32)> {
+    let mut seen = Bits::zeros(g.cells());
+    let mut queue = vec![from];
+    seen.set(from as usize);
+    while let Some(pos) = queue.pop() {
+        let (r, c) = g.rc(pos);
+        for &(dr, dc) in &DIRS {
+            let next = g.at(r + dr, c + dc);
+            if !water.get(next as usize) && !seen.get(next as usize) {
+                seen.set(next as usize);
+                queue.push(next);
+            }
+        }
+    }
+    (0..g.cells()).find(|&i| !water.get(i) && !seen.get(i)).map(|i| g.rc(i as u16))
 }
 
-#[rustfmt::skip]
-pub const PRESETS: [Preset; 3] = [
-    Preset { name: "standard", rows: 64,  cols: 96,  players: 2, water_pct: 12, food_per_player: 12, blob: 4, hill_food: 5 },
-    Preset { name: "maze",     rows: 96,  cols: 96,  players: 2, water_pct: 28, food_per_player: 10, blob: 2, hill_food: 5 },
-    Preset { name: "cell",     rows: 128, cols: 128, players: 2, water_pct: 18, food_per_player: 16, blob: 7, hill_food: 5 },
-];
+// ---------------------------------------------------------------- the presets
 
-pub fn preset(name: &str) -> Option<Preset> {
-    PRESETS.iter().find(|p| p.name == name).copied()
+/// A preset names a pool of boards and how many seats play them.
+///
+/// **Derived from the catalogue, never authored.** A preset exists because boards declare it, so a
+/// preset played on no board, or a board naming a preset nobody lists, cannot be written down.
+/// Seats are a property of the map, not of the game (decision 14), and pairing reads one seat count
+/// per preset: every board in a pool must agree, which `tools/package.py` and the tests check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Preset {
+    pub name: String,
+    pub players: u8,
+}
+
+/// Every preset, in the order its first board appears in the catalogue.
+pub fn presets() -> Vec<Preset> {
+    let mut out: Vec<Preset> = Vec::new();
+    for m in catalogue() {
+        if !out.iter().any(|p| p.name == m.preset) {
+            out.push(Preset { name: m.preset, players: m.players });
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------- the catalogue
@@ -375,11 +445,17 @@ pub fn for_seed(preset: &str, seed: u64) -> Option<MapFile> {
 /// Resolve what a caller passed for one match: a map id, a whole map object, or nothing.
 ///
 /// Nothing is the platform's case — Kalam passes seeds and a preset and lets the seed choose. The
-/// other two are the local case, and the reason a match file can pin a board.
+/// other two are the local case, and the reason a match file can pin a board. **Only the first
+/// needs the preset to be a pool**: a board named outright is played whatever label the call
+/// carries, which is how a lesson board or a freshly generated family is played before any
+/// catalogue lists it.
 pub fn resolve(spec: Option<&Value>, preset: &str, seed: u64) -> Result<MapFile, MapError> {
     match spec {
         None | Some(Value::Null) => for_seed(preset, seed).ok_or_else(|| {
-            err("NO_SUCH_MAP", format!("no map in the catalogue is played at preset '{preset}'"))
+            err(
+                "NO_SUCH_PRESET",
+                format!("no preset '{preset}': no board in the catalogue is played at it"),
+            )
         }),
         Some(Value::String(id)) => {
             by_id(id).ok_or_else(|| err("NO_SUCH_MAP", format!("no map '{id}' in the catalogue")))

@@ -108,17 +108,18 @@ pub const CUTOFF_NONE: u8 = 255;
 pub const CUTOFF_FOOD: u8 = 254;
 
 impl Match {
-    /// An empty match on a board: no ants, no food, no hills. `worldgen` and `MapFile::build` are
-    /// the two ways one is filled in, and they must not be able to disagree about the rest.
-    pub fn new(seed: u64, g: Geom, players: u8, max_turns: u16, water: Bits) -> Match {
+    /// An empty match on a board: no ants, no food, no hills. `MapFile::build` is how one is filled
+    /// in; the rule tests build theirs by hand.
+    pub fn new(seed: u64, g: Geom, sym: Symmetry, max_turns: u16, water: Bits) -> Match {
         let (food_rate, food_turn) = crate::food::rate_for(seed);
+        let players = sym.players as u8;
         Match {
             seed,
             turn: 0,
             max_turns,
             players,
             g,
-            sym: Symmetry::for_preset(&g, players),
+            sym,
             done: false,
             reason: 0,
             water,
@@ -141,16 +142,18 @@ impl Match {
         }
     }
 
-    /// Seat the hills, one per player in order, and open the match on them.
+    /// Seat the hills, in orbits of one per player, and open the match on them.
     ///
-    /// Each seat begins with a hill, one ant standing on it, and one point per hill owned — the
-    /// last so that a player who loses their hill and razes nothing sits on zero rather than on
-    /// minus one (`ants.py:152`).
+    /// Hill `i` belongs to seat `i % players`, which is the order a map file lists them in: each
+    /// orbit is seat 0's hill followed by its images. Each hill begins with one ant standing on it,
+    /// and each seat with one point per hill owned — the last so that a player who loses their
+    /// hills and razes nothing sits on zero rather than below it (`ants.py:152`).
     pub(crate) fn open_on(&mut self, hills: &[u16]) {
-        for (k, &pos) in hills.iter().enumerate() {
-            self.hills.push(Hill { pos, owner: k as u8, razed: false, last_touched: 0 });
-            self.ants.push(Ant { pos, owner: k as u8 });
-            self.score[k] += 1;
+        for (i, &pos) in hills.iter().enumerate() {
+            let owner = (i % self.players as usize) as u8;
+            self.hills.push(Hill { pos, owner, razed: false, last_touched: 0 });
+            self.ants.push(Ant { pos, owner });
+            self.score[owner as usize] += 1;
         }
         for pl in 0..self.players {
             self.reveal(pl);

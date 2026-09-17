@@ -40,17 +40,6 @@ fn the_food_scan_finds_the_sets_the_definition_does_on_every_board() {
         }
         assert_eq!(crate::food::sets(&m), food_sets_by_definition(&m), "{} razed", mf.id);
     }
-    for p in crate::maps::PRESETS {
-        for seed in [1, 99, 0xBEEF] {
-            let m = worldgen(seed, p, 1000);
-            assert_eq!(
-                crate::food::sets(&m),
-                food_sets_by_definition(&m),
-                "{} seed {seed}",
-                p.name
-            );
-        }
-    }
     // Orbits of three and four, where images can coincide and deduplication has work to do.
     for (rows, cols, players) in [(40, 40, 4), (9, 7, 3), (12, 12, 4)] {
         let mut m = bare(rows, cols, players);

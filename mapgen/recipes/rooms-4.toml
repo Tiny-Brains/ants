@@ -1,0 +1,44 @@
+# Four seats among rooms: a lattice of square rooms fourteen across, walled two thick, some left solid,
+# doors a few squares wide and enough loops that no room is a trap. Walls this thick stop fights as
+# well as walking.
+[preset]
+name = "rooms-4"
+seats = 4
+count = 8
+seed = 2026091704
+
+[board]
+rows = 128
+cols = 128
+shifts = ["any"]
+
+[areas]
+size = [256, 256]
+grid = true
+coverage_pct = 85
+closure_pct = 80
+wall = 2
+
+[connectivity]
+loops_pct = 35
+door_min = 2
+
+[fill]
+style = "scatter"
+pct = 4
+blob = [1, 2]
+
+[hills]
+clearing = 3
+home_doors_min = 2
+
+[food]
+per_seat = 12
+bootstrap = 4
+bootstrap_walk = [2, 8]
+bias = "home"
+band = 6
+
+[accept]
+water_pct = [20, 40]
+enemy_walk = [40, 200]

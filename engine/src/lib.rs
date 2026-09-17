@@ -38,7 +38,9 @@ mod state;
 mod turn;
 
 mod authoring;
-pub use authoring::{generate_map, presets, reference_observations};
+pub use authoring::reference_observations;
+pub use grid::VIEW_RADIUS2;
+pub use maps::{Preset, presets};
 
 use codec::{Wave, pack, unpack};
 use serde_json::{Value, json};
@@ -98,13 +100,10 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
     if seeds.is_empty() {
         return Err(Fault::new("NO_SEEDS", "a wave of no matches has nothing to play"));
     }
-    let name = input.get("preset").and_then(Value::as_str).unwrap_or("standard");
-    // A board is a file now, so the preset table no longer builds the world — but a caller naming a
-    // preset nothing is played at should hear that, rather than "no map", which would send them
-    // looking in the catalogue for a fault in the request.
-    if maps::preset(name).is_none() {
-        return Err(Fault::new("NO_SUCH_PRESET", format!("no preset '{name}'")));
-    }
+    // A preset is a pool, and it matters only to a match whose board the seed chooses: a caller
+    // naming a preset nothing is played at hears `NO_SUCH_PRESET` from `maps::resolve` then, rather
+    // than "no map", which would send them looking in the catalogue for a fault in the request.
+    let name = input.get("preset").and_then(Value::as_str).unwrap_or("");
     let max_turns = input.get("max_turns").and_then(Value::as_u64).unwrap_or(1000) as u16;
 
     // What board each match is played on. Three forms, and the platform uses the third:

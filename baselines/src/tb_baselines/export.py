@@ -78,7 +78,7 @@ def budget(name: str) -> dict:
 def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
     """The policy half only.
 
-    H and W are dynamic because the three presets are three board sizes, and the manifest declares
+    H and W are dynamic because the presets come in three board sizes, and the manifest declares
     them as the named axes `"H"` and `"W"` -- one admitted session then serves every board a season
     runs. The leading axis is dynamic too and the manifest pins it at 1: a match is two seats and
     each is its own `model_infer` call, so nothing batches, but leaving the axis symbolic in the

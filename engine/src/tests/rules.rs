@@ -221,8 +221,18 @@ fn a_razed_hill_is_charged_once_and_never_spawns_again() {
 #[test]
 fn each_player_starts_with_one_point_per_hill() {
     // `ants.py:152`: "points start at # of hills to prevent negative scores".
-    let m = worldgen(7, crate::maps::preset("standard").unwrap(), 1000);
+    let m = crate::maps::pool("open-2")[0].build(7, 1000).unwrap();
     assert_eq!(m.score, vec![1, 1], "one hill each, so one point each");
+    // And a board with two hills a seat opens with two points, and an ant on each hill.
+    let two = crate::maps::pool("cave-2")[0].build(7, 1000).unwrap();
+    assert_eq!(two.hills.len(), 4, "cave-2 seats two hills a player");
+    assert_eq!(two.score, vec![2, 2], "one point per hill owned");
+    for h in &two.hills {
+        assert!(
+            two.ants.iter().any(|a| a.pos == h.pos && a.owner == h.owner),
+            "an ant on every hill"
+        );
+    }
 }
 
 #[test]

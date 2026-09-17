@@ -63,13 +63,6 @@ impl Bits {
         }
     }
 
-    #[inline]
-    pub fn clear(&mut self, i: usize) {
-        if i < self.len {
-            self.bits[i >> 3] &= !(1 << (i & 7));
-        }
-    }
-
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn count(&self) -> usize {
         (0..self.len).filter(|&i| self.get(i)).count()
@@ -207,13 +200,20 @@ pub fn dir_of(a: &str) -> Option<(i32, i32)> {
     DIR_NAMES.iter().position(|&d| d == a).map(|i| DIRS[i])
 }
 
-/// The symmetry a map is built with.
+/// The symmetry a map is built with: a shift by `(dr, dc)` on the torus, taken once per seat.
 ///
-/// The whole world is built on one fundamental domain and translated: for two players, by half the
-/// rows and half the columns, which on a wrapping torus is a fixed-point-free symmetry of order
-/// two. Every player's surroundings are congruent to every other's, so a pairing can never be
-/// unfair because of the map.
-#[derive(Clone, Copy)]
+/// Seat `k`'s board is seat 0's moved by `k · (dr, dc)`, so every seat's surroundings are congruent
+/// to every other's and a pairing can never be unfair because of the map. The shift belongs to the
+/// board, not to its size: a two-seat board may put its seats half the rows apart, half the
+/// columns, or both, and those are three different openings on the same terrain.
+///
+/// **Only shifts, and only one of them.** A mirror or a rotation would be as fair to the rules, but
+/// a model reads absolute directions and is not mirror-invariant, so a mirrored seat is a different
+/// problem for the network sitting in it; a shifted seat is not, because a wrap-padded convolution
+/// sees a shifted copy of the same input. And a single generator is what keeps observer-relative
+/// owners (`observe::relative`) meaning the same neighbour for every seat: seat `s` always finds
+/// opponent `1` at `+(dr, dc)`. A lattice of two generators would need a different numbering.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Symmetry {
     pub players: i32,
     pub dr: i32,
@@ -221,9 +221,26 @@ pub struct Symmetry {
 }
 
 impl Symmetry {
-    pub fn for_preset(g: &Geom, players: u8) -> Symmetry {
+    pub fn new(players: u8, dr: i32, dc: i32) -> Symmetry {
+        Symmetry { players: players as i32, dr, dc }
+    }
+
+    /// The shift a board gets when it names none: one `players`-th of the way down both axes.
+    pub fn diagonal(g: &Geom, players: u8) -> Symmetry {
         let p = players as i32;
         Symmetry { players: p, dr: g.rows / p, dc: g.cols / p }
+    }
+
+    /// Whether this is a shift of order exactly `players` on `g`: that many steps come back to the
+    /// start and no fewer do. Anything else does not split the board into orbits of one size, so a
+    /// food set would be short or a seat's hill could stand on another seat's.
+    pub fn is_exact(&self, g: &Geom) -> bool {
+        let p = self.players;
+        if p < 1 || !(0..g.rows).contains(&self.dr) || !(0..g.cols).contains(&self.dc) {
+            return false;
+        }
+        let home = |k: i32| (self.dr * k) % g.rows == 0 && (self.dc * k) % g.cols == 0;
+        home(p) && (1..p).all(|k| !home(k))
     }
 
     /// The `k`-th image of a position: player 0's square, as player `k` sees the same square.
@@ -233,6 +250,7 @@ impl Symmetry {
     }
 
     /// Every image of a position, one per player, in player order.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn orbit(&self, g: &Geom, pos: u16) -> Vec<u16> {
         (0..self.players).map(|k| self.image(g, pos, k)).collect()
     }

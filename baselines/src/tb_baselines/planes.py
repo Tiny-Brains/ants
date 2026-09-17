@@ -49,7 +49,7 @@ class Plane:
     """One channel of the board tensor.
 
     `logic` is the JSONLogic that computes it inside `manifest.json`, as a function of the size
-    expression (the adapter cannot hard-code a board size: three presets mean three sizes).
+    expression (the adapter cannot hard-code a board size: the presets come in three sizes).
     `numpy` computes the same plane from the same observation, for the trainer.
     """
 

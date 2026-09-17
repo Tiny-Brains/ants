@@ -8,7 +8,7 @@ by wrapping, built from `cat` of edge slices — which exports to `Slice` + `Con
 operator allowlist, where `padding_mode="circular"` exports to a `Pad` mode that only exists from
 opset 18.
 
-**The board has three sizes.** 64x96, 96x96 and 128x128, one per preset. Fully convolutional handles
+**The board has three sizes.** 64x96, 96x96 and 128x128, across the presets. Fully convolutional handles
 that for free, and it is the main reason to stay fully convolutional; where a net downsamples, the
 factor divides all three (they are all multiples of 32).
 

@@ -1,0 +1,44 @@
+# Caverns: warped areas, a third of the board left solid, thick walls with wide doors, cellular
+# rock inside. Two hills a seat, so a colony has a second home to lose.
+[preset]
+name = "cave-2"
+seats = 2
+count = 8
+seed = 2026091703
+
+[board]
+rows = 96
+cols = 96
+shifts = ["diagonal", "rows", "cols"]
+
+[areas]
+size = [260, 520]
+warp = 6
+arenas_pct = 15
+coverage_pct = 70
+closure_pct = 45
+wall = 2
+
+[connectivity]
+loops_pct = 30
+door_min = 3
+
+[fill]
+style = "cellular"
+pct = 38
+smooth = 4
+
+[hills]
+per_seat = 2
+clearing = 2
+
+[food]
+per_seat = 16
+bootstrap = 3
+bootstrap_walk = [2, 8]
+bias = "contested"
+band = 10
+
+[accept]
+water_pct = [35, 55]
+enemy_walk = [40, 200]

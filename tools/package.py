@@ -91,13 +91,22 @@ def cartridge():
     doc["maps"] = catalogue()
     doc["about"] = about()
 
-    counts = {}
+    if not doc["maps"]:
+        sys.exit("no boards under maps/ -- make them with `cd mapgen && cargo run -- generate`")
+    counts, seats = {}, {}
     for entry in doc["maps"]:
         counts[entry["preset"]] = counts.get(entry["preset"], 0) + 1
+        seats.setdefault(entry["preset"], set()).add(entry["players"])
+    for name, played_at in sorted(seats.items()):
+        # Pairing reads one seat count a preset. A pool that mixed two would seat a match its board
+        # then refuses.
+        if len(played_at) != 1:
+            sys.exit("preset %r is played at %s seats; a preset has one seat count"
+                     % (name, sorted(played_at)))
     for preset in doc["presets"]:
         preset["maps"] = counts.get(preset["name"], 0)
-        # A preset played on no board would pair matches that worldgen then refuses, per match, in
-        # production -- the exact failure generating this manifest exists to prevent.
+        # The presets are derived from the boards, so this cannot fail unless the two were built from
+        # different trees -- which is the failure worth stopping on.
         if not preset["maps"]:
             sys.exit("preset %r is played on no board" % preset["name"])
 

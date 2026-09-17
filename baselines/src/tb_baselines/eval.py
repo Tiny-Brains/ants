@@ -96,8 +96,9 @@ def boards(preset: str | None, limit: int) -> list[tuple[str, str]]:
     rows = []
     for line in out.stdout.splitlines()[1:]:      # line 0 is the "<game> N boards" header
         parts = line.split()
-        # id, preset, then a dimensions field -- enough shape to notice if the table changes.
-        if len(parts) >= 3 and "x" in parts[2]:
+        # id, preset, dimensions, seats -- enough shape to notice if the table changes. A round robin
+        # is head to head, so a board seating more than two is not one of its boards.
+        if len(parts) >= 4 and "x" in parts[2] and parts[3] == "2":
             rows.append((parts[1], parts[0]))
     if not rows:
         raise SystemExit(

@@ -6,10 +6,15 @@
 //! sees the boards that are committed rather than the ones some earlier step happened to embed.
 //!
 //! The boards sit at the repository root rather than in this crate because they are content, not
-//! source: `mapgen` writes them, `dist/maps/` ships them, and drill exports copies of them.
+//! source: `mapgen/` writes them, `dist/maps/` ships them, and the CLI exports copies of them.
 //!
 //! It is also what makes a map edit an engine-digest change, and therefore refused while a season
 //! is live, on the same rails a rules change already runs on.
+//!
+//! **An empty `maps/` builds, with a warning.** `mapgen` links this crate to validate what it writes,
+//! so refusing to build without boards would leave no way to make the first ones. The refusal that
+//! matters is at packaging: `tools/package.py` will not write a cartridge with no boards in it, and
+//! `every_committed_map_is_valid_and_symmetric` fails on an empty catalogue.
 
 use std::path::Path;
 use std::{env, fs};
@@ -21,12 +26,19 @@ fn main() {
 
     // Sorted, so the table -- and so the component -- does not depend on directory order.
     let mut names: Vec<String> = fs::read_dir(&dir)
-        .expect("maps/ is readable")
-        .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter_map(|n| n.strip_suffix(".json").map(str::to_string))
-        .collect();
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                .filter_map(|n| n.strip_suffix(".json").map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
     names.sort();
-    assert!(!names.is_empty(), "no boards in maps/ -- generate one with `cargo run --bin mapgen`");
+    if names.is_empty() {
+        println!(
+            "cargo::warning=no boards in maps/ -- make them with `cd mapgen && cargo run -- generate`"
+        );
+    }
 
     let rows: String = names
         .iter()
