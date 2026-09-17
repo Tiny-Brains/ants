@@ -1,15 +1,21 @@
 #!/bin/sh
 # The gate, then every artifact, into dist/.
 #
-# Needs the wasm32-unknown-unknown target (`rustup target add wasm32-unknown-unknown`), `wasm-tools`
-# (`cargo install wasm-tools`) and Python 3.11 or newer. The viewer is built separately, by
+# Needs rustup (rust-toolchain.toml names the exact compiler and the wasm32 target), `wasm-tools`
+# at WASM_TOOLS_VERSION below, and Python 3.11 or newer. The viewer is built separately, by
 # viz/build.sh, into dist/viz/.
 #
-# dist/ IS THE ARTIFACT SET, LAID OUT AS THE IMAGE CARRIES IT: `Dockerfile` runs this script and
-# copies dist/ to /artifacts/ unchanged. So a games registry can point `path` at this dist/ or at an
-# image's extracted /artifacts/ and read the same tree. What this writes is still not what SHIPS --
-# only the image pins the toolchain and remaps build paths, so only the image's digest is the
-# platform's -- but it is the same shape, and it is what you run while working here.
+# dist/ IS THE ARTIFACT SET, AND THIS SCRIPT IS THE BUILD THAT SHIPS. A release is this script and
+# viz/build.sh run by .github/workflows/build.yml, with dist/ packed into one archive by
+# tools/pack.py. There is no second build of the same artifact anywhere.
+#
+# THE ENGINE DIGEST IS A FUNCTION OF FOUR THINGS: the source, the exact rustc, the exact wasm-tools,
+# and the HOST rustc runs on. The first three are pinned here and in rust-toolchain.toml, and the
+# build paths are remapped below. The host cannot be: the same source, flags and embedded paths
+# built on an Apple-silicon Mac and on arm64 Linux lay the functions out in a different order
+# (Cargo mixes rustc's version string, host triple included, into every crate's symbol hashes). So
+# a release builds on aarch64-unknown-linux-gnu, and only a build on that host lands on a release's
+# digest; a build on a Mac is the same game with other bytes.
 #
 # The host tests are the gate: nothing at run time will catch a rule implemented wrongly. The
 # determinism check runs first, because it is a property of the source rather than of a test.
@@ -18,28 +24,46 @@ here=$(cd "$(dirname "$0")" && pwd)
 dist="$here/dist"
 target="${CARGO_TARGET_DIR:-$here/engine/target}"
 
+# `component new` records its own version in the component, so another wasm-tools is another digest.
+WASM_TOOLS_VERSION=1.258.0
+
+have=$(wasm-tools --version | cut -d' ' -f2)
+if [ "$have" != "$WASM_TOOLS_VERSION" ]; then
+  echo "warning: wasm-tools $have, not $WASM_TOOLS_VERSION -- this component's digest will not be a release's" >&2
+fi
+
 "$here/tools/deny.sh"
 cd "$here/engine"
-cargo test
+cargo test --locked
 
 # The boards: every one under maps/ is what its recipe under mapgen/recipes/ makes, byte for byte,
 # and obeys the rules every board obeys. A crate of its own, so tuning the generator is not an
 # engine-digest change -- regenerating the boards is.
-(cd "$here/mapgen" && cargo test)
+(cd "$here/mapgen" && cargo test --locked)
 
 # From scratch: a board deleted from maps/ must not survive in dist/maps/, and a viewer transpiled
 # from the previous component is a viewer for some other engine.
 rm -rf "$dist"
 mkdir -p "$dist/reference"
 
-cargo build --release --target wasm32-unknown-unknown --lib
+# THE DIGEST MUST NOT DEPEND ON WHERE THE CHECKOUT IS. rustc bakes the absolute path of every source
+# file a panic can name into the binary: the crates.io sources, and -- when the rust-src component is
+# installed -- the standard library's, which rustc otherwise names /rustc/<commit>. Remapping all
+# three to fixed names makes the component a function of the source and the host, and the names are
+# the ones the platform's releases have always carried. The variable is set, not appended to: a flag
+# someone's shell exported is not part of the build.
+sysroot=$(rustc --print sysroot)
+commit=$(rustc -vV | sed -n 's/^commit-hash: //p')
+RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}/registry/src=/cargo --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$commit --remap-path-prefix=$here=/ants" \
+  cargo build --locked --release --target wasm32-unknown-unknown --lib
 wasm-tools component new "$target/wasm32-unknown-unknown/release/tb_ants.wasm" -o "$dist/tb-ants.wasm"
 wasm-tools validate "$dist/tb-ants.wasm" --features component-model
 
 # The manifests are generated, because an artifact nobody hand-edits cannot drift from the code
 # that produced it. The reference observations admission validates an adapter against are engine
 # output for the same reason: a hand-kept copy would test a shape the game no longer produces.
-cargo run --quiet --bin manifest > "$dist/cartridge.json"
-cargo run --quiet --bin reference > "$dist/reference/observations.json"
+cargo run --locked --quiet --bin manifest > "$dist/cartridge.json"
+cargo run --locked --quiet --bin reference > "$dist/reference/observations.json"
 
 python3 "$here/tools/package.py"
+echo "    built on        $(rustc -vV | sed -n 's/^host: //p') (a release builds on aarch64-unknown-linux-gnu)"

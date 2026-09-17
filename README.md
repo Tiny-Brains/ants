@@ -30,22 +30,24 @@ trained entries for the game beside the rules they encode.
 ## Where it sits
 
 ```text
-[ants] --docker build--> tinybrains/ants:<tag>   /artifacts/ == dist/
+[ants] --build workflow--> release engine-<12 hex>: ants-artifacts.tar.gz  == dist/
                                |
          +---------------------+----------------------+---------------------+
          v                     v                      v                     v
-  [Kalam package]       [DevOps loader]          [web + book]        [tinybrains CLI]
-   tb-ants.wasm          cartridge.json,          viz/                 a games registry
-   plugin.toml/json      reference/, the digest                        `path` at dist/
+  [Kalam package]        [web + book]           [ants-starter]       [tinybrains CLI]
+   tb-ants.wasm,          viz/                   games.toml pins      a registry `release`,
+   plugin.toml/json,                             the release          or a `path` at dist/
+   cartridge.json,
+   reference/
 ```
 
 | Direction | Party | Over | What moves |
 |---|---|---|---|
 | called by | Kalam | Orion plugin ABI | Worlds, observations, actions and results |
-| read by | DevOps loader | `cartridge.json` | Presets, seat counts, the board catalogue, limits, the adapter budget |
-| read by | Admission | `reference/observations.json` | The payloads an adapter is validated against |
+| fetched by | Kalam, web, the book | the latest release, when their images build | The component and its manifests; the viewer |
+| read by | Soma, through Kalam's package | `cartridge.json`, `reference/observations.json` | Presets, seat counts, limits, the adapter budget, and the payloads an adapter is validated against |
 | read by | web, the book, `tinybrains view` | `viz/` | The viewer bundle and the digest it was transpiled from |
-| read by | `tinybrains` | a registry `path` | The component, the manifest, `maps/`, `reference/` and `viz/` |
+| read by | `tinybrains` | a registry `release` or `path` | The component, the manifest, `maps/`, `reference/` and `viz/` |
 
 ## Interface
 
@@ -68,7 +70,7 @@ competitor guide: *What your model sees*, *What your model answers*, and *Adding
 
 ### The artifact set
 
-`./build.sh` writes `dist/`, and the image carries the same tree under `/artifacts/`:
+`./build.sh` and `viz/build.sh` write `dist/`, and a release carries the same tree as one archive:
 
 | Path | What it is | Made by |
 |---|---|---|
@@ -81,14 +83,15 @@ competitor guide: *What your model sees*, *What your model answers*, and *Adding
 
 ## Run it, test it
 
-This is a plugin, so there is no server. The build needs stable Rust with the
-`wasm32-unknown-unknown` target, `wasm-tools`, and Python 3.11 or newer; the viewer also needs Node.
-No database, object store or running platform is needed.
+This is a plugin, so there is no server. The build needs rustup (`rust-toolchain.toml` names the
+exact compiler and the `wasm32-unknown-unknown` target), `wasm-tools` at the version `build.sh`
+names, and Python 3.11 or newer; the viewer also needs Node. No database, object store, container
+or running platform is needed.
 
 ```sh
 ./build.sh                              # the gate, then every artifact, into dist/
 viz/build.sh                            # the viewer, into dist/viz/ -- after ./build.sh
-docker build -t tinybrains/ants:dev .   # the artifact image: what actually ships
+tools/pack.py /tmp/out                  # dist/ as the one archive a release carries, and its digests
 tools/deny.sh                           # just the determinism check
 
 cd engine                               # the crate is its own Cargo workspace
@@ -111,11 +114,13 @@ measurements in the file. Edit a recipe and regenerate; never edit a board. `bui
 `mapgen`'s tests, which regenerate every committed board and compare bytes.
 
 `build.sh` runs the determinism check and the tests before it compiles anything, and ends by
-printing the engine digest. **A local digest is not the platform's.** Only the image pins rustc
-exactly and remaps build paths, so only the image's digest is reproducible — `docker build
---no-cache` lands on the same one every time. Build it once and let every consumer take that image.
+printing the engine digest. **The digest is reproducible, on one host.** `rust-toolchain.toml` pins
+rustc exactly, `build.sh` pins `wasm-tools` and remaps every build path, so the component is a
+function of the source — and of the machine rustc runs on, which no flag removes. Releases build on
+arm64 Linux, so a build there lands on a release's digest wherever the checkout is, and a build on a
+Mac is the same game with other bytes. Cite the workflow's digest, not a laptop's.
 
-To play or check against this checkout rather than an image, point a games registry at `dist/`:
+To play or check against this checkout rather than a release, point a games registry at `dist/`:
 
 ```toml
 [games.ants]
@@ -123,29 +128,38 @@ name = "Ants"
 path = "../ants/dist"
 ```
 
-An image's `/artifacts/` copied out works the same way:
+A release unpacked works the same way, and is the authoritative tree:
 
 ```sh
-id=$(docker create tinybrains/ants:dev) && docker cp "$id":/artifacts/. dist && docker rm "$id"
+gh release download --repo Tiny-Brains/ants --pattern ants-artifacts.tar.gz && tar -xzf ants-artifacts.tar.gz -C dist
 ```
 
-**A competitor reads neither.** [ants-starter](https://github.com/Tiny-Brains/ants-starter) pins a **release**: the image's `/artifacts/`
-as one `ants-artifacts.tar.gz`, tagged `engine-<12 hex>`, which `tinybrains` downloads once and
-refuses unless the archive and the component inside it hash to what their `games.toml` declares.
+**A release is made by the `build` workflow**, and nowhere else. Every push to `main` runs the whole
+gate on an arm64 Linux runner, builds every artifact, packs `dist/` with `tools/pack.py`, checks the
+baselines' encoding and plays [ants-starter](https://github.com/Tiny-Brains/ants-starter) against
+the build, and then says in its summary which release this build reproduces byte for byte — or
+the tag publishing it would cut.
 
 ```sh
-tools/release.sh              # build the image, pack /artifacts/, print the registry block
-tools/release.sh --publish    # and create the release: a clean tree, HEAD on origin/main
+gh workflow run build.yml                   # a rehearsal: all of the above, nothing published
+gh workflow run build.yml -f publish=true   # ...and cut the release, from main, if none carries this build
 ```
 
-The archive is packed deterministically, so the same image packs to the same digest. A tag is never
-re-cut: registries pin the archive, and a replaced file would break every one of them.
+A release is `ants-artifacts.tar.gz`, tagged `engine-<12 hex>` after the component it carries; a
+later build of the same engine whose archive differs (a viewer fix, new reference observations) is
+`engine-<12 hex>-2`. The archive is packed deterministically, and a tag is never re-cut: registries
+pin the archive, and a replaced file would break every one of them.
+
+**Publishing is deploying.** Kalam, web and the book fetch the **latest** release whenever their
+images build, so the next build of each takes a new engine with no change in their repositories.
+ants-starter pins a release instead, and moves when its `games.toml` does.
 
 ## What a deployment owes it
 
-- **One image, pinned.** `ANTS_REF` reaches Kalam's package, the loader and web, and they must
-  agree: a replica on another digest claims nothing, and a viewer on another digest draws a match
-  that never happened.
+- **One release.** Kalam's package and web (and the book inside it) take the latest release when
+  they build, or the one `ANTS_RELEASE` names, and they must agree: a replica on another digest
+  claims nothing, and a viewer on another digest draws a match that never happened. A deployment
+  that builds them at different times, across a release, has built two engines.
 - **A signature per build.** Every rebuild is a new digest, and a component whose Ed25519
   signature does not match brings the node up `degraded`.
 - **A declared digest.** `games.active_engine_digest` and each replica's `engine_digest` move with
@@ -154,7 +168,8 @@ re-cut: registries pin the archive, and a replaced file would break every one of
 ## Layout
 
 One directory per toolchain — `engine/` (Rust), `mapgen/` (Rust, host-only), `viz/` (Node),
-`baselines/` (Python) — and at the root only what spans them: the boards, the build, and the image.
+`baselines/` (Python) — and at the root only what spans them: the boards, the build, the toolchain
+pin, and the workflow that releases it.
 
 ```text
 engine/                    the cartridge: a Rust crate compiled to the wasm component
@@ -180,13 +195,15 @@ mapgen/                    the board factory: its own crate, so tuning it moves 
   src/set.rs               a recipe's whole set, the file format, and the engine's own validation
   src/play.rs              the seat-bias smoke check: one walker in every seat
 viz/                       the replay viewer: one bundle for the web app, the book and the CLI
-baselines/                 the trained entries, and how they were trained (not in the image)
+baselines/                 the trained entries, and how they were trained (not in a release)
 maps/                      the boards, one JSON file each
 tools/deny.sh              the determinism check
 tools/package.py           finishes dist/: plugin.json, the catalogue, the boards, the report
+tools/pack.py              dist/ as a release's one archive, packed deterministically, and its digests
 build.sh                   the gate, then every artifact, into dist/
-Dockerfile                 the artifact image
-dist/                      build output, gitignored; the image's /artifacts/
+rust-toolchain.toml        the exact rustc, which is part of the engine digest
+.github/workflows/build.yml  the gate and the build on every push; the release when asked
+dist/                      build output, gitignored; exactly what a release archive carries
 ```
 
 ## What must stay true
@@ -359,6 +376,20 @@ than naming two boards whose hill counts changed. **A new engine digest**: every
 played; archive `sha256:6a2a11aa…`, 430 KB), and ants-starter's `games.toml` pins it. The starter's
 nano entry passes `tinybrains check` on the new set — 148 observations, worst adapter run 32% of the
 budget — and both its match files still play `open-2`.
+
+**17 September 2026 (night) — no Docker; a workflow builds and releases the cartridge.** The
+`Dockerfile`, `.dockerignore` and `tools/release.sh` are gone, and `.github/workflows/build.yml`
+is the build that ships: every push runs the gate, builds every artifact, packs them with the new
+`tools/pack.py`, runs the baselines' conformance test, plays ants-starter against the build and
+reports which release it reproduces; `gh workflow run build.yml -f publish=true` cuts one. What the
+image did for reproducibility moved into the repository: `rust-toolchain.toml` pins rustc 1.98.1,
+and `build.sh` pins `wasm-tools` and remaps the crates.io, standard-library and checkout paths. **The
+host is part of the digest**: the same source, compiler, flags and embedded paths build
+`sha256:df312c04…` on arm64 Linux, in a plain Debian container with rustup, exactly as the image did
+on an arm64 Mac, and `sha256:04b8b8b6…` natively on the Mac, where only the component and the
+viewer transpiled from it differ. So the workflow runs on `ubuntu-24.04-arm`. **Kalam, web and the
+book fetch the latest release when they build** (`ANTS_RELEASE` pins one), so publishing is
+deploying. No source changed and the digest did not move.
 
 ## More
 

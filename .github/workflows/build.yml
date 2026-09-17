@@ -1,0 +1,211 @@
+# THE BUILD THAT SHIPS, ON EVERY PUSH, AND THE RELEASE WHEN ASKED.
+#
+# Every push to main and every pull request runs the whole gate, builds every artifact, packs them
+# exactly as a release would, plays the starter kit against them, and says whether a release already
+# carries this build. Nothing is published.
+#
+#   gh workflow run build.yml                   # the same, on demand: a rehearsal
+#   gh workflow run build.yml -f publish=true   # ...and cut the release, from main only
+#
+# THE RUNNER IS ARM64 LINUX, AND THAT IS PART OF THE DIGEST. rustc's host changes the component's
+# bytes even with the source, the compiler, the flags and the embedded paths all fixed (build.sh says
+# why), and aarch64-unknown-linux-gnu is the host every release of this cartridge has been built on.
+# Moving the runner to x86-64 would be an engine-digest change that no rule made.
+#
+# THE TAG IS THE ENGINE. A release of component `sha256:<hex>` is `engine-<first 12 hex>`, so there is
+# no version number to keep in step with a digest. A later build of the SAME engine whose archive
+# differs -- a viewer fix, new reference observations -- is `engine-<12 hex>-2`, and so on. A tag is
+# never re-cut: a registry pins the archive's bytes, and replacing them would break every one.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this build as a release, if no release carries it yet
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      engine: ${{ steps.pack.outputs.engine }}
+      archive: ${{ steps.pack.outputs.archive }}
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml names the exact compiler and the wasm32 target; `toolchain install` with
+      # no argument reads it. No cache: what this job builds is what a release carries, built cold.
+      - name: Toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install
+          rustc -vV
+
+      # The version build.sh names, as the prebuilt release: another wasm-tools is another digest.
+      - name: wasm-tools
+        run: |
+          version=$(sed -n 's/^WASM_TOOLS_VERSION=//p' build.sh)
+          name="wasm-tools-${version}-aarch64-linux"
+          curl -fsSL "https://github.com/bytecodealliance/wasm-tools/releases/download/v${version}/${name}.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 0755 "$RUNNER_TEMP/${name}/wasm-tools" "$RUNNER_TEMP/bin/wasm-tools"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/wasm-tools" --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Lint
+        run: |
+          (cd engine && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
+          (cd mapgen && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
+
+      # The determinism check, the host suite, mapgen's regeneration of every board, then every
+      # artifact into dist/.
+      - name: Build
+        run: ./build.sh
+
+      # Transpiled from the component just built, and checked by viz/check.mjs.
+      - name: Viewer
+        run: viz/build.sh
+
+      - name: Pack
+        id: pack
+        run: python3 tools/pack.py "$RUNNER_TEMP/release"
+
+      # The newest CLI release, checked against that release's SHA256SUMS -- the binary a competitor
+      # installs, not a build of it.
+      - name: Install the CLI
+        run: |
+          base=https://github.com/Tiny-Brains/cli/releases/latest/download
+          archive=tinybrains-aarch64-unknown-linux-gnu.tar.gz
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/$archive"
+          curl -fsSL "$base/SHA256SUMS" | grep " $archive\$" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" tinybrains
+          "$RUNNER_TEMP/bin/tinybrains" --version
+
+      # The trainer's encoding against the ladder's adapter, over this build's reference observations
+      # (baselines/games.toml points at ../dist). An observation change that the encoding did not
+      # follow fails here, before a release carries it.
+      - name: Baselines conformance
+        working-directory: baselines
+        run: |
+          python -m pip install --quiet numpy pytest
+          python -m pytest tests/ -q
+
+      # What a competitor's first hour asks of a cartridge, asked of this one: admission's checks
+      # over its reference observations, and a whole match through the component.
+      - name: Play the starter kit against this build
+        run: |
+          git clone --depth 1 https://github.com/Tiny-Brains/ants-starter "$RUNNER_TEMP/starter"
+          printf '[games.ants]\nname = "Ants"\npath = "%s/dist"\n' "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/registry.toml"
+          export TINYBRAINS_REGISTRY="$RUNNER_TEMP/registry.toml"
+          cd "$RUNNER_TEMP/starter"
+          tinybrains games
+          tinybrains check model.onnx manifest.json
+          tinybrains matches/self-play.json
+
+      # Compared by CONTENT, the tar before gzip, so a zlib that compresses differently is not a
+      # different build. A match means this commit reproduces that release byte for byte.
+      - name: Find the release this build is
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE: ${{ steps.pack.outputs.engine }}
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+          CONTENT: ${{ steps.pack.outputs.content }}
+          HEX: ${{ steps.pack.outputs.hex }}
+        run: |
+          taken=0
+          for t in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName' \
+                     | grep -E "^engine-${HEX}(-[0-9]+)?\$" || true); do
+            taken=$((taken + 1))
+            gh release download "$t" --repo "$GITHUB_REPOSITORY" --pattern ants-artifacts.tar.gz \
+              --output "$RUNNER_TEMP/released.tar.gz" --clobber
+            if [ "sha256:$(gzip -dc "$RUNNER_TEMP/released.tar.gz" | sha256sum | cut -d' ' -f1)" = "$CONTENT" ]; then
+              echo "released=$t" >> "$GITHUB_OUTPUT"
+              echo "::notice::this build reproduces release $t"
+              printf '### Reproduces `%s`\n\nengine `%s`\n' "$t" "$ENGINE" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          if [ "$taken" = 0 ]; then tag="engine-$HEX"; else tag="engine-$HEX-$((taken + 1))"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::no release carries this build; publishing it would cut $tag"
+          printf '### Unreleased: would be `%s`\n\nengine `%s`\n\narchive `%s`\n' "$tag" "$ENGINE" "$ARCHIVE" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ants-artifacts
+          path: ${{ runner.temp }}/release/ants-artifacts.tar.gz
+          if-no-files-found: error
+
+  # Only from main, only on request, and only a build no release carries yet.
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency: publish
+    permissions:
+      contents: write
+    steps:
+      - name: Already released
+        if: needs.build.outputs.released != ''
+        run: echo "::notice::this build is ${{ needs.build.outputs.released }}, so there is nothing to publish"
+
+      - uses: actions/download-artifact@v4
+        if: needs.build.outputs.released == ''
+        with:
+          name: ants-artifacts
+
+      - name: Create the release
+        if: needs.build.outputs.released == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          ENGINE: ${{ needs.build.outputs.engine }}
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          The Ants cartridge's artifact set -- the component, \`cartridge.json\`, the boards, the
+          reference observations and the replay viewer -- as one archive, built by this repository's
+          \`build\` workflow from ${GITHUB_SHA}.
+
+          A games registry pins it:
+
+          \`\`\`toml
+          [games.ants]
+          name = "Ants"
+          repo = "${GITHUB_REPOSITORY}"
+          release = "${TAG}"
+          artifacts = { file = "ants-artifacts.tar.gz", sha256 = "${ARCHIVE}" }
+          engine = "${ENGINE}"
+          \`\`\`
+
+          \`tinybrains\` downloads it once, refuses it unless the archive and the component inside it
+          hash to those two digests, and unpacks it under its cache.
+          NOTES
+          gh release create "$TAG" ants-artifacts.tar.gz --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Ants engine ${ENGINE}" --notes-file "$RUNNER_TEMP/notes.md"

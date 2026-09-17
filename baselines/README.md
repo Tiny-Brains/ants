@@ -42,11 +42,11 @@ same gate as anyone else. It was `Tiny-Brains/ants-baselines` until 16 September
 tinybrains/
   ants/             <- the cartridge; games.toml resolves its build output, `../dist`
     baselines/      <- you are here
-  devops/           <- the `tinybrains` CLI, which is the whole toolchain
+  cli/              <- the `tinybrains` CLI, which is the whole toolchain (or install a release)
 ```
 
-Nothing here is part of the cartridge's build: `../build.sh` does not run it, and `../.dockerignore`
-excludes it, so no edit here moves the engine digest.
+Nothing here is part of the cartridge's build: `../build.sh` does not run it, and `../tools/pack.py`
+packs `../dist` alone, so no edit here moves the engine digest or reaches a release.
 
 ## Interface
 

@@ -15,7 +15,7 @@ their own toolchains and are not the cartridge: `mapgen/`, the board factory (a 
 of its own), `viz/`, the replay viewer (Node), and `baselines/`, the platform's trained entries and
 the pipeline that trains them (Python, with its own [CLAUDE.md](baselines/CLAUDE.md)). The baselines know the platform thoroughly — weight classes, the
 adapter dialect, the turn deadline, `tinybrains check` — and that is fine *because* they are not
-the component: the rule above is about `src/`, and the determinism check, the build and the image
+the component: the rule above is about `src/`, and the determinism check, the build and the release
 never see `baselines/`.
 
 The parent `tinybrains/CLAUDE.md` describes the platform this sits in; read it for anything
@@ -27,15 +27,17 @@ under `games/ants/`). Module doc comments carry the rest of the why.
 
 ## Commands
 
-Needs stable Rust, the `wasm32-unknown-unknown` target, `wasm-tools`, and Python 3.11+
-(`tomllib`). Node only for the viewer. **The crate is `engine/`, its own Cargo workspace** — there is
-no `Cargo.toml` at the root, so every `cargo` command runs from `engine/`.
+Needs rustup (`rust-toolchain.toml` pins rustc 1.98.1 and the `wasm32-unknown-unknown` target),
+`wasm-tools` at the `WASM_TOOLS_VERSION` in `build.sh`, and Python 3.11+ (`tomllib`). Node only for
+the viewer. **No Docker**: nothing here builds or ships an image. **The crate is `engine/`, its own
+Cargo workspace** — there is no `Cargo.toml` at the root, so every `cargo` command runs from `engine/`.
 
 ```sh
 ./build.sh          # the whole gate, then every artifact, into dist/
 viz/build.sh        # the viewer, into dist/viz/ (after ./build.sh)
-docker build -t tinybrains/ants:dev .   # the artifact image -- the build that ships
-tools/release.sh    # pack the image's /artifacts/ for a release; --publish creates it
+tools/pack.py DIR   # dist/ as the release archive, its digests, and the tag it would take
+gh workflow run build.yml                  # the build that ships, on GitHub: a rehearsal, nothing published
+gh workflow run build.yml -f publish=true  # ...and the release, from main
 tools/deny.sh       # just the determinism check (no floating point in game logic)
 (cd viz && node check.mjs)   # just the viewer checks -- geometry, and CSS scoping
 
@@ -47,10 +49,10 @@ cargo test spec_scenario_                                  # the spec's worked f
 cargo test measure_what_random_play_produces -- --nocapture  # diagnostic, not a guarantee
 ```
 
-`build.sh` runs `tools/deny.sh` and `cargo test`, clears `dist/`, builds and component-izes the
-wasm, runs the `manifest` and `reference` generators into `dist/`, then `tools/package.py` writes
-`plugin.json`, folds the board catalogue and `engine/about.json` into `cartridge.json`, copies
-`maps/` and `engine/plugin.toml`, and prints the **engine digest**. Clearing `dist/` also drops
+`build.sh` runs `tools/deny.sh` and `cargo test`, clears `dist/`, builds the wasm with every build
+path remapped and component-izes it, runs the `manifest` and `reference` generators into `dist/`,
+then `tools/package.py` writes `plugin.json`, folds the board catalogue and `engine/about.json` into
+`cartridge.json`, copies `maps/` and `engine/plugin.toml`, and prints the **engine digest**. Clearing `dist/` also drops
 `dist/viz/`, on purpose: a viewer transpiled from the previous component is a viewer for some other
 engine.
 
@@ -163,17 +165,25 @@ A *wave* is many matches advanced together in one call.
 ## What breaks if you forget it
 
 - **Everything generated is in `dist/`, nothing in it is committed, and nothing outside it is
-  generated.** `dist/` is laid out exactly as the image's `/artifacts/`, which is what lets a games
-  registry `path` point at either. Consumers read that layout by path — the component by extension
-  at the root, `cartridge.json`, `maps/`, `reference/observations.json`, `viz/viz.js` and
-  `viz/engine.json` — in `cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), kalam's and web's
-  Dockerfiles, `web/docs/Dockerfile` and `tutorials/build.sh`, and the devops loader. Rename one
-  and grep the siblings in the same batch.
-- **The image is the build, and the digest is reproducible.** `Dockerfile` pins rustc *exactly*
-  (`rust:1.98-trixie` floats to the newest patch, and a patch bump moves the component's bytes) and
-  passes `--remap-path-prefix`, because rustc bakes the absolute path of every source file a panic
-  can name into the binary. So a local `./build.sh` lands on a different digest than the image;
-  cite the image's. Build it **once** and have every consumer take that image.
+  generated.** `dist/` is laid out exactly as a release's `ants-artifacts.tar.gz`, which is what
+  lets a games registry `path` point at a checkout and a `release` at the archive. Consumers read
+  that layout by path — the component by extension at the root, `cartridge.json`, `plugin.json`,
+  `plugin.toml`, `maps/`, `reference/observations.json`, `viz/viz.js` and `viz/engine.json` — in
+  `cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), kalam's and web's Dockerfiles,
+  `web/docs/Dockerfile` and `tutorials/build.sh`, and (through kalam's package) the devops loader.
+  Rename one and grep the siblings in the same batch; they reach it only through a release.
+- **The `build` workflow is the build, and its digest is the platform's.** Four things make the
+  component's bytes: the source, rustc (`rust-toolchain.toml`, exact — a patch bump moves the
+  bytes), `wasm-tools` (`build.sh`, exact — it stamps its version in), and **the host rustc runs
+  on**. `build.sh` remaps the crates.io, standard-library and checkout paths rustc bakes into panic
+  locations, so where the checkout is does not matter; the host does, and no flag removes it (the
+  same source built on a Mac lays functions out in another order). Every release has been built on
+  `aarch64-unknown-linux-gnu` — the old Docker image on an arm64 Mac, now the `ubuntu-24.04-arm`
+  runner, which reproduces `engine-df312c0458d9` byte for byte — so moving the runner to x86-64 is
+  an engine-digest change no rule made. Cite the workflow's digest, never a laptop's.
+- **Publishing is deploying.** kalam's, web's and web/docs' Dockerfiles fetch
+  `releases/latest/download/ants-artifacts.tar.gz` unless `ANTS_RELEASE` pins a tag, so a release is
+  the engine the next build of each of them plays and draws — under a live season too.
 - **Any source edit is a new engine digest**, comment-only ones included (panic locations carry
   line numbers). `games.active_engine_digest`, each replica's `engine_digest`, the plugin
   signatures and `viz/engine.json` all move with it. Say so in the commit and in README Status. To
@@ -182,10 +192,11 @@ A *wave* is many matches advanced together in one call.
   every `observe`/`step`/`finish` output turn by turn under a random and a greedy policy.
 - **A new engine digest is a new release, or competitors keep playing the old one.** ants-starter's
   `games.toml` pins a release by the archive's digest and the `engine` digest, and has no checkout
-  of this repository to fall back on (devops N21, N22). Once the ladder plays a new digest,
-  `tools/release.sh --publish` and paste the block it prints there. Never re-cut a tag:
-  a registry pins the archive's bytes. The archive is the image's `/artifacts/`, never `dist/` —
-  only the image's digest is the ladder's.
+  of this repository to fall back on (devops N21, N22). `gh workflow run build.yml -f publish=true`
+  cuts it and its notes carry the block to paste there. Never re-cut a tag: a registry pins the
+  archive's bytes. The tag is `engine-<12 hex>`, and `engine-<12 hex>-2` when the same engine ships
+  a different archive; the workflow compares builds by the tar's content, so a build that
+  reproduces a release says so rather than cutting another.
 - **Never hand-edit a generated file.** `engine/plugin.toml` is the authored ABI (`plugin.json` is
   derived); `mapgen/recipes/` are authored and `maps/` is generated from them (`mapgen check` fails on
   a hand edit); `cartridge.json`'s presets are derived from the boards; `engine/about.json` is the one
@@ -213,8 +224,8 @@ A *wave* is many matches advanced together in one call.
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
   `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and `devops`'
   `seed-baselines.sh` reads `../ants/baselines/models`. Renaming the directory or the package
-  breaks every starter clone. It stays out of the image: `.dockerignore` excludes it, so no edit
-  there can move the engine digest.
+  breaks every starter clone. It stays out of a release: `build.sh` never reads it and
+  `tools/pack.py` packs `dist/` alone, so no edit there can move the engine digest.
 
 ## Conventions
 

@@ -6,8 +6,8 @@
 # whole reason the determinism law exists. The rest of the viewer is already ES modules, so it is
 # copied rather than compiled.
 #
-# Only someone changing the viewer needs Node: ../Dockerfile runs this in a node stage, and the
-# image carries the result under /artifacts/viz/, where every consumer takes it from.
+# Only someone changing the viewer needs Node: the build workflow runs this after ../build.sh, and a
+# release carries the result under viz/, where every consumer takes it from.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"

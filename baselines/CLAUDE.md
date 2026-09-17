@@ -19,9 +19,11 @@ competitor-facing starting point is `Tiny-Brains/ants-starter`, which pip-instal
 as a library (`#subdirectory=baselines`), so **the directory name and the `tb_baselines` package
 name are a contract with every starter clone**.
 
-**This directory keeps its own toolchain and ships in no image.** Python, torch and the
+**This directory keeps its own toolchain and ships in no release.** Python, torch and the
 `tinybrains` binary build it; nothing here is part of the cartridge's gate, `../build.sh` does not
-run it, and `../.dockerignore` excludes `baselines/`, so an edit here cannot move the engine digest.
+run it, and `../tools/pack.py` packs `../dist` alone, so an edit here cannot move the engine digest.
+The `build` workflow does run `pytest tests/` against each build, because a release whose reference
+observations the encoding no longer matches is a release every trainer inherits.
 
 Two axes, and they do not cross cleanly:
 

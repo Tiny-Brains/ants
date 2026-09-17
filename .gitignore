@@ -2,6 +2,6 @@
 target/
 
 # Every artifact: the component, its manifests, the boards, the reference observations and the
-# viewer, laid out exactly as the image carries them under /artifacts/. build.sh and viz/build.sh
-# write it; nothing in it is committed, and nothing outside it is generated.
+# viewer, laid out exactly as a release archive carries them. build.sh and viz/build.sh write it;
+# nothing in it is committed, and nothing outside it is generated.
 dist/

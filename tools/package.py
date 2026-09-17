@@ -2,8 +2,8 @@
 """Finish dist/: what the Rust build cannot write, and a report of what it all adds up to.
 
 build.sh has already put the component, the generated half of cartridge.json and the reference
-observations in dist/. This adds the rest, so that dist/ is exactly the tree the artifact image
-carries under /artifacts/ -- a checkout and an image are read the same way.
+observations in dist/. This adds the rest, so that dist/ is exactly the tree a release archive
+carries -- a checkout and a downloaded release are read the same way.
 
   plugin.toml     copied. It is the authored ABI, and what `orion-server compile` reads.
   plugin.json     plugin.toml as JSON: the loader runs in an image with jq and no TOML parser.

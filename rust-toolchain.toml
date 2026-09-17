@@ -1,0 +1,11 @@
+# THE COMPILER IS PART OF THE ENGINE DIGEST. A rustc patch release moves the component's bytes with
+# no rule changed, and a replica whose digest is not the ladder's claims nothing, for ever -- so the
+# version is exact, and bumping it is an engine-digest change that travels as a new release.
+#
+# rustup reads this file from engine/ and mapgen/ alike (it searches the parent directories), so a
+# checkout, CI and a release build all compile with the same rustc.
+[toolchain]
+channel = "1.98.1"
+targets = ["wasm32-unknown-unknown"]
+components = ["rustfmt", "clippy"]
+profile = "minimal"
