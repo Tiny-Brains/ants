@@ -169,8 +169,9 @@ A *wave* is many matches advanced together in one call.
   lets a games registry `path` point at a checkout and a `release` at the archive. Consumers read
   that layout by path — the component by extension at the root, `cartridge.json`, `plugin.json`,
   `plugin.toml`, `maps/`, `reference/observations.json`, `viz/viz.js` and `viz/engine.json` — in
-  `cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), kalam's and web's Dockerfiles,
-  `web/docs/Dockerfile` and `tutorials/build.sh`, and (through kalam's package) the devops loader.
+  `cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), soma's, kalam's and web's Dockerfiles,
+  `web/docs/Dockerfile` and `tutorials/build.sh` — soma's takes `cartridge.json` and
+  `reference/observations.json` for `bootstrap` to register.
   Rename one and grep the siblings in the same batch; they reach it only through a release.
 - **The `build` workflow is the build, and its digest is the platform's.** Four things make the
   component's bytes: the source, rustc (`rust-toolchain.toml`, exact — a patch bump moves the
@@ -181,9 +182,10 @@ A *wave* is many matches advanced together in one call.
   `aarch64-unknown-linux-gnu` — the old Docker image on an arm64 Mac, now the `ubuntu-24.04-arm`
   runner, which reproduces `engine-df312c0458d9` byte for byte — so moving the runner to x86-64 is
   an engine-digest change no rule made. Cite the workflow's digest, never a laptop's.
-- **Publishing is deploying.** kalam's, web's and web/docs' Dockerfiles fetch
-  `releases/latest/download/ants-artifacts.tar.gz` unless `ANTS_RELEASE` pins a tag, so a release is
-  the engine the next build of each of them plays and draws — under a live season too.
+- **Publishing is deploying.** soma's, kalam's, web's and web/docs' Dockerfiles fetch the latest
+  release unless `ANTS_RELEASE` pins a tag, and their release workflows resolve it the same way, so a
+  release is the engine the next image of each of them declares, plays and draws — under a live
+  season too.
 - **Any source edit is a new engine digest**, comment-only ones included (panic locations carry
   line numbers). `games.active_engine_digest`, each replica's `engine_digest`, the plugin
   signatures and `viz/engine.json` all move with it. Say so in the commit and in README Status. To

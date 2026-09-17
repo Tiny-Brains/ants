@@ -45,7 +45,7 @@ trained entries for the game beside the rules they encode.
 |---|---|---|---|
 | called by | Kalam | Orion plugin ABI | Worlds, observations, actions and results |
 | fetched by | Kalam, web, the book | the latest release, when their images build | The component and its manifests; the viewer |
-| read by | Soma, through Kalam's package | `cartridge.json`, `reference/observations.json` | Presets, seat counts, limits, the adapter budget, and the payloads an adapter is validated against |
+| fetched by | Soma | the latest release, when its image builds | `cartridge.json`, `reference/observations.json` and the engine digest: presets, seat counts, limits, the adapter budget, and the payloads an adapter is validated against |
 | read by | web, the book, `tinybrains view` | `viz/` | The viewer bundle and the digest it was transpiled from |
 | read by | `tinybrains` | a registry `release` or `path` | The component, the manifest, `maps/`, `reference/` and `viz/` |
 
@@ -150,14 +150,14 @@ later build of the same engine whose archive differs (a viewer fix, new referenc
 `engine-<12 hex>-2`. The archive is packed deterministically, and a tag is never re-cut: registries
 pin the archive, and a replaced file would break every one of them.
 
-**Publishing is deploying.** Kalam, web and the book fetch the **latest** release whenever their
-images build, so the next build of each takes a new engine with no change in their repositories.
+**Publishing is deploying.** Soma, Kalam, web and the book fetch the **latest** release whenever
+their images build, so the next build of each takes a new engine with no change in their repositories.
 ants-starter pins a release instead, and moves when its `games.toml` does.
 
 ## What a deployment owes it
 
-- **One release.** Kalam's package and web (and the book inside it) take the latest release when
-  they build, or the one `ANTS_RELEASE` names, and they must agree: a replica on another digest
+- **One release.** Soma's node, Kalam's runner and web (and the book inside it) take the latest
+  release when they build, or the one `ANTS_RELEASE` names, and they must agree: a replica on another digest
   claims nothing, and a viewer on another digest draws a match that never happened. A deployment
   that builds them at different times, across a release, has built two engines.
 - **A signature per build.** Every rebuild is a new digest, and a component whose Ed25519
