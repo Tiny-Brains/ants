@@ -114,6 +114,18 @@ An image's `/artifacts/` copied out works the same way:
 id=$(docker create tinybrains/ants:dev) && docker cp "$id":/artifacts/. dist && docker rm "$id"
 ```
 
+**A competitor reads neither.** drill and ants-starter pin a **release**: the image's `/artifacts/`
+as one `ants-artifacts.tar.gz`, tagged `engine-<12 hex>`, which `tinybrains` downloads once and
+refuses unless the archive and the component inside it hash to what their `games.toml` declares.
+
+```sh
+tools/release.sh              # build the image, pack /artifacts/, print the registry block
+tools/release.sh --publish    # and create the release: a clean tree, HEAD on origin/main
+```
+
+The archive is packed deterministically, so the same image packs to the same digest. A tag is never
+re-cut: registries pin the archive, and a replaced file would break every one of them.
+
 ## What a deployment owes it
 
 - **One image, pinned.** `ANTS_REF` reaches Kalam's package, the loader and web, and they must
@@ -207,7 +219,12 @@ public.
 
 **Owed.** The 10,000-match cross-host conformance run: the transpiled component decodes a recorded
 match and agrees with it, but determinism across the platform's runtime and the browser is checked
-in the small only. No release is cut, so drill and ants-starter still resolve a checkout.
+in the small only.
+
+**17 September 2026 — the cartridge is released.** `engine-281a84f10d59` carries the image's
+`/artifacts/` as one archive, cut by the new `tools/release.sh`, and drill and ants-starter pin it —
+so a competitor no longer clones this repository, or builds it, to play or check a model (devops
+decision N21). No source changed and the digest did not move.
 
 ## More
 

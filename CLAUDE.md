@@ -35,6 +35,7 @@ no `Cargo.toml` at the root, so every `cargo` command runs from `engine/`.
 ./build.sh          # the whole gate, then every artifact, into dist/
 viz/build.sh        # the viewer, into dist/viz/ (after ./build.sh)
 docker build -t tinybrains/ants:dev .   # the artifact image -- the build that ships
+tools/release.sh    # pack the image's /artifacts/ for a release; --publish creates it
 tools/deny.sh       # just the determinism check (no floating point in game logic)
 (cd viz && node check.mjs)   # just the viewer checks -- geometry, and CSS scoping
 
@@ -145,6 +146,12 @@ A *wave* is many matches advanced together in one call.
   prove a refactor changed no rule, diff `cartridge.json`, `plugin.json`,
   `reference/observations.json` and `mapgen` output against a `git archive HEAD` build, and hash
   every `observe`/`step`/`finish` output turn by turn under a random and a greedy policy.
+- **A new engine digest is a new release, or competitors keep playing the old one.** drill's and
+  ants-starter's `games.toml` pin a release by the archive's digest and the `engine` digest, and
+  have no checkout of this repository to fall back on (devops N21). Once the ladder plays a new
+  digest, `tools/release.sh --publish` and paste the block it prints into both. Never re-cut a tag:
+  a registry pins the archive's bytes. The archive is the image's `/artifacts/`, never `dist/` —
+  only the image's digest is the ladder's.
 - **Never hand-edit a generated file.** `engine/plugin.toml` is the authored ABI (`plugin.json` is
   derived); `PRESETS` in `engine/src/maps.rs` is authored (`cartridge.json`'s presets are derived);
   `engine/about.json` is the one hand-written input folded into the manifest.
