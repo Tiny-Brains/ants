@@ -169,9 +169,15 @@ fn raze(m: &mut Match) {
 /// first, so a colony spreads rather than piling up. If every hill is blocked or razed the food
 /// waits in the hive.
 ///
-/// The reference breaks ties randomly (`ants.py:701`); this breaks them by position, because
-/// seeds and actions must determine the match, and a match that replayed differently on two hosts
-/// would be a worse bug than an ordering nobody can observe.
+/// The reference breaks ties randomly (`ants.py:701`); this breaks them by the hill's place in the
+/// board's list, because seeds and actions must determine the match, and a match that replayed
+/// differently on two hosts would be a worse bug than an ordering nobody can observe.
+///
+/// **By place in the list, never by square.** A board lists its hills in orbits, so seat `k`'s `j`th
+/// hill is seat 0's `j`th moved by the shift. Ordering by square is not kept by a shift — where the
+/// board wraps, seat 0's lower-numbered hill is not the image of seat 1's — so on a board with two
+/// hills a seat, breaking ties by square spawned one seat's ants from the hill that corresponds to
+/// the other seat's *other* hill, and the seats stopped playing the same board.
 fn spawn(m: &mut Match) {
     for seat in 0..m.players {
         while m.hive[seat as usize] > 0 {
@@ -181,7 +187,7 @@ fn spawn(m: &mut Match) {
                 .iter()
                 .enumerate()
                 .filter(|(_, h)| !h.razed && h.owner == seat && !occupied.contains(&h.pos))
-                .min_by_key(|(_, h)| (h.last_touched, h.pos))
+                .min_by_key(|&(i, h)| (h.last_touched, i))
                 .map(|(i, _)| i);
             let Some(hi) = pick else { break }; // nothing free: the food waits in the hive
             m.ants.push(Ant { pos: m.hills[hi].pos, owner: seat });

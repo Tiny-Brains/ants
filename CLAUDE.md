@@ -41,7 +41,7 @@ tools/deny.sh       # just the determinism check (no floating point in game logi
 
 cd engine
 cargo fmt --check && cargo clippy --all-targets -- -D warnings   # edition 2024; rustfmt.toml is not the default
-cargo test          # just the host suite -- 88 tests
+cargo test          # just the host suite -- 90 tests
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
 cargo test spec_scenario_                                  # the spec's worked fights
 cargo test measure_what_random_play_produces -- --nocapture  # diagnostic, not a guarantee
@@ -69,8 +69,17 @@ cargo run -- generate recipes/maze-2.toml
 cargo run -- check                       # every committed board is what its recipe makes, byte for byte
 cargo run --release -- check --play 6    # ...and play each one, the same walker in every seat
 cargo run -- show ../maps/maze-2-00.json # draw a board and its metrics
-cargo test                               # 5 tests; build.sh runs them. MAPGEN_DEBUG=1 says why attempts fail
+cargo test                               # 6 tests; build.sh runs them. MAPGEN_DEBUG=1 says why attempts fail
+cargo run --release -- sweep             # 11 recipe styles x 2-8 seats: generated, played congruently, replayed
+cargo run --release -- sweep --seats 8 --styles cave,rooms --boards 10 --turns 1000 --json out.json --export dir
 ```
+
+**`sweep` is the fairness proof, not a benchmark.** Every seat plays one policy that reads only its own
+view moved into seat 0's frame, so on a fair board under fair rules every view, every turn, is seat 0's
+moved by the shift, and every match ends level; a divergence is a bug, reported with the first turn the
+referee's board broke symmetry (`MAPGEN_TRACE=1` draws the squares). It found two: spawn ties broken by
+square rather than list order, and an open-ended `replay-decode` range over a cut-off recording. Run it
+after any change to a rule that could treat seats differently.
 
 **A board is a recipe and a seed; never edit one.** A recipe (`mapgen/recipes/<preset>.toml`) is
 area knobs — size, `grid`, `warp`, `coverage_pct`, `closure_pct`, `wall`, `loops_pct`, `fill`, hills,

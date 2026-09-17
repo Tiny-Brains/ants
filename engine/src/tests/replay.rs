@@ -223,3 +223,28 @@ fn a_replay_the_platform_actually_wrote_decodes() {
     assert_eq!(&frames[0], f0);
     assert_eq!(&frames[turns as usize], &last["frame"]);
 }
+
+#[test]
+fn a_range_over_a_recording_that_stops_early_ends_where_the_recording_does() {
+    // A match cut off after five turns, asked for everything from turn zero: six frames, not one for
+    // every turn a u16 can name.
+    let w =
+        invoke("tb.ants.worldgen", json!({"seeds": [7], "preset": "open-2", "max_turns": 1000}))
+            .unwrap();
+    let mut state = w["wave_state"].as_str().unwrap().to_string();
+    let mut rng = Rng(5);
+    let mut deltas = Vec::new();
+    for _ in 0..5 {
+        let views = invoke("tb.ants.observe", json!({"wave_state": &state})).unwrap();
+        let acts = random_actions(&views, &mut rng);
+        let out = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap();
+        deltas.extend(out["replay_delta"].as_array().unwrap().iter().cloned());
+        state = out["wave_state"].as_str().unwrap().to_string();
+    }
+    let map =
+        crate::maps::MapFile::from_match(&unpack(&state).unwrap().matches[0], "cut", "open-2");
+    let payload = json!({"seed": 7, "max_turns": 1000, "map": map.to_json(), "deltas": deltas});
+    let ranged = invoke("tb.ants.replay-decode", json!({"payload": payload, "from": 0})).unwrap();
+    assert_eq!(ranged["frames"].as_array().unwrap().len(), 6, "turns 0 to 5");
+    assert_eq!(ranged["to"], 5);
+}

@@ -167,6 +167,12 @@ pub fn decode_range(payload: &Value, from: u16, to: u16) -> Result<Value, String
     while t < to && !tape.m.done {
         t += 1;
         tape.advance(t);
+        // The recording can stop before the match did — a match cut off mid-play — and then the
+        // tape cannot reach `t`. Without this the loop photographed the same last turn once for
+        // every turn up to `to`, which for an open range is sixty-five thousand frames.
+        if tape.m.turn < t {
+            break;
+        }
         frames.push(tape.frame());
     }
     Ok(json!({ "from": from, "to": tape.m.turn, "frames": frames }))

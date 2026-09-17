@@ -5,6 +5,7 @@
 //!     cargo run -- check                          the committed boards are what the recipes make
 //!     cargo run -- check --play 8                 ...and play each one, 8 seeds, every seat alike
 //!     cargo run -- show ../maps/maze-2-00.json    draw a board and its numbers
+//!     cargo run --release -- sweep                every style, 2 to 8 seats, generated and played
 //!
 //! `generate` replaces a preset's boards whole: a board left over from a larger `count` would stay
 //! in the catalogue and be played. `check` is the gate `build.sh` runs; its failures name the board
@@ -16,6 +17,7 @@ mod measure;
 mod play;
 mod recipe;
 mod set;
+mod sweep;
 #[cfg(test)]
 mod tests;
 
@@ -46,7 +48,11 @@ fn main() -> ExitCode {
         Some("generate") => generate(&named, &recipes, &maps),
         Some("check") => check(&recipes, &maps, flag("--play"), flag("--turns")),
         Some("show") => show(&named),
-        _ => Err("usage: mapgen generate [RECIPE...] | check [--play SEEDS] | show MAP...".into()),
+        Some("sweep") => sweep::run(&args[1..]),
+        _ => Err(
+            "usage: mapgen generate [RECIPE...] | check [--play SEEDS] | show MAP... | sweep [--seats 2-8]"
+                .into(),
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

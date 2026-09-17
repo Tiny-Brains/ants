@@ -173,3 +173,23 @@ fn the_committed_boards_are_what_their_recipes_make() {
         }
     }
 }
+
+#[test]
+fn a_congruent_match_stays_congruent_on_every_seat_count_and_the_check_catches_one_that_does_not() {
+    // The engine and the board, together: one frame-relative policy in every seat keeps every view
+    // equal to seat 0's moved by the shift, to the end, and the replay agrees. Then the same match
+    // with one seat's first ant told to do otherwise on turn 3 must be caught.
+    for seats in [2u8, 3, 5, 8] {
+        let r = recipe(seats, seats % 2 == 1, 30);
+        let made = make_one(&r, 0).unwrap();
+        let map: serde_json::Value = serde_json::from_str(&made.text).unwrap();
+        let c = crate::play::congruent(&map, 11, 120).unwrap_or_else(|e| {
+            panic!("{seats} seats, shift {:?}: {e}", (made.board.s.dr, made.board.s.dc))
+        });
+        assert!(c.turns > 3, "{seats} seats: the match must be played");
+
+        let caught = crate::play::congruent_with(&map, 11, 120, Some((3, seats as usize - 1)));
+        let e = caught.expect_err("a seat that played differently went unnoticed");
+        assert!(e.contains("turn 4") && e.contains("not seat 0's"), "{seats} seats: {e}");
+    }
+}

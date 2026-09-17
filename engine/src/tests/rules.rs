@@ -275,6 +275,33 @@ fn several_free_hills_spawn_least_recently_used_first() {
 }
 
 #[test]
+fn every_seat_breaks_a_spawn_tie_on_the_same_hill_of_its_orbit() {
+    // Two hills a seat, on a 16x16 board shifted by (8, 8), placed where the board wraps: seat 0's
+    // first hill is at (10, 1) and its second at (3, 12), so by square seat 0's lower hill is its
+    // second, while seat 1's -- (2, 9) and (11, 4) -- is its first. Breaking the tie by square made
+    // the two seats spawn from hills that are not images of each other; by list order, both spawn
+    // from their first.
+    let mut m = bare(16, 16, 2);
+    let (first, second) = (at(&m, 10, 1), at(&m, 3, 12));
+    for pos in [first, second] {
+        for k in 0..2 {
+            let img = m.sym.image(&m.g, pos, k);
+            m.hills.push(Hill { pos: img, owner: k as u8, razed: false, last_touched: 0 });
+        }
+    }
+    // Hills in orbits, as a map file lists them: seat 0 first, then seat 1, then the next orbit.
+    assert_eq!(m.hills.iter().map(|h| h.owner).collect::<Vec<_>>(), vec![0, 1, 0, 1]);
+    m.hive = vec![1, 1];
+    step(&mut m, &[orders(&[]), orders(&[])]);
+    let spawned: Vec<(u8, u16)> = m.ants.iter().map(|a| (a.owner, a.pos)).collect();
+    assert!(spawned.contains(&(0, first)), "seat 0 spawned on its first hill: {spawned:?}");
+    assert!(
+        spawned.contains(&(1, m.sym.image(&m.g, first, 1))),
+        "seat 1 spawned on the image of seat 0's hill: {spawned:?}"
+    );
+}
+
+#[test]
 fn standing_on_your_own_hill_touches_it_for_spawn_priority() {
     // `ants.py:812`: the raze phase stamps `last_touched` whenever the owner's own ant is standing
     // on its own hill. Stamping only on spawn — which this engine used to do — breaks the one

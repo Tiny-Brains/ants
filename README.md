@@ -268,6 +268,29 @@ random and food-seeking play, four seeds, up to 400 turns, hashes the same on th
 previous commit's. **The digest moved**, and the boards with it: a local build prints
 `sha256:f684c0d9…`; the image's is not built yet. `cargo test` is 88, and `mapgen`'s is 5.
 
+**17 September 2026 (later) — tested across 2 to 8 seats, and two rules that treated seats unequally.**
+`mapgen sweep` draws boards in eleven recipe styles (open ground, boulders, scattered and lattice
+mazes from a perfect tree to half-looped, rooms, caves, arenas, islands, walls four thick, four hills
+a seat) at every seat count from 2 to 8 and every shift of that order, then plays each with one
+frame-relative policy in every seat: on a fair board under fair rules every seat's view is seat 0's
+moved by the shift on every turn, and every match ends level, so any difference is a bug. It found
+two. **Spawn ties were broken by square**, which a shift does not preserve: on a board with two hills
+a seat — `cave-2` ships one — seats spawned from hills that were not images of each other; ties now
+go to the hill listed first, and the map file lists hills in orbits. **An open-ended `replay-decode`
+range over a recording that stopped before its match did** photographed the last turn once for every
+turn up to 65,535; it now ends where the recording does. Both have a test that fails without the fix.
+On single-hill boards every `observe`, `step` and `finish` output hashes as it did; on `cave-2` it
+does not, which is the fix. After them: 770 boards (10 a style and seat count, 1,000 turns) all
+generated, validated, stayed congruent to the end and replayed; independent waves took first place
+evenly by seat at every count (8 seats: 369 to 382 first places each, ties shared). Through
+`tinybrains` with the trained baselines, 24 matches at 3, 6 and 8 seats on sweep boards ran with no
+refusal, and the ten with one model in every seat ended with every seat level — razes included — so
+the network, its adapter, the loader and the engine together are shift-fair. A 192 x 192 board costs
+an adapter 516,000 operations (51% of the budget) and 8 seats' inference used at most 17.8% of the
+turn deadline; 255 x 255, the grid's ceiling, would cost about 91%. Contact is the gap: maze styles
+rarely meet an enemy before the idle-food cutoff, so their fights are proved on paper more than in
+play. The local digest is now `sha256:5d034eaa...`. `cargo test` is 90, and `mapgen`'s is 6.
+
 **Owed, from the boards.** A release, and ants-starter's `games.toml` and match files moved from
 `standard` to the new names on it. Seasons name presets: the deploy's list (devops
 `soma.toml.tmpl`) now names the three two-seat presets and not `rooms-4`, because the pairing clock
