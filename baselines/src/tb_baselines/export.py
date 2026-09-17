@@ -145,7 +145,8 @@ def cli() -> str:
     if not found:
         raise SystemExit(
             "no `tinybrains` on PATH.\n"
-            "  cargo install --path ../../devops/cli   (or set TINYBRAINS to the binary)"
+            "  brew tap tiny-brains/cli https://github.com/Tiny-Brains/cli\n"
+            "  brew install tiny-brains/cli/tinybrains   (or set TINYBRAINS to the binary)"
         )
     return found
 

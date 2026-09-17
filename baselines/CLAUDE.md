@@ -39,12 +39,12 @@ a `metrics.json` of what the platform said about it, and a `card.md` a person ca
 tinybrains/
   ants/             <- games.toml resolves the cartridge from `../dist`; run ./build.sh there first
     baselines/      <- you are here
-  devops/           <- the `tinybrains` CLI is built from devops/cli
+  cli/              <- the `tinybrains` CLI, if you build it rather than install a release
 ```
 
 ```sh
 (cd .. && ./build.sh)                    # into ../dist: the component, cartridge.json, reference observations
-cargo install --path ../../devops/cli    # or: export TINYBRAINS=../../devops/cli/target/release/tinybrains
+brew install tiny-brains/cli/tinybrains  # after `brew tap tiny-brains/cli https://github.com/Tiny-Brains/cli`; or: export TINYBRAINS=../../cli/target/release/tinybrains
 pip install -e '.[dev]'                  # torch, numpy, onnx, pytest
 ```
 

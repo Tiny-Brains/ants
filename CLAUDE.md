@@ -166,7 +166,7 @@ A *wave* is many matches advanced together in one call.
   generated.** `dist/` is laid out exactly as the image's `/artifacts/`, which is what lets a games
   registry `path` point at either. Consumers read that layout by path — the component by extension
   at the root, `cartridge.json`, `maps/`, `reference/observations.json`, `viz/viz.js` and
-  `viz/engine.json` — in `devops/cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), kalam's and web's
+  `viz/engine.json` — in `cli` (`registry.rs`, `serve.rs`, `cmd/mod.rs`), kalam's and web's
   Dockerfiles, `web/docs/Dockerfile` and `tutorials/build.sh`, and the devops loader. Rename one
   and grep the siblings in the same batch.
 - **The image is the build, and the digest is reproducible.** `Dockerfile` pins rustc *exactly*

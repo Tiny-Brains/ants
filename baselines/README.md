@@ -64,7 +64,7 @@ What this directory produces, and what reads it:
 
 ```sh
 (cd .. && ./build.sh)                    # ../dist, which games.toml resolves: component, manifest, reference set
-cargo install --path ../../devops/cli    # or export TINYBRAINS=../../devops/cli/target/release/tinybrains
+brew install tiny-brains/cli/tinybrains  # after `brew tap tiny-brains/cli https://github.com/Tiny-Brains/cli`; or export TINYBRAINS=../../cli/target/release/tinybrains
 pip install -e '.[dev]'
 
 pytest tests/ -q                                    # the conformance gate; see below
