@@ -355,6 +355,11 @@ views now number opponents up to 7 — the old set never numbered past 1, so an 
 owner 2 was admitted. `each_player_starts_with_one_point_per_hill` now checks every preset rather
 than naming two boards whose hill counts changed. **A new engine digest**: every board changed.
 
+**Released** as `engine-df312c0458d9` (`sha256:df312c04…`, the digest the local ladder already
+played; archive `sha256:6a2a11aa…`, 430 KB), and ants-starter's `games.toml` pins it. The starter's
+nano entry passes `tinybrains check` on the new set — 148 observations, worst adapter run 32% of the
+budget — and both its match files still play `open-2`.
+
 ## More
 
 - [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs): the rules, what a model

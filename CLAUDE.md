@@ -194,7 +194,8 @@ A *wave* is many matches advanced together in one call.
   presets by name (devops `compose/orion/soma.toml.tmpl`, soma `docs/config.md`), match files name
   them (ants-starter, the book's tutorials and *Testing*), and baselines' tests pin one. Renaming or
   retiring a preset is a change to each, and the starter's only through a release. A preset with more
-  seats than a small roster can fill starves pairing, and Kalam claims at most four seats.
+  seats than a small roster can fill is never paired until one can (soma's `choose` and trial query
+  filter by it), and Kalam claims at most eight seats, mapgen's ceiling.
 - **Rules changes cite the reference.** Where the published specification and the 2011 contest
   engine (`aichallenge/ants/ants.py`) disagree, **the engine wins** — it is what every bot was
   scored against. Comments carry `ants.py:NNN` line cites; keep that habit. The Focus Battle page's
