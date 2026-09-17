@@ -57,7 +57,7 @@ What this directory produces, and what reads it:
 | `models/<class>-<method>/model.onnx` + `manifest.json` | a presigned PUT; admission reads both from the bucket |
 | `models/<class>-<method>/metrics.json` | `devops/scripts/dev/seed-baselines.sh`, for `size_bytes`, `param_count`, `infer_us` |
 | `models/<class>-<method>/card.md` | people |
-| `models/nano-bc/`, `models/micro-bc/` | `drill/models/`, which carries them byte for byte |
+| `models/nano-bc/model.onnx` + `manifest.json` | ants-starter's `matches/vs-nano-bc.json`, by URL at a pinned commit of this repository — a retrained baseline is a new sha there |
 | the `tb_baselines` package | [ants-starter](https://github.com/Tiny-Brains/ants-starter)'s `train.py`, pip-installed from `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines` |
 
 ## Run it, test it
@@ -202,6 +202,7 @@ ladder currently distils is a forager.
 
 - [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs) — the rules, the model format, the
   adapter dialect, submitting, ranking and seasons.
-- [drill](https://github.com/Tiny-Brains/drill) — match files, boards and a place to try a model
-  without a database.
+- [ants-starter](https://github.com/Tiny-Brains/ants-starter) — the competitor's starter kit: a
+  trained entry, `train.py` on top of this package, and match files to try a model without a
+  database.
 - Apache-2.0, as the rest of ants: see [LICENSE](../LICENSE).

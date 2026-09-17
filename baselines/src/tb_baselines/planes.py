@@ -217,8 +217,8 @@ PLANES: tuple[Plane, ...] = (
 N_PLANES = len(PLANES)
 
 # The five moves, in the order the policy's channels mean them. `-` is the hold, and it is last
-# because `drill/models/README.md` is right that a model whose last channel wins everywhere looks
-# passive by choice and is not.
+# because a model whose last channel wins everywhere looks passive by choice and is not -- the
+# book's *Testing* chapter shows that colony standing still.
 MOVES = ("N", "E", "S", "W", "-")
 N_MOVES = len(MOVES)
 

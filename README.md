@@ -114,7 +114,7 @@ An image's `/artifacts/` copied out works the same way:
 id=$(docker create tinybrains/ants:dev) && docker cp "$id":/artifacts/. dist && docker rm "$id"
 ```
 
-**A competitor reads neither.** drill and ants-starter pin a **release**: the image's `/artifacts/`
+**A competitor reads neither.** [ants-starter](https://github.com/Tiny-Brains/ants-starter) pins a **release**: the image's `/artifacts/`
 as one `ants-artifacts.tar.gz`, tagged `engine-<12 hex>`, which `tinybrains` downloads once and
 refuses unless the archive and the component inside it hash to what their `games.toml` declares.
 
