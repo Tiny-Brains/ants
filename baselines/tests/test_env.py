@@ -44,9 +44,12 @@ def test_hello_names_the_engine_and_the_evaluator(env):
 def test_seats_and_boards_line_up(env):
     step = env.reset()
     assert len(step.seats) == 8, "four matches of two seats"
-    assert step.boards.shape == (8, N_PLANES, 64, 96), "standard is 64x96"
+    # The board's size is the view's to say, not this test's: a preset's boards are regenerated
+    # from recipes, and `open-2` has already been two sizes.
+    rows, cols = step.seats[0].obs["size"]
+    assert step.boards.shape == (8, N_PLANES, rows, cols), "one plane stack a seat, the board's size"
     for i, seat in enumerate(step.seats):
-        assert tuple(seat.obs["size"]) == (64, 96)
+        assert tuple(seat.obs["size"]) == (rows, cols)
         assert step.groups[0].indices[i] == i
 
 
