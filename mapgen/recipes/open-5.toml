@@ -1,0 +1,32 @@
+# Open ground with light scatter.
+# Design run  9 of 16 (L16 orthogonal array): seats 5-6 -> 5, terrain open,
+# board small (80x80, 1280 squares a seat), 2 hills a seat, contested food.
+[preset]
+name = "open-5"
+seats = 5
+count = 4
+seed = 2026091809
+
+[board]
+rows = 80
+cols = 80
+shifts = ["diagonal", "rows", "cols"]
+
+[areas]
+size = [300, 600]
+
+[fill]
+style = "scatter"
+pct = 12
+blob = [2, 5]
+
+[hills]
+per_seat = 2
+clearing = 3
+
+[food]
+per_seat = 20
+bootstrap = 3
+bootstrap_walk = [2, 8]
+bias = "contested"
+band = 10

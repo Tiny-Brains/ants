@@ -1,0 +1,30 @@
+# Open ground strewn with large boulders.
+# Design run  5 of 16 (L16 orthogonal array): seats 3-4 -> 4, terrain open,
+# board large (128x128, 4096 squares a seat), 1 hill a seat, rich food.
+[preset]
+name = "open-4"
+seats = 4
+count = 4
+seed = 2026091805
+
+[board]
+rows = 128
+cols = 128
+shifts = ["any"]
+
+[areas]
+size = [300, 600]
+
+[fill]
+style = "scatter"
+pct = 30
+blob = [3, 8]
+
+[hills]
+per_seat = 1
+clearing = 3
+
+[food]
+per_seat = 20
+bootstrap = 4
+bootstrap_walk = [2, 8]

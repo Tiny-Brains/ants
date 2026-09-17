@@ -1,0 +1,38 @@
+# A lattice of rooms ten across, walled two thick, some left solid.
+# Design run  3 of 16 (L16 orthogonal array): seats 2 -> 2, terrain rooms,
+# board small (80x80, 3200 squares a seat), 4 hills a seat, rich food.
+[preset]
+name = "rooms-2"
+seats = 2
+count = 4
+seed = 2026091803
+
+[board]
+rows = 80
+cols = 80
+shifts = ["diagonal", "rows", "cols"]
+
+[areas]
+size = [100, 100]
+grid = true
+coverage_pct = 85
+closure_pct = 80
+wall = 2
+
+[connectivity]
+loops_pct = 35
+door_min = 2
+
+[fill]
+style = "scatter"
+pct = 4
+blob = [1, 2]
+
+[hills]
+per_seat = 4
+home_doors_min = 2
+
+[food]
+per_seat = 44
+bootstrap = 4
+bootstrap_walk = [2, 8]

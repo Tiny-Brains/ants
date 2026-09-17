@@ -1,0 +1,40 @@
+# A lattice of rooms eighteen across, walled two thick, some left solid.
+# Design run 15 of 16 (L16 orthogonal array): seats 7-8 -> 7, terrain rooms,
+# board large (126x126, 2268 squares a seat), 3 hills a seat, contested food.
+[preset]
+name = "rooms-7"
+seats = 7
+count = 4
+seed = 2026091815
+
+[board]
+rows = 126
+cols = 126
+shifts = ["any"]
+
+[areas]
+size = [324, 324]
+grid = true
+coverage_pct = 85
+closure_pct = 80
+wall = 2
+
+[connectivity]
+loops_pct = 35
+door_min = 2
+
+[fill]
+style = "scatter"
+pct = 4
+blob = [1, 2]
+
+[hills]
+per_seat = 3
+home_doors_min = 2
+
+[food]
+per_seat = 26
+bootstrap = 3
+bootstrap_walk = [2, 8]
+bias = "contested"
+band = 10

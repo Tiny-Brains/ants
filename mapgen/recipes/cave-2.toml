@@ -1,14 +1,15 @@
-# Caverns: warped areas, a third of the board left solid, thick walls with wide doors, cellular
-# rock inside. Two hills a seat, so a colony has a second home to lose.
+# Caverns: warped areas, a third left solid, cellular rock inside, wide doors.
+# Design run  4 of 16 (L16 orthogonal array): seats 2 -> 2, terrain cave,
+# board huge (152x152, 11552 squares a seat), 1 hill a seat, contested food.
 [preset]
 name = "cave-2"
 seats = 2
-count = 8
-seed = 2026091703
+count = 4
+seed = 2026091804
 
 [board]
-rows = 96
-cols = 96
+rows = 152
+cols = 152
 shifts = ["diagonal", "rows", "cols"]
 
 [areas]
@@ -29,16 +30,11 @@ pct = 38
 smooth = 4
 
 [hills]
-per_seat = 2
-clearing = 2
+per_seat = 1
 
 [food]
-per_seat = 16
+per_seat = 14
 bootstrap = 3
 bootstrap_walk = [2, 8]
 bias = "contested"
 band = 10
-
-[accept]
-water_pct = [35, 55]
-enemy_walk = [40, 200]

@@ -58,7 +58,7 @@ The two host binaries are generators (from `engine/`):
 
 ```sh
 cargo run --bin manifest > ../dist/cartridge.json                  # then tools/package.py folds in maps + about
-cargo run --bin reference > ../dist/reference/observations.json    # -- --only rooms-4:20260909:600 for one spec
+cargo run --bin reference > ../dist/reference/observations.json    # -- --only rooms-4:20260918:400 for one spec
 ```
 
 The boards come from `mapgen/`, a crate of its own (from `mapgen/`):
@@ -149,9 +149,11 @@ A *wave* is many matches advanced together in one call.
 3. **Exploring is remembered.** A model is a pure function of one observation with no state channel,
    so `turn.rs` folds each seat's vision into `known` every turn and observations carry *known
    water*. The per-player seen-masks are ~60% of `wave_state`; that cost is the point.
-4. **Boards are files.** 32 committed under `maps/` at the root (content, not source — `mapgen/`
-   writes them from its recipes and `dist/maps/` ships them), eight per preset across `open-2`,
-   `maze-2`, `cave-2` and `rooms-4`, validated and compiled in. A board carries its **shift**
+4. **Boards are files.** 64 committed under `maps/` at the root (content, not source — `mapgen/`
+   writes them from its recipes and `dist/maps/` ships them), four per preset across sixteen
+   presets from `open-2` to `maze-8` — the runs of one L16 orthogonal array over seats (2 to 8),
+   terrain, board size (80 to 152 a side), hills a seat and food, each recipe's header naming its
+   run — validated and compiled in. A board carries its **shift**
    (`symmetry`): seat `k`'s board is seat 0's moved `k` times by it, it travels in `wave_state`, and
    `food::sets` and observer-relative owners both follow it. Hills are listed in orbits, so hill `i`
    is seat `i % players`'s. A preset exists because boards declare it, and has one seat count. A

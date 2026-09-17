@@ -303,6 +303,58 @@ meet, so an adapter that mishandled owner 2 or 3 would still be admitted. And th
 colonies stay at two to four ants on `maze-2`, whose two-square corridors punish ants ordered into
 each other — tight by design, and worth watching once models play it.
 
+**17 September 2026 (evening) — sixteen presets, two seats to eight, chosen by design.** The four
+presets are replaced by sixteen, and they are the runs of an **L16(4⁵) orthogonal array**: five
+factors at four levels each, laid out so every pair of levels of any two factors lands on exactly
+one preset. A full factorial would be 1,024 presets; this is the smallest set in which, for example,
+every seat band meets every board size and every hill count meets every terrain.
+
+| Factor | Levels |
+|---|---|
+| seats | 2 · 3–4 · 5–6 · 7–8 |
+| terrain | open (open, boulders) · maze (loopy, voronoi, tree, wide) · rooms (rooms, fortress, arenas) · cave (cave, islands) |
+| board | small ~80 · medium ~104 · large ~128 · huge ~152 a side, never over 156 |
+| hills a seat | 1 · 2 · 3 · 4 |
+| food | lean · rich · contested · home |
+
+Which label each level of the board and hill columns gets was chosen to maximise the fewest squares a
+hill has anywhere in the design, and within a seat band which count a run takes by the same measure;
+the result is two presets of every count from three to eight and four of two. A preset is named
+`<terrain>-<seats>`, which the array keeps unique, and `open-2`, `maze-2`, `cave-2` and `rooms-4`
+keep their names with new recipes, so match files and tests naming them still resolve.
+
+| Preset | Seats | Board | Style | Hills | Food |
+|---|---|---|---|---|---|
+| `open-2` | 2 | 104² | open | 3 | lean |
+| `maze-2` | 2 | 128² | loopy maze | 2 | home |
+| `rooms-2` | 2 | 80² | rooms of 10 | 4 | rich |
+| `cave-2` | 2 | 152² | cave | 1 | contested |
+| `maze-3` | 3 | 105² | voronoi maze | 4 | contested |
+| `cave-3` | 3 | 81² | islands | 3 | home |
+| `open-4` | 4 | 128² | boulders | 1 | rich |
+| `rooms-4` | 4 | 152² | fortress | 2 | lean |
+| `open-5` | 5 | 80² | open | 2 | contested |
+| `cave-5` | 5 | 130² | cave | 4 | lean |
+| `maze-6` | 6 | 144² | tree maze | 3 | rich |
+| `rooms-6` | 6 | 102² | arenas | 1 | home |
+| `rooms-7` | 7 | 126² | rooms of 18 | 3 | contested |
+| `cave-7` | 7 | 105² | islands | 2 | rich |
+| `open-8` | 8 | 152² | boulders | 4 | home |
+| `maze-8` | 8 | 80² | wide maze | 1 | lean |
+
+Four boards a preset, 64 in all (840 KB), rather than eight: the boards are compiled into the
+component the viewer downloads. Every one generated on the first draw, `mapgen check` reproduces
+all 64, and every board was played **congruently** — one frame-relative policy in every seat, two
+seeds, 600 turns — with no divergence in any seat's view on any turn. `check --play 6` raised one
+smoke alarm, on `open-4-03`, that 24 seeds do not reproduce: the greedy walker shares one random
+stream across seats. On `open-4-01` that walker's colonies die by turn 7 without contact, walking
+their own two ants into each other; it is the walker, and the board plays fair.
+
+The reference observations cover every preset at turn 20 and turn 400 (148 views, 355 KB), and
+views now number opponents up to 7 — the old set never numbered past 1, so an adapter mishandling
+owner 2 was admitted. `each_player_starts_with_one_point_per_hill` now checks every preset rather
+than naming two boards whose hill counts changed. **A new engine digest**: every board changed.
+
 ## More
 
 - [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs): the rules, what a model

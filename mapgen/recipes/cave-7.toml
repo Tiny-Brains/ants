@@ -1,0 +1,32 @@
+# Islands: under half the board carved out of the water, joined by narrow ways.
+# Design run 16 of 16 (L16 orthogonal array): seats 7-8 -> 7, terrain cave,
+# board medium (105x105, 1575 squares a seat), 2 hills a seat, rich food.
+[preset]
+name = "cave-7"
+seats = 7
+count = 4
+seed = 2026091816
+
+[board]
+rows = 105
+cols = 105
+shifts = ["diagonal", "rows", "cols"]
+
+[areas]
+size = [150, 300]
+warp = 4
+coverage_pct = 45
+closure_pct = 30
+wall = 2
+
+[connectivity]
+loops_pct = 25
+door_min = 2
+
+[hills]
+per_seat = 2
+
+[food]
+per_seat = 28
+bootstrap = 4
+bootstrap_walk = [2, 8]

@@ -1,44 +1,32 @@
-# Four seats among rooms: a lattice of square rooms fourteen across, walled two thick, some left solid,
-# doors a few squares wide and enough loops that no room is a trap. Walls this thick stop fights as
-# well as walking.
+# Walls four thick, which stop fights as well as walking, around well-closed homes.
+# Design run  7 of 16 (L16 orthogonal array): seats 3-4 -> 4, terrain rooms,
+# board huge (152x152, 5776 squares a seat), 2 hills a seat, lean food.
 [preset]
 name = "rooms-4"
 seats = 4
-count = 8
-seed = 2026091704
+count = 4
+seed = 2026091807
 
 [board]
-rows = 128
-cols = 128
+rows = 152
+cols = 152
 shifts = ["any"]
 
 [areas]
-size = [256, 256]
-grid = true
-coverage_pct = 85
-closure_pct = 80
-wall = 2
+size = [200, 400]
+closure_pct = 70
+wall = 4
 
 [connectivity]
-loops_pct = 35
+loops_pct = 30
 door_min = 2
 
-[fill]
-style = "scatter"
-pct = 4
-blob = [1, 2]
-
 [hills]
-clearing = 3
+per_seat = 2
 home_doors_min = 2
+home_closure_pct = 90
 
 [food]
 per_seat = 12
-bootstrap = 4
+bootstrap = 2
 bootstrap_walk = [2, 8]
-bias = "home"
-band = 6
-
-[accept]
-water_pct = [20, 40]
-enemy_walk = [40, 200]

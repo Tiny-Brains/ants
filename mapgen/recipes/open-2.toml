@@ -1,15 +1,16 @@
-# Open ground: no walls, rocks scattered through it. The nearest thing to the boards the catalogue
-# shipped before, with the water it asked for actually delivered and the seats shifted three ways.
+# Open ground with light scatter.
+# Design run  1 of 16 (L16 orthogonal array): seats 2 -> 2, terrain open,
+# board medium (104x104, 5408 squares a seat), 3 hills a seat, lean food.
 [preset]
 name = "open-2"
 seats = 2
-count = 8
-seed = 2026091701
+count = 4
+seed = 2026091801
 
 [board]
-rows = 64
-cols = 96
-shifts = ["diagonal", "cols", "rows"]
+rows = 104
+cols = 104
+shifts = ["diagonal", "rows", "cols"]
 
 [areas]
 size = [300, 600]
@@ -20,14 +21,10 @@ pct = 12
 blob = [2, 5]
 
 [hills]
+per_seat = 3
 clearing = 3
 
 [food]
-per_seat = 12
-bootstrap = 4
-bootstrap_walk = [2, 7]
-bias = "uniform"
-
-[accept]
-water_pct = [9, 14]
-enemy_walk = [32, 96]
+per_seat = 16
+bootstrap = 2
+bootstrap_walk = [2, 8]

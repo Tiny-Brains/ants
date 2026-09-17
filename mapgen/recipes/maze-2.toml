@@ -1,32 +1,34 @@
-# A tight maze: square rooms three squares across, walls one thick, joined by a tree of one-square
-# doors with a few loops. Walls this thin stop walking, not fighting.
+# A maze of rooms four across, walls one thick, half the boundaries doored.
+# Design run  2 of 16 (L16 orthogonal array): seats 2 -> 2, terrain maze,
+# board large (128x128, 8192 squares a seat), 2 hills a seat, home food.
 [preset]
 name = "maze-2"
 seats = 2
-count = 8
-seed = 2026091702
+count = 4
+seed = 2026091802
 
 [board]
-rows = 96
-cols = 96
+rows = 128
+cols = 128
 shifts = ["diagonal", "rows", "cols"]
 
 [areas]
-size = [9, 9]
+size = [16, 16]
 grid = true
-closure_pct = 100
+closure_pct = 90
 wall = 1
 
 [connectivity]
-loops_pct = 8
-door_min = 1
+loops_pct = 50
 
 [hills]
-clearing = 2
+per_seat = 2
 room = true
 home_doors_min = 2
 
 [food]
-per_seat = 10
+per_seat = 20
 bootstrap = 3
 bootstrap_walk = [2, 8]
+bias = "home"
+band = 6

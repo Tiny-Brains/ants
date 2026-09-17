@@ -6,25 +6,53 @@
 //! competitor for more than it checks.
 //!
 //!     cargo run --bin reference > reference/observations.json
-//!     cargo run --bin reference -- --only rooms-4:20260909:600
+//!     cargo run --bin reference -- --only rooms-4:20260918:400
 mod args;
 
 /// `preset:seed:turn`. An early turn is the sparse case — one ant, nothing known, no enemy — and a
 /// late one is the crowded case, where the known-water run-length encoding is at its most
-/// fragmented and an observation is at its largest. Every preset appears, and the four-seat one
-/// twice, because it is the largest board.
+/// fragmented and an observation is at its largest. **Every preset appears at both**, because the
+/// catalogue spans every seat count from two to eight and every board size from 80 to 152: an
+/// adapter that assumes one of either is what this set exists to refuse. A match the walker ends
+/// before the turn asked for is taken at its last live turn, which `generated_from` records.
 ///
-/// **No view here numbers an opponent past 1.** On `rooms-4` the greedy colonies stay walled apart
-/// for the whole match, so its four-seat views show no foes at all, and an adapter that mishandled
-/// owner 2 or 3 would still be admitted. Seed 20260909 is the busiest of the seeds tried (nine ants a
-/// seat by turn 334); covering the four-seat numbering needs a walker that seeks contact.
-const DEFAULT: [&str; 6] = [
-    "open-2:20260908:20",
-    "open-2:20260908:400",
-    "maze-2:20260908:400",
-    "cave-2:20260908:300",
-    "rooms-4:20260909:20",
-    "rooms-4:20260909:600",
+/// **Opponents are numbered up to 7 here.** The greedy walker does not seek contact, so which foes
+/// a view shows is the boards' doing: at these seeds 82 of the 148 views show foes, and the crowded
+/// eight-seat boards number every owner. The previous set, two presets of two seats and one of four,
+/// never numbered past 1 -- an adapter mishandling owner 2 was admitted.
+const DEFAULT: [&str; 32] = [
+    "open-2:20260918:20",
+    "open-2:20260918:400",
+    "maze-2:20260918:20",
+    "maze-2:20260918:400",
+    "rooms-2:20260918:20",
+    "rooms-2:20260918:400",
+    "cave-2:20260918:20",
+    "cave-2:20260918:400",
+    "maze-3:20260918:20",
+    "maze-3:20260918:400",
+    "cave-3:20260918:20",
+    "cave-3:20260918:400",
+    "open-4:20260918:20",
+    "open-4:20260918:400",
+    "rooms-4:20260918:20",
+    "rooms-4:20260918:400",
+    "open-5:20260918:20",
+    "open-5:20260918:400",
+    "cave-5:20260918:20",
+    "cave-5:20260918:400",
+    "maze-6:20260918:20",
+    "maze-6:20260918:400",
+    "rooms-6:20260918:20",
+    "rooms-6:20260918:400",
+    "rooms-7:20260918:20",
+    "rooms-7:20260918:400",
+    "cave-7:20260918:20",
+    "cave-7:20260918:400",
+    "open-8:20260918:20",
+    "open-8:20260918:400",
+    "maze-8:20260918:20",
+    "maze-8:20260918:400",
 ];
 
 fn main() {
