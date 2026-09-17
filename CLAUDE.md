@@ -43,10 +43,10 @@ tools/deny.sh       # just the determinism check (no floating point in game logi
 
 cd engine
 cargo fmt --check && cargo clippy --all-targets -- -D warnings   # edition 2024; rustfmt.toml is not the default
-cargo test          # just the host suite -- 90 tests
+cargo test          # just the host suite -- 89 tests, and one ignored diagnostic
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
 cargo test spec_scenario_                                  # the spec's worked fights
-cargo test measure_what_random_play_produces -- --nocapture  # diagnostic, not a guarantee
+cargo test measure_what_random_play_produces -- --ignored --nocapture  # diagnostic, not a guarantee; minutes
 ```
 
 `build.sh` runs `tools/deny.sh` and `cargo test`, clears `dist/`, builds the wasm with every build

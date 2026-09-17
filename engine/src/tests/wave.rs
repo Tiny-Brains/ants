@@ -269,10 +269,14 @@ fn a_wave_plays_to_an_end_and_finishes_with_ranks() {
 }
 
 #[test]
+#[ignore = "a diagnostic that asserts nothing, and minutes of debug-build play: run it with --ignored"]
 fn measure_what_random_play_produces() {
     // Not a rule test: a sanity check that the rules produce a game. If every match ended the same
     // way, or none ever ended at all, something in the rules would be wrong in a way no single-rule
-    // test would catch.
+    // test would catch. It is ignored, so neither build.sh nor CI plays it: 24 matches of up to
+    // 1,000 turns for every preset is 384 matches since there are sixteen, on boards up to 152 a
+    // side, unoptimised -- the rest of the suite together takes seconds. Read its table after a
+    // rules change.
     println!("\n=== 24 matches of random play, per preset ===");
     println!("{:<10} {:>6} {:>7} {:>8}  reasons", "preset", "turns", "ants", "scores");
     for p in crate::maps::presets() {
