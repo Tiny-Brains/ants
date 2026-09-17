@@ -103,8 +103,9 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   echo "$tag is already released; a release is never replaced, because registries pin its archive" >&2
   exit 1
 fi
-gh release create "$tag" "$out/$archive_name" --repo "$repo" --target "$(git rev-parse HEAD)" \
-  --title "Ants engine ${engine}" --notes "$(cat <<EOF
+# The notes go through a file: a here-document inside "$(...)" is parsed for quotes, and the
+# apostrophe in the first line was enough to end the script there.
+cat > "$out/notes.md" <<EOF
 The Ants cartridge's artifact set -- the component, \`cartridge.json\`, the boards, the reference
 observations and the replay viewer -- exactly as the artifact image carries it under \`/artifacts/\`.
 
@@ -117,4 +118,5 @@ $block
 \`tinybrains\` downloads it once, refuses it unless the archive and the component inside it hash to
 those two digests, and unpacks it under its cache.
 EOF
-)"
+gh release create "$tag" "$out/$archive_name" --repo "$repo" --target "$(git rev-parse HEAD)" \
+  --title "Ants engine ${engine}" --notes-file "$out/notes.md"
