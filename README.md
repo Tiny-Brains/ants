@@ -395,5 +395,5 @@ deploying. No source changed and the digest did not move.
 
 - [The competitor guide](https://github.com/Tiny-Brains/web/tree/main/docs): the rules, what a model
   sees and answers, and *Adding a game*.
-- Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Soma](https://github.com/Tiny-Brains/soma), [DevOps](https://github.com/Tiny-Brains/devops).
+- Related repositories: [Kalam](https://github.com/Tiny-Brains/kalam), [Soma](https://github.com/Tiny-Brains/soma).
 - Apache-2.0: see [LICENSE](LICENSE).

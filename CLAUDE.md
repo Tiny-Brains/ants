@@ -20,7 +20,9 @@ never see `baselines/`.
 
 The parent `tinybrains/CLAUDE.md` describes the platform this sits in; read it for anything
 crossing a repo boundary. `README.md` here is the canonical page, in the platform's standard shape —
-update its **Status** when work lands. **There are no design docs here**: what a model sees and
+update its **Status** when work lands. `DECISIONS.md` is Ants' share of the platform's decision record
+(the game and protocol decisions, R5, the baselines' 49/50 and N20–N22, N24). **There are no other
+design docs here**: what a model sees and
 answers, and what a cartridge must honour, are published in the competitor guide
 (`../web/docs/src/models/observation.md`, `actions.md`, `platform/adding-a-game.md`, and the rules
 under `games/ants/`). Module doc comments carry the rest of the why.
@@ -194,7 +196,7 @@ A *wave* is many matches advanced together in one call.
   every `observe`/`step`/`finish` output turn by turn under a random and a greedy policy.
 - **A new engine digest is a new release, or competitors keep playing the old one.** ants-starter's
   `games.toml` pins a release by the archive's digest and the `engine` digest, and has no checkout
-  of this repository to fall back on (devops N21, N22). `gh workflow run build.yml -f publish=true`
+  of this repository to fall back on (N21, N22 in `DECISIONS.md`). `gh workflow run build.yml -f publish=true`
   cuts it and its notes carry the block to paste there. Never re-cut a tag: a registry pins the
   archive's bytes. The tag is `engine-<12 hex>`, and `engine-<12 hex>-2` when the same engine ships
   a different archive; the workflow compares builds by the tar's content, so a build that
@@ -204,7 +206,7 @@ A *wave* is many matches advanced together in one call.
   a hand edit); `cartridge.json`'s presets are derived from the boards; `engine/about.json` is the one
   hand-written input folded into the manifest.
 - **A preset name is a contract with other repositories.** Seasons and the deploy's `[vars]` list
-  presets by name (devops `compose/orion/soma.toml.tmpl`, soma `docs/config.md`), match files name
+  presets by name (soma's `docker/soma.toml.tmpl` and `docs/config.md`), match files name
   them (ants-starter, the book's tutorials and *Testing*), and baselines' tests pin one. Renaming or
   retiring a preset is a change to each, and the starter's only through a release. A preset with more
   seats than a small roster can fill is never paired until one can (soma's `choose` and trial query
@@ -224,8 +226,8 @@ A *wave* is many matches advanced together in one call.
 - **`wave_state` stays opaque** to every caller, and turn order in `turn.rs` is a rule, not an
   implementation detail.
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
-  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and `devops`'
-  `seed-baselines.sh` reads `../ants/baselines/models`. Renaming the directory or the package
+  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and web's
+  `scripts/dev/seed-baselines.sh` reads `../ants/baselines/models`. Renaming the directory or the package
   breaks every starter clone. It stays out of a release: `build.sh` never reads it and
   `tools/pack.py` packs `dist/` alone, so no edit there can move the engine digest.
 

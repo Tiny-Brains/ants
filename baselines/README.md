@@ -55,7 +55,7 @@ What this directory produces, and what reads it:
 | Artifact | Read by |
 |---|---|
 | `models/<class>-<method>/model.onnx` + `manifest.json` | a presigned PUT; admission reads both from the bucket |
-| `models/<class>-<method>/metrics.json` | `devops/scripts/dev/seed-baselines.sh`, for `size_bytes`, `param_count`, `infer_us` |
+| `models/<class>-<method>/metrics.json` | web's `scripts/dev/seed-baselines.sh`, for `size_bytes`, `param_count`, `infer_us` |
 | `models/<class>-<method>/card.md` | people |
 | `models/nano-bc/model.onnx` + `manifest.json` | ants-starter's `matches/vs-nano-bc.json`, by URL at a pinned commit of this repository — a retrained baseline is a new sha there |
 | the `tb_baselines` package | [ants-starter](https://github.com/Tiny-Brains/ants-starter)'s `train.py`, pip-installed from `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines` |
@@ -90,7 +90,7 @@ idea from this directory, take that one.
 
 Nothing at run time. These are ordinary submissions.
 
-At seed time, `devops/compose/bootstrap/seed.sql` inserts one entry per baseline, and the seeding
+At seed time, web's `compose/seed.sql` inserts one entry per baseline, and the seeding
 script needs each artifact's `metrics.json` for the values admission would otherwise have measured.
 
 Since the entry split, each baseline is a **model** of its own, named for its directory here.
