@@ -226,9 +226,10 @@ A *wave* is many matches advanced together in one call.
 - **`wave_state` stays opaque** to every caller, and turn order in `turn.rs` is a rule, not an
   implementation detail.
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
-  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and web's
-  `scripts/dev/seed-baselines.sh` reads `../ants/baselines/models`. Renaming the directory or the package
-  breaks every starter clone. It stays out of a release: `build.sh` never reads it and
+  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and the baseline rosters —
+  soma's `docker/baselines.toml` and web's `compose/baselines.toml` — fetch `baselines/models/<name>/`
+  by raw URL at a pinned commit for `soma bootstrap` to seed. Renaming the directory or the package
+  breaks every starter clone, and every roster the day it is re-pinned. It stays out of a release: `build.sh` never reads it and
   `tools/pack.py` packs `dist/` alone, so no edit there can move the engine digest.
 
 ## Conventions
