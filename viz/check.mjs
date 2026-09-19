@@ -388,5 +388,42 @@ if (shellLoads) {
   check("no seat is laid out narrower than a seat can be", roomy);
 }
 
+// ---------------------------------------------------------------- the map visual
+//
+// A board on its own, for a season's map page and the book's board pages: map.js. What can be
+// checked without eyes is its arithmetic, that the board it draws is the cartridge's turn zero --
+// every hill the file lists, owned as the engine says -- and that it has nothing to operate.
+console.log("map visual");
+{
+  const { mapFrame } = await import("../dist/viz/map.js");
+  const eq = (a, b) => a.w === b.w && a.h === b.h;
+  check("a square board is as tall as it is wide", eq(mapFrame(360, 36, 36), { w: 360, h: 360 }));
+  check("a wide board is shorter than its width", eq(mapFrame(372, 120, 124), { w: 372, h: 360 }));
+  check("a tall board stops at the host's cap", eq(mapFrame(300, 96, 80, 280), { w: 300, h: 280 }));
+  check("a host still measuring zero draws a pixel, not NaN", eq(mapFrame(0, 24, 24), { w: 1, h: 1 }));
+  check("a board with no size draws nothing", eq(mapFrame(300, 0, 0), { w: 300, h: 1 }));
+
+  const { frameAt } = await import("../dist/viz/engine.js");
+  const { readdirSync } = await import("node:fs");
+  let whole = true;
+  let why = "";
+  for (const f of readdirSync("../maps").filter((n) => n.endsWith(".json"))) {
+    const board = JSON.parse(readFileSync(`../maps/${f}`, "utf8"));
+    const frame = frameAt({ seed: 1, max_turns: 1, turns: 0, map: board, deltas: [] }, 0);
+    const owners = new Set(frame.hills.map((h) => h[2]));
+    if (frame.hills.length !== board.hills.length || owners.size !== board.players) {
+      whole = false;
+      why = `${board.id}: ${frame.hills.length} hills, ${owners.size} owners`;
+    }
+  }
+  check("every basic board's turn zero is every hill, every seat owning some", whole, why);
+
+  const src = readFileSync("./src/map.js", "utf8");
+  check(
+    "the map visual has nothing to operate",
+    !/createElement\("button"|addEventListener|tabIndex|\bonclick\b/.test(src)
+  );
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall geometry checks passed");
 process.exit(failures ? 1 : 0);

@@ -8,6 +8,7 @@
 
 import { createElement, useEffect, useRef } from "react";
 import { Viewer } from "./shell.js";
+import { MapView } from "./map.js";
 
 /**
  * @param {object} props
@@ -47,6 +48,28 @@ export function AntsReplay({
 
   // `createElement` rather than JSX, so this file is plain ES the browser and any bundler both
   // accept and the cartridge needs no JSX toolchain of its own.
+  return createElement("div", { ref: host, className, style });
+}
+
+/**
+ * A board on its own, as a React component: the map visual -- the board at turn zero under its
+ * name, its player count and its size in cells, with no controls and nothing to hover.
+ *
+ * @param {object} props
+ * @param {object} props.board        the map file, whole
+ * @param {string} [props.name]       instead of the board's own id
+ * @param {"light"|"dark"} [props.theme]
+ * @param {number} [props.maxHeight]  cap on how tall a tall board draws
+ */
+export function AntsMap({ board, name, theme, maxHeight, style, className }) {
+  const host = useRef(null);
+  // By content, so a caller holding the same board in a new object does not redraw it.
+  const said = board ? JSON.stringify(board) : "";
+  useEffect(() => {
+    if (!host.current || !said) return;
+    const v = new MapView(host.current, JSON.parse(said), { name, theme, maxHeight });
+    return () => v.destroy();
+  }, [said, name, theme, maxHeight]);
   return createElement("div", { ref: host, className, style });
 }
 

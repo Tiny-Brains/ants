@@ -28,6 +28,26 @@ export async function mount(target, replay, opts = {}) {
 }
 
 /**
+ * Draw a board on its own -- the map visual. No seats, no transport, no tray: the board at turn
+ * zero, through the cartridge, under its name, its player count and its size in cells.
+ *
+ * @param {HTMLElement|string} target   an element, or a selector
+ * @param {object|string} board         the map file, whole, or a URL to fetch it from
+ * @param {object} [opts]  name (instead of the board's own id), theme ("light"|"dark"), maxHeight
+ * @returns {Promise<MapView>}  call .destroy() when the page is done with it
+ */
+export async function mountMap(target, board, opts = {}) {
+  const el = typeof target === "string" ? document.querySelector(target) : target;
+  if (!el) throw new Error(`no element for ${target}`);
+  const map = typeof board === "string" ? await (await fetch(board)).json() : board;
+  // Loaded when a board is first drawn, not with the viewer. A host that copies the viewer's
+  // modules by name -- web's Dockerfile does -- keeps every replay working with a list that
+  // predates this file, rather than losing viz.js to one import it cannot resolve.
+  const { MapView } = await import("./map.js");
+  return new MapView(el, map, opts);
+}
+
+/**
  * Read viewer options out of a URL, so a link can point at a moment.
  *
  * `#turn=84`, `#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`. A replay is evidence,

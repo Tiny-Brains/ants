@@ -405,6 +405,15 @@ viewer transpiled from it differ. So the workflow runs on `ubuntu-24.04-arm`. **
 book fetch the latest release when they build** (`ANTS_RELEASE` pins one), so publishing is
 deploying. No source changed and the digest did not move.
 
+**19 September 2026 (later) — the viewer draws a board on its own.** `viz/src/map.js`, mounted by
+`mountMap(target, board, opts)` and `AntsMap` in `react.js`: the map visual, the board at turn zero
+under its name, its player count and its size in cells, with no seats, no transport, no tray and
+nothing to operate. Turn zero is the cartridge's (`replay-decode` over an envelope of no moves); the
+opening ants are left out so the hills show. `map.js` loads on first use, so a host copying the
+viewer's modules by name loses nothing. `check.mjs` checks the sizing, that every basic board's turn
+zero is every hill with every seat owning some, and that the map visual has no control. The web's
+`/maps` and the book's board pages use it. No engine change: the digest is the same.
+
 **19 September 2026 — boards are designs (N27), and the component carries none (N28).** A board is
 a **design** (`mapgen/src/design.rs`) drawn under the seat shift and a decorative point group about
 every seat's centre, from families of motifs put where the lattice puts them -- keeps, rings and

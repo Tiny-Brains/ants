@@ -191,6 +191,22 @@ const CSS = `
 .tb-viz .tb-speed{font:11px/1 var(--tb-mono);min-width:36px;color:var(--tb-dim)}
 .tb-viz .tb-err{padding:16px;color:var(--tb-bad);font:13px/1.6 var(--tb-sans)}
 
+/* ---------- the map visual: a board, not a match (map.js) ----------
+   Three facts over the board and nothing else: its name, how many play it, how many cells it is.
+   No seats, no transport, no tray, no hover -- a board page is read, not operated. The name gives
+   way to an ellipsis before either number does, because the numbers are what a list of boards is
+   scanned by. The board keeps the match palette, on the same void. */
+.tb-viz[data-tb-mode=map]{cursor:default}
+.tb-viz .tb-map-head{display:flex;align-items:center;gap:10px;padding:7px 10px;flex:none;
+  min-width:0;background:var(--tb-panel);border-bottom:1px solid var(--tb-line)}
+.tb-viz .tb-map-name{font:600 13px/1.4 var(--tb-mono);flex:1 1 auto;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tb-viz .tb-map-fact{display:inline-flex;align-items:center;gap:4px;flex:none;
+  font:12px/1 var(--tb-mono);font-variant-numeric:tabular-nums;color:var(--tb-dim)}
+.tb-viz .tb-map-fact svg{display:block}
+.tb-viz .tb-map-board{display:flex;flex:none;overflow:hidden;background:var(--tb-void)}
+.tb-viz .tb-map-board canvas{display:block;margin:auto}
+
 @media (prefers-reduced-motion:reduce){
   .tb-viz .tb-tray,.tb-viz .tb-head{transition:none}}
 `;
@@ -204,7 +220,7 @@ const STYLE_ID = "tb-viz-style";
  * iframe, a print window, a test harness — would then get a viewer with no stylesheet at all,
  * because the first document had already claimed the flag.
  */
-function injectCss(doc) {
+export function injectCss(doc) {
   if (doc.getElementById(STYLE_ID)) return;
   const el = doc.createElement("style");
   el.id = STYLE_ID;

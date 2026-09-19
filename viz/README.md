@@ -86,6 +86,32 @@ tray said `6fae1212` while every other panel on the page said `mover` `by @someo
 application passes the model's name and `@owner`; the book and `tinybrains view` pass nothing and
 get the envelope's.
 
+## The map visual
+
+A board on its own, for a season's map page, an admin's list of uploads and the book's board pages:
+**the board at turn zero under exactly three facts -- its name, how many play it, and its size in
+cells** -- and nothing else. No seats' title bar, no transport, no tray; nothing to click, hover or
+zoom. A board is read, not played.
+
+```js
+import { mountMap } from "/cartridges/ants/viz.js";
+const view = await mountMap("#board", mapFile, { maxHeight: 520 });   // the map file, whole, or a URL
+// view.destroy() when the page is done with it
+
+import { AntsMap } from "/cartridges/ants/react.js";
+<AntsMap board={mapFile} />
+```
+
+`opts`: `name` (instead of the board's own `id`), `theme`, `maxHeight`. It takes the host's width and
+the height the board's shape asks for (`mapFrame()`), capped at `maxHeight`, so a list of boards is
+a list of their own shapes rather than letterboxed frames. **Turn zero comes from the cartridge**:
+the board goes through `replay-decode` as an envelope of no moves, so which seat owns which hill and
+what food it opens on are the engine's to say, and a board the engine refuses is shown as refused.
+Of that frame it draws the terrain, the hills and the food -- not the opening ants, which are the
+match's and would hide every hill. `map.js` is loaded by `mountMap` on first use rather than with
+`viz.js`, so a host that copies the viewer's modules by name keeps its replays working with a list
+that predates it. The book's slots take it with `data-view="map"`.
+
 ## Building
 
 ```sh
@@ -118,9 +144,10 @@ src/render.js   pixels: terrain, territory, rings, food, hills, ants, and the zo
 src/shell.js    the player: title bar, transport, timeline with event marks, the tools tray, the
                 stylesheet, and what is drawn over the board -- the rings' step counts and the
                 territory's fold
+src/map.js      the map visual: a board on its own at turn zero, its name, player count and size
 check.mjs       checks that need no browser: geometry, step counts, territory, labels, CSS scoping
-src/index.js    mount() -- built to viz.js, the path the platform loads
-src/react.js    the same viewer as a React component; React is a peer
+src/index.js    mount() and mountMap() -- built to viz.js, the path the platform loads
+src/react.js    the same viewer, and the map visual, as React components; React is a peer
 ```
 
 ## Three choices worth knowing
