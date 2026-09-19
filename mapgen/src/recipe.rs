@@ -1,4 +1,4 @@
-//! A recipe: one preset's boards, described by the knobs a person tunes rather than by the
+//! An area recipe: one set of boards, described by the knobs a person tunes rather than by the
 //! algorithm that honours them.
 //!
 //! **Every terrain is the same few area knobs.** The board is cut into areas; `coverage_pct` says how
@@ -11,8 +11,6 @@
 //! orbits, one body of land, a hill with a way off it, no enemy hill in view at turn zero, a clearing
 //! of at least two squares — are checked in `check()` and `measure`, and refuse the recipe or the
 //! board rather than bending.
-
-use std::path::Path;
 
 use serde::Deserialize;
 
@@ -33,7 +31,7 @@ pub const VIEW_RADIUS2: i64 = tb_ants::VIEW_RADIUS2 as i64;
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    pub preset: PresetSpec,
+    pub set: SetSpec,
     pub board: BoardSpec,
     pub areas: AreaSpec,
     #[serde(default)]
@@ -49,11 +47,11 @@ pub struct Recipe {
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct PresetSpec {
-    /// The preset the boards pool into, and the prefix of every board's id.
+pub struct SetSpec {
+    /// The set's name, and the prefix of every board's id.
     pub name: String,
     pub seats: u8,
-    /// How many boards the preset is played on.
+    /// How many boards the set draws.
     pub count: u32,
     /// The set's seed: board `i` is drawn from `mix(seed, i + 1)`.
     pub seed: u64,
@@ -268,11 +266,6 @@ fn attempts() -> u32 {
 }
 
 impl Recipe {
-    pub fn load(path: &Path) -> Result<Recipe, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Recipe::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
-    }
-
     pub fn parse(text: &str) -> Result<Recipe, String> {
         let r: Recipe = toml::from_str(text).map_err(|e| e.to_string())?;
         r.check()?;
@@ -284,26 +277,23 @@ impl Recipe {
     }
 
     pub fn seats(&self) -> usize {
-        self.preset.seats as usize
+        self.set.seats as usize
     }
 
     /// Everything that makes a recipe impossible rather than unlucky, refused before a board is drawn.
     pub fn check(&self) -> Result<(), String> {
         let bad = |m: String| Err(m);
-        let p = &self.preset;
+        let p = &self.set;
         if p.name.is_empty()
             || !p.name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         {
-            return bad(format!(
-                "preset '{}': a name is lowercase letters, digits and '-'",
-                p.name
-            ));
+            return bad(format!("set '{}': a name is lowercase letters, digits and '-'", p.name));
         }
         if !(2..=MAX_SEATS).contains(&p.seats) {
             return bad(format!("{} seats: a board seats 2 to {MAX_SEATS}", p.seats));
         }
         if !(1..=100).contains(&p.count) {
-            return bad(format!("count {}: a preset has 1 to 100 boards", p.count));
+            return bad(format!("count {}: a set has 1 to 100 boards", p.count));
         }
         let t = self.torus();
         if t.rows < 8 || t.cols < 8 {

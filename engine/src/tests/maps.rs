@@ -1,4 +1,4 @@
-//! Boards as files: the committed catalogue, validation, and how a board is chosen.
+//! Boards as files: the basic boards, validation, and how a caller hands one over.
 
 use super::*;
 use crate::maps::MapFile;
@@ -28,7 +28,6 @@ fn hand(
     }
     MapFile {
         id: "hand".to_string(),
-        preset: "hand".to_string(),
         rows: size.0,
         cols: size.1,
         players,
@@ -47,17 +46,11 @@ fn refusal(mf: &MapFile) -> String {
         .to_string()
 }
 
-fn pool_board(preset: &str) -> MapFile {
-    crate::maps::pool(preset)[0].clone()
-}
-
 #[test]
-fn every_committed_map_is_valid_and_symmetric() {
-    // What the generator's construction guarantees, asserted over every board that ships.
-    let cat = crate::maps::catalogue();
-    assert_eq!(cat.len(), crate::maps::MAPS.len(), "a committed map failed to parse");
-    assert!(!cat.is_empty(), "the catalogue is empty");
-    for mf in &cat {
+fn every_basic_board_is_valid_and_symmetric() {
+    // What the generator's construction guarantees, asserted over every board this repository ships.
+    let all = boards::all();
+    for mf in &all {
         mf.validate().unwrap_or_else(|e| panic!("map {}: {} {}", mf.id, e.code, e.message));
         let m = mf.build(1, 1000).unwrap();
         let g = m.g;
@@ -75,30 +68,25 @@ fn every_committed_map_is_valid_and_symmetric() {
 }
 
 #[test]
-fn every_preset_is_played_at_one_seat_count() {
-    // Pairing reads one seat count a preset, from the manifest this list becomes. A pool that mixed
-    // two would seat a match its board then refuses.
-    let presets = crate::maps::presets();
-    assert!(!presets.is_empty());
-    for p in &presets {
-        let pool = crate::maps::pool(&p.name);
-        assert!(!pool.is_empty(), "preset {} is played on no board", p.name);
-        for mf in pool {
-            assert_eq!(mf.players, p.players, "{} is not played at {}'s seat count", mf.id, p.name);
-        }
-    }
+fn the_basic_boards_reach_from_two_seats_to_eight() {
+    // They are the envelope (N28): `tools/package.py` derives `limits.boards` from them, the
+    // reference set is drawn on them, and every season upload must fit inside what they span. A set
+    // that stopped at six seats would quietly refuse every eight-seat board a season designed.
+    let seats: Vec<u8> = boards::all().iter().map(|m| m.players).collect();
+    assert_eq!(seats.iter().min(), Some(&2), "{seats:?}");
+    assert_eq!(seats.iter().max(), Some(&8), "{seats:?}");
 }
 
 #[test]
 fn a_map_survives_the_round_trip_to_a_file_and_back() {
     // What a replay rests on: the board `finish` writes into the envelope, read back, is the same
     // board -- its shift included.
-    for mf in crate::maps::catalogue() {
+    for mf in boards::all() {
         let back = MapFile::from_json(&mf.to_json()).unwrap();
         assert_eq!(back, mf, "{} did not survive the round trip", mf.id);
 
         let m = mf.build(0xBEEF, 1000).unwrap();
-        let from = MapFile::from_match(&m, &mf.id, &mf.preset);
+        let from = MapFile::from_match(&m, &mf.id);
         assert_eq!(from.symmetry, mf.symmetry, "{}: shift", mf.id);
         assert_eq!(from.water, mf.water, "{}: terrain", mf.id);
         assert_eq!(from.hills, mf.hills, "{}: hills", mf.id);
@@ -112,12 +100,11 @@ fn a_map_survives_the_round_trip_to_a_file_and_back() {
 }
 
 #[test]
-fn the_seed_chooses_the_board_and_the_caller_may_pin_it() {
-    // The platform passes no map: pairing assigns the seed and the seed assigns the board, so a
-    // competitor cannot train against a board they picked. A local caller may pin one.
-    let pool = crate::maps::pool("cave-2");
-    assert!(pool.len() > 1, "a pool of one cannot demonstrate selection");
-
+fn the_caller_hands_over_the_board_and_the_engine_carries_none() {
+    // N28: the component has no catalogue, so a board is never named -- it is sent, whole. On the
+    // ladder pair chooses it and the claim carries it; a competitor still cannot pick their own.
+    let duel = boards::json(boards::DUEL);
+    let other = boards::board("basic-small-3p");
     let ids = |input: serde_json::Value| -> Vec<String> {
         invoke("tb.ants.worldgen", input).unwrap()["map_ids"]
             .as_array()
@@ -127,45 +114,34 @@ fn the_seed_chooses_the_board_and_the_caller_may_pin_it() {
             .collect()
     };
 
-    // Deterministic, and a function of the seed alone.
-    let a = ids(json!({"seeds": [7, 8], "preset": "cave-2"}));
-    let b = ids(json!({"seeds": [7, 8], "preset": "cave-2"}));
-    assert_eq!(a, b, "the same seeds must choose the same boards");
-    assert_eq!(a[0], pool[(7 % pool.len() as u64) as usize].id);
-    assert_eq!(a[1], pool[(8 % pool.len() as u64) as usize].id);
+    // One board for the wave, and the same seeds are the same matches.
+    let a = invoke("tb.ants.worldgen", json!({"seeds": [7, 8], "map": duel})).unwrap();
+    let b = invoke("tb.ants.worldgen", json!({"seeds": [7, 8], "map": duel})).unwrap();
+    assert_eq!(a["wave_state"], b["wave_state"], "the same board and seeds are the same wave");
+    assert_eq!(ids(json!({"seeds": [7, 8], "map": duel})), vec![boards::DUEL, boards::DUEL]);
 
-    // Pinned by id, for every seed in the wave.
-    let pinned = ids(json!({"seeds": [7, 8], "preset": "cave-2", "map": pool[0].id}));
-    assert_eq!(pinned, vec![pool[0].id.clone(), pool[0].id.clone()]);
+    // One per seed, positionally, and a null there falls back to `map`.
+    let each = ids(json!({"seeds": [7, 8], "map": duel, "maps": [other.to_json(), null]}));
+    assert_eq!(each, vec![other.id.clone(), boards::DUEL.to_string()]);
 
-    // Pinned per seed, positionally -- what `match.json` writes.
-    let each = ids(json!({"seeds": [7, 8], "preset": "cave-2",
-                          "maps": [pool[1].id, pool[0].id]}));
-    assert_eq!(each, vec![pool[1].id.clone(), pool[0].id.clone()]);
-
-    // And an inline board, which is how a competitor plays one the catalogue has never seen.
-    let mut mine = pool[0].clone();
+    // A board nobody has ever shipped plays exactly as a basic one does.
+    let mut mine = boards::board(boards::DUEL);
     mine.id = "hand-authored".to_string();
-    let inline = ids(json!({"seeds": [7], "preset": "cave-2", "map": mine.to_json()}));
-    assert_eq!(inline, vec!["hand-authored".to_string()]);
-}
+    assert_eq!(ids(json!({"seeds": [7], "map": mine.to_json()})), vec!["hand-authored"]);
 
-#[test]
-fn a_preset_matters_only_when_the_seed_chooses_the_board() {
-    // A preset names a pool. A board named outright is played whatever the call calls it -- which
-    // is how a lesson board, or a family nobody has catalogued yet, is played at all.
-    let board = pool_board("open-2");
-    let ok =
-        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "nope", "map": board.to_json()}));
-    assert!(ok.is_ok(), "an inline board needs no pool: {:?}", ok.err());
-    let no_pool = invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "nope"}));
-    assert_eq!(no_pool.unwrap_err().code, "NO_SUCH_PRESET");
+    // No board, and a board by name, are refusals -- never a board chosen for the caller.
+    let no = invoke("tb.ants.worldgen", json!({"seeds": [1]})).unwrap_err();
+    assert_eq!(no.code, "NO_MAP");
+    let named = invoke("tb.ants.worldgen", json!({"seeds": [1], "map": "basic-tiny-2p"}));
+    assert_eq!(named.unwrap_err().code, "MAP_BAD_SHAPE");
+    let short = invoke("tb.ants.worldgen", json!({"seeds": [1, 2], "maps": [duel]}));
+    assert_eq!(short.unwrap_err().code, "NO_MAP", "a seed with no board of its own and no `map`");
 }
 
 #[test]
 fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     // Each of these is the first thing someone hand-authoring a board will do.
-    let base = pool_board("open-2");
+    let base = boards::board(boards::DUEL);
 
     // One cell of water that has no counterpart.
     let mut asym = base.clone();
@@ -213,12 +189,11 @@ fn a_map_that_is_not_symmetric_is_refused_rather_than_played() {
     drowned.food.clear();
     assert_eq!(refusal(&drowned), "MAP_UNPLAYABLE");
 
-    // And an unknown board is a refusal, not a silently substituted one.
+    // And a board by name is a refusal, not a silently substituted one: there is nothing to look
+    // a name up in.
     assert_eq!(
-        invoke("tb.ants.worldgen", json!({"seeds": [1], "preset": "open-2", "map": "no-such-map"}))
-            .unwrap_err()
-            .code,
-        "NO_SUCH_MAP"
+        invoke("tb.ants.worldgen", json!({"seeds": [1], "map": "no-such-map"})).unwrap_err().code,
+        "MAP_BAD_SHAPE"
     );
 }
 

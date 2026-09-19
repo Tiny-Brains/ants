@@ -23,18 +23,20 @@ pub struct Made {
 }
 
 pub fn id(r: &Recipe, index: usize) -> String {
-    format!("{}-{index:02}", r.preset.name)
+    format!("{}-{index:02}", r.set.name)
 }
 
+/// Every board of a recipe's set: what the area generator's own tests and `sweep` draw on.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn make_set(r: &Recipe) -> Result<Vec<Made>, String> {
-    (0..r.preset.count as usize).map(|i| make_one(r, i)).collect()
+    (0..r.set.count as usize).map(|i| make_one(r, i)).collect()
 }
 
 pub fn make_one(r: &Recipe, index: usize) -> Result<Made, String> {
     let t = r.torus();
     let all = shifts(&r.board.shifts, &t, r.seats())?;
     let shift = all[index % all.len()];
-    let seed = mix(r.preset.seed, index as u64 + 1);
+    let seed = mix(r.set.seed, index as u64 + 1);
     let id = id(r, index);
     let mut refused: BTreeMap<String, u32> = BTreeMap::new();
 
@@ -103,7 +105,6 @@ fn to_json(b: &Board, id: &str, r: &Recipe, seed: u64, attempt: u32, m: &Metrics
     };
     json!({
         "id": id,
-        "preset": r.preset.name,
         "rows": b.t.rows,
         "cols": b.t.cols,
         "players": b.s.seats,
@@ -112,7 +113,7 @@ fn to_json(b: &Board, id: &str, r: &Recipe, seed: u64, attempt: u32, m: &Metrics
         "hills": b.hills.iter().map(rc).collect::<Vec<_>>(),
         "food": b.food.iter().map(rc).collect::<Vec<_>>(),
         "food_target": b.food.len(),
-        "generator": { "recipe": r.preset.name, "seed": seed, "attempt": attempt, "metrics": m },
+        "generator": { "recipe": r.set.name, "seed": seed, "attempt": attempt, "metrics": m },
     })
 }
 

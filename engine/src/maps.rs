@@ -1,4 +1,4 @@
-//! The boards: the map file, its validation, the catalogue that ships, and the presets that pool it.
+//! The board: the map file, and its validation.
 //!
 //! A map fixes the **board** — its size, its shift, its water, its hills, and the food on it at
 //! turn zero. It does not fix the match: the hidden food rate and every respawn after turn zero are
@@ -9,6 +9,12 @@
 //! symmetric by construction. A file cannot make that promise — someone will hand-author one — so
 //! the guarantee lives here, in `validate`, which every map passes through before it is played. Its
 //! refusals are `caller_input`: the same map can never succeed, so nothing retries it.
+//!
+//! **The component carries no boards** (decision N28). A board reaches `worldgen` whole, from
+//! whoever holds it -- a season's maps on the platform, a registry's basic boards on a laptop, a
+//! test's fixture -- and is validated here every time, whoever sent it. There is no catalogue to
+//! name one from and no preset to pool them, so a board is never an engine-digest change: a season
+//! can gain a map while it is live, on the engine it opened with.
 
 use serde_json::{Value, json};
 
@@ -23,7 +29,6 @@ use crate::state::Match;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapFile {
     pub id: String,
-    pub preset: String,
     pub rows: u8,
     pub cols: u8,
     pub players: u8,
@@ -120,7 +125,6 @@ impl MapFile {
         };
         let m = MapFile {
             id: v.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
-            preset: v.get("preset").and_then(Value::as_str).unwrap_or("").to_string(),
             rows,
             cols,
             players,
@@ -142,7 +146,6 @@ impl MapFile {
         let (dr, dc) = self.symmetry;
         json!({
             "id": self.id,
-            "preset": self.preset,
             "rows": self.rows,
             "cols": self.cols,
             "players": self.players,
@@ -342,11 +345,10 @@ impl MapFile {
     /// This is how `finish` hands the board to the replay envelope. It takes the food from `food0`,
     /// because by then the board's food has been eaten and respawned many times over and the
     /// current set is the position rather than the board.
-    pub fn from_match(m: &Match, id: &str, preset: &str) -> MapFile {
+    pub fn from_match(m: &Match, id: &str) -> MapFile {
         let rc = |p: u16| m.g.rc(p);
         MapFile {
             id: id.to_string(),
-            preset: preset.to_string(),
             rows: m.g.rows as u8,
             cols: m.g.cols as u8,
             players: m.players,
@@ -377,90 +379,27 @@ fn unreachable_land(g: &Geom, water: &Bits, from: u16) -> Option<(i32, i32)> {
     (0..g.cells()).find(|&i| !water.get(i) && !seen.get(i)).map(|i| g.rc(i as u16))
 }
 
-// ---------------------------------------------------------------- the presets
+// ---------------------------------------------------------------- the board a caller sent
 
-/// A preset names a pool of boards and how many seats play them.
+/// Resolve what a caller passed for one match: a whole board, and nothing else.
 ///
-/// **Derived from the catalogue, never authored.** A preset exists because boards declare it, so a
-/// preset played on no board, or a board naming a preset nobody lists, cannot be written down.
-/// Seats are a property of the map, not of the game (decision 14), and pairing reads one seat count
-/// per preset: every board in a pool must agree, which `tools/package.py` and the tests check.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Preset {
-    pub name: String,
-    pub players: u8,
-}
-
-/// Every preset, in the order its first board appears in the catalogue.
-pub fn presets() -> Vec<Preset> {
-    let mut out: Vec<Preset> = Vec::new();
-    for m in catalogue() {
-        if !out.iter().any(|p| p.name == m.preset) {
-            out.push(Preset { name: m.preset, players: m.players });
-        }
-    }
-    out
-}
-
-// ---------------------------------------------------------------- the catalogue
-
-/// Every committed board, as `(id, file)`, compiled in by `build.rs`: a cartridge imports nothing,
-/// so a board cannot be read from a file at run time.
-pub(crate) const MAPS: &[(&str, &str)] = &include!(concat!(env!("OUT_DIR"), "/maps.rs"));
-
-/// Every committed board, parsed.
-///
-/// Parsed on demand rather than once: an invocation runs in a fresh instance and nothing is cached
-/// across calls, so a lazy table would buy nothing and would be the kind of state the sandbox
-/// exists to make impossible.
-pub fn catalogue() -> Vec<MapFile> {
-    MAPS.iter()
-        .filter_map(|(_, src)| serde_json::from_str::<Value>(src).ok())
-        .filter_map(|v| MapFile::from_json(&v).ok())
-        .collect()
-}
-
-/// The boards a preset is played on, in catalogue order.
-pub fn pool(preset: &str) -> Vec<MapFile> {
-    catalogue().into_iter().filter(|m| m.preset == preset).collect()
-}
-
-/// One board by id, whatever preset it belongs to.
-pub fn by_id(id: &str) -> Option<MapFile> {
-    catalogue().into_iter().find(|m| m.id == id)
-}
-
-/// The board a match is played on, chosen by its seed.
-///
-/// The seed chooses, not the caller: a competitor who could name the board could train against it,
-/// and a seed is assigned by pairing.
-pub fn for_seed(preset: &str, seed: u64) -> Option<MapFile> {
-    let p = pool(preset);
-    if p.is_empty() {
-        return None;
-    }
-    Some(p[(seed % p.len() as u64) as usize].clone())
-}
-
-/// Resolve what a caller passed for one match: a map id, a whole map object, or nothing.
-///
-/// Nothing is the platform's case — Kalam passes seeds and a preset and lets the seed choose. The
-/// other two are the local case, and the reason a match file can pin a board. **Only the first
-/// needs the preset to be a pool**: a board named outright is played whatever label the call
-/// carries, which is how a lesson board or a freshly generated family is played before any
-/// catalogue lists it.
-pub fn resolve(spec: Option<&Value>, preset: &str, seed: u64) -> Result<MapFile, MapError> {
+/// An id used to be looked up in a compiled-in catalogue, and nothing at all meant "the seed picks
+/// from the preset's pool". Both are gone with the catalogue (N28), and both are refused by name
+/// rather than read as something else: an id that silently found no board would be a match nobody
+/// asked for.
+pub fn resolve(spec: Option<&Value>) -> Result<MapFile, MapError> {
     match spec {
-        None | Some(Value::Null) => for_seed(preset, seed).ok_or_else(|| {
-            err(
-                "NO_SUCH_PRESET",
-                format!("no preset '{preset}': no board in the catalogue is played at it"),
-            )
-        }),
-        Some(Value::String(id)) => {
-            by_id(id).ok_or_else(|| err("NO_SUCH_MAP", format!("no map '{id}' in the catalogue")))
+        None | Some(Value::Null) => {
+            Err(err("NO_MAP", "a match needs a board: pass `map`, or `maps` with one per seed"))
         }
+        Some(Value::String(id)) => Err(err(
+            "MAP_BAD_SHAPE",
+            format!(
+                "'{id}' names a board, and this component carries none to look it up in: \
+                 pass the board itself"
+            ),
+        )),
         Some(v @ Value::Object(_)) => MapFile::from_json(v),
-        Some(_) => Err(err("MAP_BAD_SHAPE", "a map must be an id, an object, or absent")),
+        Some(_) => Err(err("MAP_BAD_SHAPE", "a map must be a board object")),
     }
 }

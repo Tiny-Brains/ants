@@ -10,8 +10,10 @@ trained entries for the game beside the rules they encode.
 **It owns**
 
 - The rules: turn resolution, visibility, end conditions, ranks and scores.
-- The boards: the catalogue under `maps/`, its validation and player symmetry, and the generator that
-  writes it from one recipe a preset ([`mapgen/`](mapgen/recipes)).
+- The boards: their validation and player symmetry, the five basic boards under `maps/` that define
+  what a season's board may be (`limits.boards`), and the generator that renders a board from its
+  design ([`mapgen/`](mapgen/recipes)) and proposes the designs. **A season's boards are not here**
+  (N28): they are made with the same generator, uploaded to the season, and committed nowhere.
 - The packed game state, and replay reconstruction from recorded actions.
 - The plugin ABI (`engine/plugin.toml`) and the generated registration manifest (`cartridge.json`).
 - The replay viewer (`viz/`), which re-simulates through the component.
@@ -45,7 +47,7 @@ trained entries for the game beside the rules they encode.
 |---|---|---|---|
 | called by | Kalam | Orion plugin ABI | Worlds, observations, actions and results |
 | fetched by | Kalam, web, the book | the latest release, when their images build | The component and its manifests; the viewer |
-| fetched by | Soma | the latest release, when its image builds | `cartridge.json`, `reference/observations.json` and the engine digest: presets, seat counts, limits, the adapter budget, and the payloads an adapter is validated against |
+| fetched by | Soma | the latest release, when its image builds | the component -- its map upload runs `worldgen` on every board (N28) -- `cartridge.json` (limits, `limits.boards`, the adapter budget), `reference/observations.json` and the engine digest |
 | read by | web, the book, `tinybrains view` | `viz/` | The viewer bundle and the digest it was transpiled from |
 | read by | `tinybrains` | a registry `release` or `path` | The component, the manifest, `maps/`, `reference/` and `viz/` |
 
@@ -56,7 +58,7 @@ The component is `tb-ants.wasm`, plugin id `tb.ants`, ABI `orion:plugin@1.0.0`.
 
 | Export | Input | Result |
 |---|---|---|
-| `tb.ants.worldgen` | Seeds and a preset; optionally `players`, `max_turns`, and a board by id or inline (`map`, or `maps` per seed) | The initial packed `wave_state` |
+| `tb.ants.worldgen` | Seeds and the board, whole: `map`, or `maps` one per seed; optionally `players` and `max_turns`. The component carries no boards (N28) | The initial packed `wave_state` |
 | `tb.ants.observe` | `wave_state`, and opaque per-seat `refs` | A view per live seat, its ref echoed |
 | `tb.ants.step` | `wave_state` and actions | The next `wave_state`, `done`, `ended` and the replay delta |
 | `tb.ants.finish` | `wave_state` | Ranks, scores, the ending reason, and the board each ended match was played on |
@@ -76,8 +78,8 @@ competitor guide: *What your model sees*, *What your model answers*, and *Adding
 |---|---|---|
 | `tb-ants.wasm` | The component; its sha256 is the **engine digest** | `cargo build` + `wasm-tools component new` |
 | `plugin.toml`, `plugin.json` | The ABI, authored and as JSON | `engine/plugin.toml`; `tools/package.py` |
-| `cartridge.json` | Presets, limits, the adapter budget, the board catalogue, `about` | `engine/src/bin/manifest.rs`; `tools/package.py` adds `maps` and `engine/about.json` |
-| `maps/` | The boards, as committed | copied from `maps/` |
+| `cartridge.json` | Limits -- `limits.boards`, the envelope a season's board must fit -- the adapter budget, the basic boards' catalogue, `about` | `engine/src/bin/manifest.rs`; `tools/package.py` adds `maps`, `limits.boards` and `engine/about.json` |
+| `maps/` | The five basic boards, as committed | copied from `maps/` |
 | `reference/observations.json` | The observations admission validates an adapter against | `engine/src/bin/reference.rs` |
 | `viz/` | The viewer bundle and `engine.json`, the digest it carries | `viz/build.sh` |
 
@@ -99,19 +101,23 @@ cargo test                              # just the host suite
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
 
 cd mapgen                               # the board factory, a crate of its own
-cargo run -- generate                   # every recipe under recipes/, into ../maps/
-cargo run -- generate recipes/maze-2.toml
+cargo run -- generate                   # every recipe under recipes/, into ../maps/ -- and only those
+cargo run -- generate recipes/basic-tiny-2p.toml
 cargo run -- check                      # every board is what its recipe makes, byte for byte
 cargo run --release -- check --play 6   # ...and play each, the same walker in every seat
-cargo run -- show ../maps/maze-2-00.json
-MAPGEN_DEBUG=1 cargo run -- generate    # say why each refused attempt was refused
+cargo run -- show ../maps/basic-tiny-2p.json
+cargo run --release -- explore --slots slots.toml --out run --n 500   # hundreds of designs a slot
+cargo run --release -- playtest run picks.txt                         # play the ones you like
+cargo run -- adopt run picks.txt                                      # write them down as recipes
 ```
 
-**A board is a recipe and a seed.** `mapgen/recipes/<preset>.toml` describes a preset's boards in
-area knobs — area size, coverage, closure, wall thickness, loops, fill, hills, food — plus windows the
-finished board must fall in; `generate` draws each board until it passes, and records its seed and
-measurements in the file. Edit a recipe and regenerate; never edit a board. `build.sh` runs
-`mapgen`'s tests, which regenerate every committed board and compare bytes.
+**A board is a design.** `mapgen/recipes/<name>.toml` is one board written out as data — its size,
+its seat shift, a decorative point group about every seat's centre, every shape drawn on it (disks,
+rings, segments, boxes) and every pattern (noise, ridges, mazes, rooms) with its seed — and
+`generate` renders it. `explore` proposes designs by the hundred for a slot of the season, a person
+picks by eye, and `adopt` writes the picks down, so a board somebody chose stays that board whatever
+later happens to the sampler (N27). Edit a recipe and regenerate; never edit a board. `build.sh` runs
+`mapgen`'s tests, which re-render every committed board and compare bytes.
 
 `build.sh` runs the determinism check and the tests before it compiles anything, and ends by
 printing the engine digest. **The digest is reproducible, on one host.** `rust-toolchain.toml` pins
@@ -175,7 +181,7 @@ pin, and the workflow that releases it.
 engine/                    the cartridge: a Rust crate compiled to the wasm component
   src/lib.rs               plugin dispatch: the five exports and their JSON shapes, no rules
   src/grid.rs              wrapping, distances, symmetry, directions, bitmaps, the seeded RNG
-  src/maps.rs              the board as a file: parsing, validation, the catalogue, presets derived from it
+  src/maps.rs              the board as a file: parsing, validation, and what a caller sent
   src/state.rs             one match while it is played
   src/turn.rs              a turn in its fixed order, the cutoff counter, the end conditions, ranks
   src/food.rs              food at the hidden rate, in shuffled symmetric sets
@@ -189,16 +195,20 @@ engine/                    the cartridge: a Rust crate compiled to the wasm comp
   plugin.toml              the authored Orion ABI
   about.json               the game's introduction, folded into cartridge.json
 mapgen/                    the board factory: its own crate, so tuning it moves no engine digest
-  recipes/                 one TOML file a preset: the knobs, and the windows a board must fall in
-  src/make.rs              one board: areas, homes, coverage, walls, doors, hills, fill, food
+  recipes/                 one design a board: <size>-<terrain>-<N>p-<H>h.toml
+  src/design.rs            the renderer: a design's steps under the full group, hills, repair, food
+  src/sym.rs               the seat shift, the point group about each centre, orbits, the lattice
+  src/sample.rs            the sampler: a slot and a seed in, a design out -- taste, not contract
+  src/explore.rs           explore and playtest: many designs a slot, rendered, validated, scored
+  src/make.rs              the area generator `sweep` draws on: areas, walls, doors, hills, fill
   src/measure.rs           a board in numbers, and the rules every board obeys, checked on the board
-  src/set.rs               a recipe's whole set, the file format, and the engine's own validation
+  src/set.rs               the area generator's sets, the file format, and the engine's validation
   src/play.rs              the seat-bias smoke check: one walker in every seat
 viz/                       the replay viewer: one bundle for the web app, the book and the CLI
 baselines/                 the trained entries, and how they were trained (not in a release)
-maps/                      the boards, one JSON file each
+maps/                      the five basic boards, one JSON file each -- never a season's
 tools/deny.sh              the determinism check
-tools/package.py           finishes dist/: plugin.json, the catalogue, the boards, the report
+tools/package.py           finishes dist/: plugin.json, the catalogue and limits.boards, the boards, the report
 tools/pack.py              dist/ as a release's one archive, packed deterministically, and its digests
 build.sh                   the gate, then every artifact, into dist/
 rust-toolchain.toml        the exact rustc, which is part of the engine digest
@@ -210,25 +220,29 @@ dist/                      build output, gitignored; exactly what a release arch
 
 - **Game logic uses integer arithmetic.** `tools/deny.sh` refuses floating point in `engine/src/`, and the
   replay tests check reconstruction. It is what lets a replay be an action stream.
-- **Seeds and actions determine the match.** No ambient randomness, no clock. The seed chooses the
-  board from the preset's pool when the caller names none, so a competitor cannot train against a
-  board they picked.
+- **Seeds and actions determine the match**, on the board the caller sends. No ambient randomness,
+  no clock. On the ladder pair chooses the board and the seed, so a competitor cannot train against
+  a board they picked.
 - **Exploring is remembered.** A model is a pure function of one observation, so the engine folds
   each seat's vision into what it knows every turn, and a view carries known water.
 - **A view is observer-relative.** Relabel every seat and ask the same player again, and the bytes
   are identical; `a_view_is_observer_relative` checks the engine rather than a stand-in.
-- **Every committed board is fair and whole.** A file cannot be symmetric by construction, so
+- **Every board is fair and whole, whoever sends it.** A file cannot be symmetric by construction, so
   `engine/src/maps.rs` asserts that it is congruent under its own shift, that all its land is one
-  walkable body and that every hill has a way off, and the corpus test checks every board that
-  ships. `mapgen` holds the boards to more — clearings, no enemy hill in view — and proves each is
-  what its recipe makes.
+  walkable body and that every hill has a way off -- on every board `worldgen` is given, including a
+  season's at upload -- and the corpus test checks every basic board. `mapgen` holds the boards to more — clearings, no enemy hill in view, a seat's hills spread
+  apart — and proves each is what its recipe makes.
 - **A replay carries the board it was played on**, and the decode test runs against an envelope the
   platform actually wrote.
 - **The viewer re-simulates with the cartridge, never a copy of it.** A JavaScript
   re-implementation of a rule would be a second engine.
 - **Nothing generated is committed, and everything generated is in `dist/`.** The registration
-  manifest is generated from the boards — a preset exists because boards declare it — so it cannot
-  disagree with them.
+  manifest's catalogue and `limits.boards` are generated from the basic boards, so they cannot
+  disagree with them, and the reference set is drawn on the same boards, so the envelope an upload
+  must fit is the one admission proved adapters against.
+- **No season's board is committed or released** (N28). Season boards live outside every repository
+  until their season closes, reach the platform by an admin's upload, and are pushed to a backup
+  repository only then.
 - **The protocol is published, and moves with the engine.** A change to what a view carries is a
   change to the competitor guide and to `baselines/planes.py` in the same batch.
 - **The rules are the 2011 contest's rules.** Where the published specification and the contest
@@ -390,6 +404,27 @@ on an arm64 Mac, and `sha256:04b8b8b6…` natively on the Mac, where only the co
 viewer transpiled from it differ. So the workflow runs on `ubuntu-24.04-arm`. **Kalam, web and the
 book fetch the latest release when they build** (`ANTS_RELEASE` pins one), so publishing is
 deploying. No source changed and the digest did not move.
+
+**19 September 2026 — boards are designs (N27), and the component carries none (N28).** A board is
+a **design** (`mapgen/src/design.rs`) drawn under the seat shift and a decorative point group about
+every seat's centre, from families of motifs put where the lattice puts them -- keeps, rings and
+plazas round every hill, rivers along the borders, lakes and outposts where territories meet,
+symmetric caves, braided and ring mazes, room grids -- proposed by `mapgen explore`, picked by eye and
+written down by `mapgen adopt`; **a seat's hills are spread**, each in its own part of the territory.
+Then **N28**: `build.rs`, the catalogue and presets are gone, and `worldgen` requires the board whole,
+because a season's boards are uploaded to it -- judged by this engine's `worldgen` on Soma's node --
+rather than compiled in. This repository keeps **five basic boards**, drawn the same way, one a size
+class: `basic-tiny-2p` 24 × 24, `basic-small-3p` 36 × 36, `basic-medium-4p` 48 × 64, `basic-large-6p`
+80 × 96, `basic-xlarge-8p` 120 × 124. They define `limits.boards` (2-8 seats, sides 24-124, at most
+14,880 cells), which `tools/package.py` derives and Soma checks every upload against, and the
+reference set is drawn on them: five boards, three seeds, turns 20, 150 and 400, 207 views.
+**Proved to change no rule**: all 32 of season 1's boards, from outside the repository, played under a
+random and a greedy policy on two seeds to the end, hashed every `worldgen`, `observe`, `step` and
+`finish` output identically through the old engine by preset and the new one by board -- 128 matches.
+Engine tests 88, mapgen 7 (its area recipes' `[preset]` table is `[set]`), `build.sh` green. **A new
+engine digest, and not yet released**: this Mac builds `sha256:21a694b8…`, which the local stack
+plays; a release from the workflow carries another, and needs a CLI released first (the new CLI
+passes boards whole and plays old and new engines alike; the released 0.1.1 sends presets).
 
 ## More
 

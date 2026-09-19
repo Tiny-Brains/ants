@@ -60,8 +60,8 @@ pub struct Match {
     /// `food_rate * players / food_turn` per turn. `food_rate == 0` turns spawning off entirely,
     /// which is the reference's `do_food_none` and what the rule tests use.
     ///
-    /// Carried in the state rather than recomputed from the preset table, for the same reason the
-    /// board is: a replay must re-simulate a match whose preset has since been re-tuned.
+    /// Carried in the state rather than recomputed from a table, for the same reason the board is:
+    /// a replay must re-simulate a match whatever has since been re-tuned.
     pub food_rate: u16,
     pub food_turn: u16,
     /// The numerator of the accrued-but-unspawned food, over `food_turn`. The reference keeps an

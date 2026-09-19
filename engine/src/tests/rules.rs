@@ -220,28 +220,28 @@ fn a_razed_hill_is_charged_once_and_never_spawns_again() {
 
 #[test]
 fn each_player_starts_with_one_point_per_hill() {
-    // `ants.py:152`: "points start at # of hills to prevent negative scores". Every preset, because
-    // the catalogue runs from one hill a seat to four and the rule must hold at each.
+    // `ants.py:152`: "points start at # of hills to prevent negative scores". Every basic board,
+    // because they run from one hill a seat to two and the rule must hold at each.
     let mut per_seat_seen = std::collections::BTreeSet::new();
-    for p in crate::maps::presets() {
-        let m = crate::maps::pool(&p.name)[0].build(7, 1000).unwrap();
+    for mf in boards::all() {
+        let m = mf.build(7, 1000).unwrap();
         let per_seat = m.hills.len() as i16 / m.players as i16;
         per_seat_seen.insert(per_seat);
         assert_eq!(
             m.score,
             vec![per_seat; m.players as usize],
             "{}: one point per hill owned",
-            p.name
+            mf.id
         );
         for h in &m.hills {
             assert!(
                 m.ants.iter().any(|a| a.pos == h.pos && a.owner == h.owner),
                 "{}: an ant on every hill",
-                p.name
+                mf.id
             );
         }
     }
-    assert!(per_seat_seen.len() > 1, "the catalogue should exercise more than one hill count");
+    assert!(per_seat_seen.len() > 1, "the basic boards should exercise more than one hill count");
 }
 
 #[test]

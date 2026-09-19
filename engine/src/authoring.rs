@@ -22,9 +22,12 @@ use crate::{MAX_TURNS, turn};
 /// `observe` returns nothing for a finished match and a greedy field ends one, so the last live
 /// state is kept: asking for turn 250 of a match that ended on turn 190 gives the observations from
 /// turn 189 rather than an empty file.
-pub fn reference_observations(preset_name: &str, seed: u64, until_turn: u16) -> Option<Value> {
-    let mf = maps::for_seed(preset_name, seed)?;
-    let mut m = mf.build(seed, MAX_TURNS).ok()?;
+///
+/// The board is the caller's, whole: the component carries none (N28), so `src/bin/reference.rs`
+/// reads the basic boards off disk and hands each one here.
+pub fn reference_observations(board: &Value, seed: u64, until_turn: u16) -> Result<Value, String> {
+    let mf = maps::MapFile::from_json(board).map_err(|e| format!("{} {}", e.code, e.message))?;
+    let mut m = mf.build(seed, MAX_TURNS).map_err(|e| format!("{} {}", e.code, e.message))?;
 
     let mut last_live = m.clone();
     let mut rng = Rng(seed ^ 0x5EED_0B5E_2A17_C0DE);
@@ -38,12 +41,12 @@ pub fn reference_observations(preset_name: &str, seed: u64, until_turn: u16) -> 
     let m = if m.done { last_live } else { m };
     let reached = m.turn;
     let w = Wave { matches: vec![m] };
-    let views = crate::f_observe(&json!({ "wave_state": pack(&w) })).ok()?;
-    Some(json!({
+    let views =
+        crate::f_observe(&json!({ "wave_state": pack(&w) })).map_err(|f| f.message.to_string())?;
+    Ok(json!({
         "generated_from": {
-            "preset": preset_name, "seed": seed,
+            "map": mf.id, "seed": seed,
             "asked_for_turn": until_turn, "turn": reached,
-            "map": mf.id,
         },
         "observations": views.get("views")
             .and_then(Value::as_array)

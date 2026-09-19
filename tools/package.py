@@ -8,16 +8,22 @@ carries -- a checkout and a downloaded release are read the same way.
   plugin.toml     copied. It is the authored ABI, and what `orion-server compile` reads.
   plugin.json     plugin.toml as JSON: the loader runs in an image with jq and no TOML parser.
 
-  cartridge.json  gains `maps` and `about`.
-                  `maps` is metadata and a digest per board, not the boards: the document is read
-                  once at registration and stored on the game row, so it carries what a caller needs
-                  to CHOOSE and CHECK a board while the boards travel as files. The digest is over
-                  the file exactly as committed, so a competitor with a stale export is told so.
+  cartridge.json  gains `maps`, `limits.boards` and `about`.
+                  `maps` is metadata and a digest per basic board, not the boards: the document is
+                  read once at registration and stored on the game row, so it carries what a caller
+                  needs to CHOOSE and CHECK a board while the boards travel as files. The digest is
+                  over the file exactly as committed, so a competitor with a stale export is told so.
+                  `limits.boards` is THE ENVELOPE (N28): the seat counts, sides and cells the basic
+                  boards span, which is what the reference set is drawn on and so what admission
+                  has proved an adapter against. A season's upload must fit inside it -- Soma
+                  refuses one that does not -- because maps change while a season is live and a
+                  model admitted today must play the board added next week.
                   `about` is the one hand-written input (engine/about.json), here rather than in the
                   website so a second cartridge can introduce itself without a web deploy. Every
                   value is plain text: a manifest that could carry markup could carry a script tag.
 
-  maps/           the boards themselves, as committed.
+  maps/           the basic boards themselves, as committed. Never a season's: those are uploaded
+                  to the platform and are in no repository and no release.
 """
 import hashlib
 import json
@@ -55,7 +61,6 @@ def catalogue():
             sys.exit("%s declares id %r; a board is named by its file" % (name, m["id"]))
         out.append({
             "id": m["id"],
-            "preset": m["preset"],
             "rows": m["rows"],
             "cols": m["cols"],
             "players": m["players"],
@@ -63,6 +68,24 @@ def catalogue():
             "sha256": "sha256:" + hashlib.sha256(raw).hexdigest(),
         })
     return out
+
+
+def envelope(maps):
+    """What a season's upload may be: whatever the basic boards span, and nothing they do not.
+
+    Three bounds, because an adapter is proved on the boards the reference set was drawn on and a
+    board outside them is a board nobody has proved it against: the seat counts (every owner number
+    an adapter must encode), each side (the smallest and largest a reshape must handle), and the
+    cells (what the ops budget scales with -- a square board at the largest side is more cells than
+    any basic board, so the side alone would let one through).
+    """
+    players = [m["players"] for m in maps]
+    sides = [s for m in maps for s in (m["rows"], m["cols"])]
+    return {
+        "players": [min(players), max(players)],
+        "sides": [min(sides), max(sides)],
+        "cells_max": max(m["rows"] * m["cols"] for m in maps),
+    }
 
 
 def about():
@@ -93,28 +116,16 @@ def cartridge():
 
     if not doc["maps"]:
         sys.exit("no boards under maps/ -- make them with `cd mapgen && cargo run -- generate`")
-    counts, seats = {}, {}
-    for entry in doc["maps"]:
-        counts[entry["preset"]] = counts.get(entry["preset"], 0) + 1
-        seats.setdefault(entry["preset"], set()).add(entry["players"])
-    for name, played_at in sorted(seats.items()):
-        # Pairing reads one seat count a preset. A pool that mixed two would seat a match its board
-        # then refuses.
-        if len(played_at) != 1:
-            sys.exit("preset %r is played at %s seats; a preset has one seat count"
-                     % (name, sorted(played_at)))
-    for preset in doc["presets"]:
-        preset["maps"] = counts.get(preset["name"], 0)
-        # The presets are derived from the boards, so this cannot fail unless the two were built from
-        # different trees -- which is the failure worth stopping on.
-        if not preset["maps"]:
-            sys.exit("preset %r is played on no board" % preset["name"])
+    doc["limits"]["boards"] = envelope(doc["maps"])
 
     with open(path, "w") as f:
         json.dump(doc, f, indent=2, sort_keys=True)
         f.write("\n")
-    print("    cartridge.json: %d boards across %d presets, %d about paragraphs"
-          % (len(doc["maps"]), len(counts), len(doc["about"]["story"])))
+    b = doc["limits"]["boards"]
+    print("    cartridge.json: %d basic boards; uploads %d-%d seats, sides %d-%d, at most %d cells; "
+          "%d about paragraphs" % (len(doc["maps"]), b["players"][0], b["players"][1],
+                                   b["sides"][0], b["sides"][1], b["cells_max"],
+                                   len(doc["about"]["story"])))
 
 
 def copy_boards():

@@ -1,0 +1,120 @@
+# basic-xlarge-8p: a xlarge board, cave terrain, 8 seats, 2 hills a seat.
+# The "grotto" family under point group c2, 120x124, seat shift (15, 93).
+# Drawn by `mapgen explore` (candidate 3324) and picked by eye. A design is
+# data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.
+
+name = "basic-xlarge-8p"
+terrain = "cave"
+family = "grotto"
+rows = 120
+cols = 124
+seats = 8
+shift = [15, 93]
+origin = [112, 81]
+symmetry = "c2"
+water = true
+hills = [[8, 8], [-8, -8]]
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [8.0, 8.0]
+r = [4.43, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+r = [3.41, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [8.0, 8.0]
+width = 3.71
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-30.0, 42.87]
+r = [3.62, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-4.77, 55.08]
+r = [3.62, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [30.0, 4.61]
+r = [3.62, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [30.0, -4.61]
+r = [3.62, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-30.0, -33.65]
+r = [3.62, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-30.0, 42.87]
+width = 4.37
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-4.77, 55.08]
+width = 4.37
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [30.0, 4.61]
+width = 4.37
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [30.0, -4.61]
+width = 4.37
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-30.0, -33.65]
+width = 4.37
+
+[[steps]]
+op = "smooth"
+smooth = 2
+
+[[steps]]
+op = "noise"
+pct = 10
+scale = 1
+smooth = 1
+band = [0.13066827843128423, 3.0]
+from = "hills"
+seed = "0xf43a093f635add25"
+
+[food]
+per_seat = 24
+bootstrap = 3
+bias = "uniform"
+sites = 6
+seed = "0x3a4072ffa2100d3b"

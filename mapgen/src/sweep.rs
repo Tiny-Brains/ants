@@ -1,5 +1,5 @@
 //! `mapgen sweep` — the generator and the engine, tested across the space of boards rather than the
-//! four presets that ship.
+//! handful anyone ships.
 //!
 //!     cargo run --release -- sweep                               every style, 2 to 8 seats
 //!     cargo run --release -- sweep --seats 8 --styles cave,rooms --boards 6 --turns 400
@@ -107,7 +107,7 @@ pub fn recipe(style: &str, seats: u8, boards: u32) -> Result<Recipe, String> {
     };
     let n = side(seats);
     Recipe::parse(&format!(
-        "[preset]\nname = \"sweep-{style}-{seats}\"\nseats = {seats}\ncount = {boards}\nseed = {seed}\n\
+        "[set]\nname = \"sweep-{style}-{seats}\"\nseats = {seats}\ncount = {boards}\nseed = {seed}\n\
          [board]\nrows = {n}\ncols = {n}\nshifts = [\"any\"]\n{body}\n\
          [food]\nper_seat = {food}\nbootstrap = 2\n",
         seed = 0x5EE9_0000 + seats as u64,

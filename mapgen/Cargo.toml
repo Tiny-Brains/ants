@@ -1,10 +1,11 @@
-# mapgen -- the board factory. It writes the boards under ../maps/ from the recipes under recipes/,
-# and proves every committed board is still what its recipe makes.
+# mapgen -- the board factory. It writes the basic boards under ../maps/ from the recipes under
+# recipes/ -- and a season's boards wherever --recipes and --maps point, which is never this
+# repository (N28) -- and proves every board is still what its recipe makes.
 #
 # A crate of its own, not a binary of the engine's, for one reason: the component is built from
 # engine/src/, and every edit there is a new engine digest. Tuning how boards are made is not a
-# rules change, so it must not look like one. What does move the digest is the boards themselves,
-# which build.rs compiles in -- exactly as it should.
+# rules change, so it must not look like one. Since N28 the boards themselves are not one either:
+# the component carries none, and a board reaches worldgen whole from whoever holds it.
 #
 # It depends on the engine for the one thing it must not reimplement: `tb.ants.worldgen`, which is
 # the validation every board passes before a match is played on it.

@@ -20,7 +20,7 @@ fn recipe(seats: u8, maze: bool, loops: u32) -> Recipe {
     let hills = if maze { "room = true\nhome_doors_min = 2" } else { "per_seat = 2" };
     Recipe::parse(&format!(
         r#"
-[preset]
+[set]
 name = "test-{seats}"
 seats = {seats}
 count = 1
@@ -88,7 +88,7 @@ fn more_loops_make_more_routes_between_seats() {
     // board's routes depend on where its homes landed.
     let routes = |loops: u32| -> u32 {
         let mut r = recipe(2, true, loops);
-        r.preset.count = 4;
+        r.set.count = 4;
         make_set(&r).unwrap().iter().map(|m| m.metrics.routes).sum()
     };
     let (tree, open) = (routes(0), routes(100));
@@ -101,7 +101,7 @@ fn a_recipe_that_cannot_be_honoured_is_refused_before_a_board_is_drawn() {
     let base = |edit: &str| {
         format!(
             r#"
-[preset]
+[set]
 name = "bad"
 seats = 2
 count = 1
@@ -145,8 +145,8 @@ per_seat = 4
 
 #[test]
 fn the_committed_boards_are_what_their_recipes_make() {
-    // `mapgen check` as a test, so `cargo test` alone catches a hand-edited board or a generator
-    // change nobody regenerated for.
+    // `mapgen check` as a test, so `cargo test` alone catches a hand-edited board or a renderer
+    // change nobody regenerated for -- and a board left behind that no recipe makes.
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut recipes: Vec<_> = std::fs::read_dir(here.join("recipes"))
         .unwrap()
@@ -155,23 +155,33 @@ fn the_committed_boards_are_what_their_recipes_make() {
         .collect();
     recipes.sort();
     assert!(!recipes.is_empty());
+    let mut names = Vec::new();
     for path in recipes {
-        let r = Recipe::load(&path).unwrap();
-        for made in make_set(&r).unwrap() {
-            let file = here.join("../maps").join(format!("{}.json", made.id));
-            let text = std::fs::read_to_string(&file).unwrap_or_else(|_| {
-                panic!("{} is missing -- run `mapgen generate`", file.display())
-            });
-            assert!(text == made.text, "{} is not what its recipe makes", made.id);
-            let back = from_json(&serde_json::from_str(&text).unwrap()).unwrap();
-            assert_eq!(
-                measure(&back).unwrap(),
-                made.metrics,
-                "{}: the metrics it records",
-                made.id
-            );
-        }
+        let d = crate::design::Design::load(&path).unwrap();
+        let (_, metrics, v) =
+            crate::design::build(&d).unwrap_or_else(|e| panic!("{}: {e}", d.name));
+        let file = here.join("../maps").join(format!("{}.json", d.name));
+        let text = std::fs::read_to_string(&file)
+            .unwrap_or_else(|_| panic!("{} is missing -- run `mapgen generate`", file.display()));
+        assert!(text == crate::design::file_text(&v), "{} is not what its recipe makes", d.name);
+        let back = from_json(&serde_json::from_str(&text).unwrap()).unwrap();
+        assert_eq!(measure(&back).unwrap(), metrics, "{}: the metrics it records", d.name);
+        names.push(format!("{}.json", d.name));
     }
+    for e in std::fs::read_dir(here.join("../maps")).unwrap() {
+        let name = e.unwrap().file_name().into_string().unwrap();
+        assert!(names.contains(&name), "maps/{name}: no recipe makes it");
+    }
+}
+
+/// A design survives being written as a recipe and read back: every seed, all 64 bits of it.
+#[test]
+fn a_design_written_as_a_recipe_reads_back_the_same() {
+    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = std::fs::read_dir(here.join("recipes")).unwrap().next().unwrap().unwrap().path();
+    let d = crate::design::Design::load(&path).unwrap();
+    let back: crate::design::Design = toml::from_str(&d.to_toml().unwrap()).unwrap();
+    assert_eq!(serde_json::to_value(&d).unwrap(), serde_json::to_value(&back).unwrap());
 }
 
 #[test]

@@ -1,0 +1,38 @@
+# basic-medium-4p: a medium board, maze terrain, 4 seats, 2 hills a seat.
+# The "braid" family under point group d2, 48x64, seat shift (24, 16).
+# Drawn by `mapgen explore` (candidate 83) and picked by eye. A design is
+# data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.
+
+name = "basic-medium-4p"
+terrain = "maze"
+family = "braid"
+rows = 48
+cols = 64
+seats = 4
+shift = [24, 16]
+origin = [34, 40]
+symmetry = "d2"
+water = false
+hills = [[12, 0], [-12, 0]]
+
+[[steps]]
+op = "maze"
+pitch = 8
+corridor = 5
+loops = 15
+braid = 68
+seed = "0xaf85eda818882837"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [12.0, 0.0]
+r = [4.96, 0.0]
+metric = "linf"
+
+[food]
+per_seat = 18
+bootstrap = 3
+bias = "uniform"
+sites = 4
+seed = "0x47ebc885093580cb"

@@ -31,7 +31,7 @@ fn food_sets_by_definition(m: &Match) -> Vec<u16> {
 
 #[test]
 fn the_food_scan_finds_the_sets_the_definition_does_on_every_board() {
-    for mf in crate::maps::catalogue() {
+    for mf in boards::all() {
         let mut m = mf.build(7, 1000).unwrap();
         assert_eq!(crate::food::sets(&m), food_sets_by_definition(&m), "map {}", mf.id);
         // A razed hill keeps its square, and neither form may give it back to the food.
@@ -73,7 +73,7 @@ fn visible_by_definition(m: &Match, owner: u8) -> Bits {
 
 #[test]
 fn vision_stamped_by_rows_sees_the_disk_it_replaces() {
-    // Each preset's size, and two boards narrower than the disk is wide, where a row wraps onto
+    // The old catalogue's sizes, and two boards narrower than the disk is wide, where a row wraps onto
     // itself more than once.
     for (rows, cols) in [(64, 96), (96, 96), (128, 128), (12, 10), (5, 17)] {
         let mut m = bare(rows, cols, 2);

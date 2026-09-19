@@ -115,7 +115,7 @@ fn rle_square(out: &mut Vec<u32>, cur: &mut u32, run: &mut u32, v: u32) {
 }
 
 /// The board's geometry. Positions are `row * cols + col` and fit in a `u16`, which caps a map at
-/// 256x256 — four times the largest preset.
+/// 256x256 — about four times the largest board an upload may be.
 #[derive(Clone, Copy)]
 pub struct Geom {
     pub rows: i32,

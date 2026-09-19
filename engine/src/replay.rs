@@ -8,7 +8,7 @@
 //! ordering the actions arrived in, so a delta and an action array are the same shape.
 //!
 //! The envelope carries its own board. `decode` rebuilds from `map`, which `finish` emits, so a
-//! replay stays viewable when the preset table has been re-tuned or the catalogue has moved on.
+//! replay stays viewable whatever became of the season or the file its board came from.
 //! `seed` is still required: the map fixes the board, but the seed drives the hidden food rate and
 //! every respawn, so a replay missing its seed re-simulates a different match on the same terrain.
 

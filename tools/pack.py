@@ -53,7 +53,8 @@ def main():
         for f in files
     )
     if not any(n.startswith("maps/") for n in names):
-        sys.exit("dist/maps/ is empty -- a cartridge with no boards plays nothing")
+        sys.exit("dist/maps/ is empty -- a release with no basic boards has no envelope, and "
+                 "nothing for a starter to play")
     wasm = [n for n in names if "/" not in n and n.endswith(".wasm")]
     if wasm != ["tb-ants.wasm"]:
         sys.exit("expected one component at the root of dist/, found %s" % wasm)

@@ -6,9 +6,11 @@ use super::*;
 fn a_replay_re_simulates_the_match_it_recorded() {
     // A replay stores the action stream, not frames, and the viewer re-simulates it. Decoding turn
     // N must give exactly the position the referee was in at turn N.
-    let w =
-        invoke("tb.ants.worldgen", json!({"seeds": [4242], "preset": "open-2", "max_turns": 60}))
-            .unwrap();
+    let w = invoke(
+        "tb.ants.worldgen",
+        json!({"seeds": [4242], "map": boards::json(boards::DUEL), "max_turns": 60}),
+    )
+    .unwrap();
     let state0 = w["wave_state"].as_str().unwrap().to_string();
 
     let mut state = state0.clone();
@@ -38,7 +40,6 @@ fn a_replay_re_simulates_the_match_it_recorded() {
     let fin = invoke("tb.ants.finish", json!({"wave_state": &state})).unwrap();
     let payload = json!({
         "seed": 4242,
-        "preset": "open-2",
         "max_turns": 60,
         "map_id": fin["results"][0]["map_id"],
         "map": fin["results"][0]["map"],
@@ -96,8 +97,11 @@ fn a_frame_range_agrees_with_the_frames_asked_for_one_at_a_time() {
     // The scrubber's fix. `decode` re-simulates from turn zero, so a viewer walking a timeline
     // frame by frame is quadratic; `decode_range` walks the match once. It is only worth having
     // if it produces exactly the same frames.
-    let w = invoke("tb.ants.worldgen", json!({"seeds": [99], "preset": "open-2", "max_turns": 40}))
-        .unwrap();
+    let w = invoke(
+        "tb.ants.worldgen",
+        json!({"seeds": [99], "map": boards::json(boards::DUEL), "max_turns": 40}),
+    )
+    .unwrap();
     let mut state = w["wave_state"].as_str().unwrap().to_string();
     let mut rng = Rng(7);
     let mut deltas = Vec::new();
@@ -132,8 +136,11 @@ fn a_frames_discoveries_add_up_to_exactly_what_its_seat_knows() {
     // The viewer draws each seat's explored territory by folding every frame's `discovered` from
     // turn zero. That is the engine's own memory -- the `known` mask observations are built from --
     // only if the fold equals it at every turn the referee played, and nothing is announced twice.
-    let w = invoke("tb.ants.worldgen", json!({"seeds": [31], "preset": "maze-2", "max_turns": 80}))
-        .unwrap();
+    let w = invoke(
+        "tb.ants.worldgen",
+        json!({"seeds": [31], "map": boards::json(boards::DUEL), "max_turns": 80}),
+    )
+    .unwrap();
     let mut state = w["wave_state"].as_str().unwrap().to_string();
     let mut known = vec![unpack(&state).unwrap().matches[0].known.clone()];
     let mut rng = Rng(11);
@@ -187,7 +194,7 @@ fn a_replay_the_platform_actually_wrote_decodes() {
     let raw = include_str!("fixtures/replay-maze-03.json");
     let payload: serde_json::Value = serde_json::from_str(raw).expect("the fixture is JSON");
 
-    // Everything a viewer needs is in the file. No catalogue, no preset table, no second lookup.
+    // Everything a viewer needs is in the file. No catalogue, no season, no second lookup.
     assert_eq!(payload["map_id"], "maze-03");
     assert!(payload["map"].is_object(), "the envelope carries its board");
     assert!(payload["seed"].is_u64(), "and the seed that drove food respawn");
@@ -228,9 +235,11 @@ fn a_replay_the_platform_actually_wrote_decodes() {
 fn a_range_over_a_recording_that_stops_early_ends_where_the_recording_does() {
     // A match cut off after five turns, asked for everything from turn zero: six frames, not one for
     // every turn a u16 can name.
-    let w =
-        invoke("tb.ants.worldgen", json!({"seeds": [7], "preset": "open-2", "max_turns": 1000}))
-            .unwrap();
+    let w = invoke(
+        "tb.ants.worldgen",
+        json!({"seeds": [7], "map": boards::json(boards::DUEL), "max_turns": 1000}),
+    )
+    .unwrap();
     let mut state = w["wave_state"].as_str().unwrap().to_string();
     let mut rng = Rng(5);
     let mut deltas = Vec::new();
@@ -241,8 +250,7 @@ fn a_range_over_a_recording_that_stops_early_ends_where_the_recording_does() {
         deltas.extend(out["replay_delta"].as_array().unwrap().iter().cloned());
         state = out["wave_state"].as_str().unwrap().to_string();
     }
-    let map =
-        crate::maps::MapFile::from_match(&unpack(&state).unwrap().matches[0], "cut", "open-2");
+    let map = crate::maps::MapFile::from_match(&unpack(&state).unwrap().matches[0], "cut");
     let payload = json!({"seed": 7, "max_turns": 1000, "map": map.to_json(), "deltas": deltas});
     let ranged = invoke("tb.ants.replay-decode", json!({"payload": payload, "from": 0})).unwrap();
     assert_eq!(ranged["frames"].as_array().unwrap().len(), 6, "turns 0 to 5");

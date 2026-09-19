@@ -1,30 +1,46 @@
-//! `mapgen` — the board factory for `maps/`.
+//! `mapgen` — the board factory: the basic boards in `../maps/`, and a season's wherever it is told.
 //!
-//!     cargo run -- generate                       every recipe under recipes/, into ../maps/
-//!     cargo run -- generate recipes/maze-2.toml   one preset
-//!     cargo run -- check                          the committed boards are what the recipes make
-//!     cargo run -- check --play 8                 ...and play each one, 8 seeds, every seat alike
-//!     cargo run -- show ../maps/maze-2-00.json    draw a board and its numbers
-//!     cargo run --release -- sweep                every style, 2 to 8 seats, generated and played
+//!     cargo run -- generate                              every recipe under recipes/, into ../maps/
+//!     cargo run -- generate recipes/basic-tiny-2p.toml one board
+//!     cargo run -- check                                 the committed boards are what the recipes make
+//!     cargo run -- check --play 8                        ...and play each one, 8 seeds, every seat alike
+//!     cargo run -- show ../maps/basic-tiny-2p.json     draw a board and its numbers
+//!     cargo run --release -- explore --slots S --out D   hundreds of designs a slot, to choose from
+//!     cargo run --release -- playtest D PICKS            play the chosen candidates, every seat alike
+//!     cargo run -- adopt D PICKS                         write the chosen candidates as recipes
+//!     cargo run --release -- sweep                       every area style, 2 to 8 seats, played
 //!
-//! `generate` replaces a preset's boards whole: a board left over from a larger `count` would stay
-//! in the catalogue and be played. `check` is the gate `build.sh` runs; its failures name the board
-//! and the rule.
+//! `--recipes DIR` and `--maps DIR` point `generate`, `check` and `adopt` somewhere else. **A
+//! season's boards are made that way, outside every repository** (N28): they reach the platform by
+//! an admin's upload and are pushed to a backup only once their season has closed. This repository
+//! holds the five basic boards and nothing else -- the envelope admission is built on.
+//! **A recipe is a design** (`design.rs`): the board, its shift and point group, and every shape
+//! drawn on it, written out as data. `explore` proposes them, a person picks, `adopt` writes the
+//! picks down, and `generate` renders them -- so a board somebody chose by eye stays the board it
+//! was, whatever later happens to the sampler. One board a recipe, named as its file is.
+//!
+//! `generate` with no arguments makes `maps/` exactly the recipes' boards: a board no recipe makes
+//! would stay in the catalogue and be played. `check` is the gate `build.sh` runs; its failures name
+//! the board and the rule.
 
+mod design;
+mod explore;
 mod grid;
 mod make;
 mod measure;
 mod play;
 mod recipe;
+mod sample;
 mod set;
 mod sweep;
+mod sym;
 #[cfg(test)]
 mod tests;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use recipe::Recipe;
+use design::Design;
 use serde_json::Value;
 
 fn here(rel: &str) -> PathBuf {
@@ -49,8 +65,11 @@ fn main() -> ExitCode {
         Some("check") => check(&recipes, &maps, flag("--play"), flag("--turns")),
         Some("show") => show(&named),
         Some("sweep") => sweep::run(&args[1..]),
+        Some("explore") => explore::run(&args[1..]),
+        Some("playtest") => explore::playtest(&args[1..]),
+        Some("adopt") => adopt(&args[1..], &recipes),
         _ => Err(
-            "usage: mapgen generate [RECIPE...] | check [--play SEEDS] | show MAP... | sweep [--seats 2-8]"
+            "usage: mapgen generate [RECIPE...] | check [--play SEEDS] | show MAP... | explore | playtest | adopt | sweep"
                 .into(),
         ),
     };
@@ -63,20 +82,14 @@ fn main() -> ExitCode {
     }
 }
 
-fn load_recipes(dir: &Path) -> Result<Vec<Recipe>, String> {
+fn load_designs(dir: &Path) -> Result<Vec<Design>, String> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(|e| format!("{}: {e}", dir.display()))?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|x| x == "toml"))
         .collect();
     paths.sort();
-    let recipes = paths.iter().map(|p| Recipe::load(p)).collect::<Result<Vec<_>, _>>()?;
-    for (i, r) in recipes.iter().enumerate() {
-        if recipes[..i].iter().any(|o| o.preset.name == r.preset.name) {
-            return Err(format!("two recipes make preset '{}'", r.preset.name));
-        }
-    }
-    Ok(recipes)
+    paths.iter().map(|p| Design::load(p)).collect()
 }
 
 fn map_files(dir: &Path) -> Result<Vec<(PathBuf, Value)>, String> {
@@ -124,24 +137,28 @@ fn row(id: &str, b: &make::Board, m: &measure::Metrics) {
 }
 
 fn generate(named: &[PathBuf], recipes_dir: &Path, maps: &Path) -> Result<(), String> {
-    let recipes = if named.is_empty() {
-        load_recipes(recipes_dir)?
+    let all = named.is_empty();
+    let designs = if all {
+        load_designs(recipes_dir)?
     } else {
-        named.iter().map(|p| Recipe::load(p)).collect::<Result<Vec<_>, _>>()?
+        named.iter().map(|p| Design::load(p)).collect::<Result<Vec<_>, _>>()?
     };
-    for r in &recipes {
-        let made = set::make_set(r)?;
-        for (path, v) in map_files(maps)? {
-            if v.get("preset").and_then(Value::as_str) == Some(r.preset.name.as_str()) {
+    let mut written = Vec::new();
+    header();
+    for d in &designs {
+        let (r, m, v) = design::build(d).map_err(|e| format!("{}: {e}", d.name))?;
+        let path = maps.join(format!("{}.json", d.name));
+        std::fs::write(&path, design::file_text(&v))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        row(&d.name, &r.board, &m);
+        written.push(path);
+    }
+    if all {
+        for (path, _) in map_files(maps)? {
+            if !written.contains(&path) {
                 std::fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                println!("  removed {} -- no recipe makes it", path.display());
             }
-        }
-        println!("{} -- {} seats, {} boards", r.preset.name, r.preset.seats, made.len());
-        header();
-        for m in &made {
-            let path = maps.join(format!("{}.json", m.id));
-            std::fs::write(&path, &m.text).map_err(|e| format!("{}: {e}", path.display()))?;
-            row(&m.id, &m.board, &m.metrics);
         }
     }
     Ok(())
@@ -153,16 +170,15 @@ fn check(
     play_seeds: Option<String>,
     turns: Option<String>,
 ) -> Result<(), String> {
-    let recipes = load_recipes(recipes_dir)?;
+    let designs = load_designs(recipes_dir)?;
     let files = map_files(maps)?;
     let mut problems = Vec::new();
 
     // Every board on disk belongs to a recipe, is accepted by the engine, and obeys the rules.
     for (path, v) in &files {
         let id = v.get("id").and_then(Value::as_str).unwrap_or("?");
-        let preset = v.get("preset").and_then(Value::as_str).unwrap_or("?");
-        if !recipes.iter().any(|r| r.preset.name == preset) {
-            problems.push(format!("{}: preset '{preset}' has no recipe", path.display()));
+        if !designs.iter().any(|d| d.name == id) {
+            problems.push(format!("{}: no recipe makes '{id}'", path.display()));
         }
         if let Err(e) = set::engine_accepts(v) {
             problems.push(format!("{id}: the engine refuses it: {e}"));
@@ -172,39 +188,23 @@ fn check(
         }
     }
 
-    // Every recipe's set, regenerated, is byte for byte what is committed, and nothing more is.
-    for r in &recipes {
-        match set::make_set(r) {
-            Err(e) => problems.push(e),
-            Ok(made) => {
-                println!("{} -- {} seats, {} boards", r.preset.name, r.preset.seats, made.len());
-                header();
-                for m in &made {
-                    row(&m.id, &m.board, &m.metrics);
-                    let path = maps.join(format!("{}.json", m.id));
-                    match std::fs::read_to_string(&path) {
-                        Ok(text) if text == m.text => {}
-                        Ok(_) => problems.push(format!(
-                            "{}: not what recipe '{}' makes -- edited by hand, or the generator \
-                             changed; run `mapgen generate`",
-                            path.display(),
-                            r.preset.name
-                        )),
-                        Err(_) => problems.push(format!("{}: missing", path.display())),
-                    }
-                }
-                let extra = files.iter().filter(|(_, v)| {
-                    v.get("preset").and_then(Value::as_str) == Some(r.preset.name.as_str())
-                        && !made
-                            .iter()
-                            .any(|m| Some(m.id.as_str()) == v.get("id").and_then(Value::as_str))
-                });
-                for (path, _) in extra {
-                    problems.push(format!(
-                        "{}: recipe '{}' no longer makes it",
+    // Every recipe's board, rendered again, is byte for byte what is committed.
+    header();
+    for d in &designs {
+        match design::build(d) {
+            Err(e) => problems.push(format!("{}: {e}", d.name)),
+            Ok((r, m, v)) => {
+                row(&d.name, &r.board, &m);
+                let path = maps.join(format!("{}.json", d.name));
+                match std::fs::read_to_string(&path) {
+                    Ok(text) if text == design::file_text(&v) => {}
+                    Ok(_) => problems.push(format!(
+                        "{}: not what recipe '{}' makes -- edited by hand, or the renderer \
+                         changed; run `mapgen generate`",
                         path.display(),
-                        r.preset.name
-                    ));
+                        d.name
+                    )),
+                    Err(_) => problems.push(format!("{}: missing", path.display())),
                 }
             }
         }
@@ -221,7 +221,7 @@ fn check(
             let peaks: Vec<u64> = seats.iter().map(|s| s.peak).collect();
             let (lo, hi) = (*peaks.iter().min().unwrap_or(&0), *peaks.iter().max().unwrap_or(&0));
             println!(
-                "  {:<14} peak colony {:?}  score {:?}  first {:?}",
+                "  {:<22} peak colony {:?}  score {:?}  first {:?}",
                 id,
                 peaks.iter().map(|p| p / seeds as u64).collect::<Vec<_>>(),
                 seats.iter().map(|s| s.score).collect::<Vec<_>>(),
@@ -243,12 +243,55 @@ fn check(
         println!(
             "\ncheck: {} boards from {} recipes, all reproduced and valid",
             files.len(),
-            recipes.len()
+            designs.len()
         );
         Ok(())
     } else {
         Err(format!("{} problem(s):\n  {}", problems.len(), problems.join("\n  ")))
     }
+}
+
+/// `mapgen adopt RUN_DIR PICKS`: each `<slot> <candidate> [name]` line of PICKS, found in the explore
+/// run's `<slot>.jsonl`, written as `recipes/<name>.toml` -- the design exactly as it was drawn, under
+/// the slot's name unless the line gives another.
+fn adopt(args: &[String], recipes_dir: &Path) -> Result<(), String> {
+    let dir = PathBuf::from(args.first().ok_or("adopt RUN_DIR PICKS")?);
+    let picks = args.get(1).ok_or("adopt RUN_DIR PICKS")?;
+    let text = std::fs::read_to_string(picks).map_err(|e| format!("{picks}: {e}"))?;
+    for line in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')) {
+        let mut it = line.split_whitespace();
+        let (slot, i) = (it.next().unwrap_or_default(), it.next().unwrap_or_default());
+        let i: u64 = i.parse().map_err(|_| format!("{line}: `<slot> <candidate> [name]`"))?;
+        let name = it.next().unwrap_or(slot);
+        let run = dir.join(format!("{slot}.jsonl"));
+        let found = std::fs::read_to_string(&run)
+            .map_err(|e| format!("{}: {e}", run.display()))?
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .find(|v| v["i"].as_u64() == Some(i))
+            .ok_or(format!("{slot}: no candidate {i} in {}", run.display()))?;
+        let mut d: Design =
+            serde_json::from_value(found["design"].clone()).map_err(|e| e.to_string())?;
+        d.name = name.to_string();
+        let parts: Vec<&str> = slot.split('-').collect();
+        let (size, terrain, seats, hills) = match parts.as_slice() {
+            [a, b, c, e] => (*a, *b, c.trim_end_matches('p'), e.trim_end_matches('h')),
+            _ => return Err(format!("{slot}: not <size>-<terrain>-<N>p-<H>h")),
+        };
+        let a_hill = if hills == "1" { "hill" } else { "hills" };
+        let head = format!(
+            "# {name}: a {size} board, {terrain} terrain, {seats} seats, {hills} {a_hill} a seat.\n\
+             # The \"{}\" family under point group {}, {}x{}, seat shift ({}, {}).\n\
+             # Drawn by `mapgen explore` (candidate {i}) and picked by eye. A design is\n\
+             # data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.\n\n",
+            d.family, d.symmetry, d.rows, d.cols, d.shift[0], d.shift[1]
+        );
+        let path = recipes_dir.join(format!("{name}.toml"));
+        std::fs::write(&path, head + &d.to_toml()?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("  {} <- {slot} #{i} ({})", path.display(), d.family);
+    }
+    Ok(())
 }
 
 fn show(paths: &[PathBuf]) -> Result<(), String> {

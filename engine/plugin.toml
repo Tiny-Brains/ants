@@ -14,7 +14,7 @@ component = "tb-ants.wasm"
 
 [[functions]]
 name = "tb.ants.worldgen"
-description = "Build a wave of worlds from one seed per match, on one preset"
+description = "Build a wave of worlds: one seed per match, and the board each is played on"
 category = "transform"
 
 [[functions.input_fields]]
@@ -25,31 +25,24 @@ required = true
 template_at = true
 
 [[functions.input_fields]]
-name = "preset"
-description = "The pool of boards this wave is played from -- one preset per wave, decision 18"
-kind = "string"
-required = true
-template_at = true
-
-[[functions.input_fields]]
 name = "players"
 description = "Optional check: the map carries the seat count and refuses a caller that disagrees"
 kind = "number"
 required = false
 template_at = true
 
-# `any`, because a board is named either way: a catalogue id, or the whole board inline. Orion
-# accepts string, number, bool, object, array and any -- and requires the field to declare one.
+# A board is REQUIRED, as `map` or as `maps` -- the component carries none (N28) -- but neither
+# field alone is, so both are declared optional and worldgen refuses a call with neither as NO_MAP.
 [[functions.input_fields]]
 name = "map"
-description = "Optional: one board for every match in the wave -- a catalogue id, or a board inline"
-kind = "any"
+description = "The board, whole, for every match in the wave -- required unless `maps` gives one per seed"
+kind = "object"
 required = false
 template_at = true
 
 [[functions.input_fields]]
 name = "maps"
-description = "Optional: one board per seed, positionally -- an id, an inline board, or null"
+description = "One board per seed, positionally, whole; a null there falls back to `map`"
 kind = "array"
 required = false
 template_at = true

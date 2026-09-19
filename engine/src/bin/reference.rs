@@ -1,65 +1,51 @@
 //! Write the reference observation set admission validates an adapter against.
 //!
 //! **What is not in this file is not checked.** An adapter is admitted on the strength of these
-//! payloads alone, so the default is a spread rather than a sample: every preset, and each at an
-//! early turn and a busy one. A gate that tested one 128x128 mid-game board would be asking a
-//! competitor for more than it checks.
+//! payloads alone, so the default is a spread rather than a sample: every basic board, each at an
+//! early turn, a middling one and a busy one, on three seeds. A gate that tested one 96x96 mid-game
+//! board would be asking a competitor for more than it checks.
 //!
-//!     cargo run --bin reference > reference/observations.json
-//!     cargo run --bin reference -- --only rooms-4:20260918:400
+//! **The basic boards are the envelope** (N28). A season's maps are uploaded, not shipped, and may
+//! change while the season is live, so a model admitted today must play a board added next week.
+//! The set therefore covers what an upload is ALLOWED to be -- `limits.boards`, which
+//! `tools/package.py` derives from these same five boards -- rather than what any season has now:
+//! two seats to eight, and the smallest side to the largest.
+//!
+//!     cargo run --bin reference > ../dist/reference/observations.json
+//!     cargo run --bin reference -- --only basic-small-3p:20260919:400
+//!     cargo run --bin reference -- --maps DIR     boards from somewhere other than ../maps
 mod args;
 
-/// `preset:seed:turn`. An early turn is the sparse case — one ant, nothing known, no enemy — and a
-/// late one is the crowded case, where the known-water run-length encoding is at its most
-/// fragmented and an observation is at its largest. **Every preset appears at both**, because the
-/// catalogue spans every seat count from two to eight and every board size from 80 to 152: an
-/// adapter that assumes one of either is what this set exists to refuse. A match the walker ends
-/// before the turn asked for is taken at its last live turn, which `generated_from` records.
-///
-/// **Opponents are numbered up to 7 here.** The greedy walker does not seek contact, so which foes
-/// a view shows is the boards' doing: at these seeds 82 of the 148 views show foes, and the crowded
-/// eight-seat boards number every owner. The previous set, two presets of two seats and one of four,
-/// never numbered past 1 -- an adapter mishandling owner 2 was admitted.
-const DEFAULT: [&str; 32] = [
-    "open-2:20260918:20",
-    "open-2:20260918:400",
-    "maze-2:20260918:20",
-    "maze-2:20260918:400",
-    "rooms-2:20260918:20",
-    "rooms-2:20260918:400",
-    "cave-2:20260918:20",
-    "cave-2:20260918:400",
-    "maze-3:20260918:20",
-    "maze-3:20260918:400",
-    "cave-3:20260918:20",
-    "cave-3:20260918:400",
-    "open-4:20260918:20",
-    "open-4:20260918:400",
-    "rooms-4:20260918:20",
-    "rooms-4:20260918:400",
-    "open-5:20260918:20",
-    "open-5:20260918:400",
-    "cave-5:20260918:20",
-    "cave-5:20260918:400",
-    "maze-6:20260918:20",
-    "maze-6:20260918:400",
-    "rooms-6:20260918:20",
-    "rooms-6:20260918:400",
-    "rooms-7:20260918:20",
-    "rooms-7:20260918:400",
-    "cave-7:20260918:20",
-    "cave-7:20260918:400",
-    "open-8:20260918:20",
-    "open-8:20260918:400",
-    "maze-8:20260918:20",
-    "maze-8:20260918:400",
-];
+/// The boards, by id, under `../maps/`. One a size class, and between them every seat count an
+/// adapter must handle up to eight -- so every owner number from 0 to 7 appears -- and the smallest
+/// and the largest board an upload may be. The eight-seat extra-large board is the adapter's worst
+/// case twice over: the most seats, and the most cells to encode.
+const BOARDS: [&str; 5] =
+    ["basic-tiny-2p", "basic-small-3p", "basic-medium-4p", "basic-large-6p", "basic-xlarge-8p"];
+
+/// An early turn is the sparse case -- one ant, nothing known, no enemy -- and a late one the
+/// crowded case, where the known-water run-length encoding is at its most fragmented and an
+/// observation is at its largest. A match the walker ends before the turn asked for is taken at its
+/// last live turn, which `generated_from` records.
+const TURNS: [u16; 3] = [20, 150, 400];
+
+/// Three seeds, because the food a board starts with is its own but everything after is the seed's,
+/// and one seed's crowded turn is one arrangement of the fight.
+const SEEDS: [u64; 3] = [20260919, 20260920, 20260921];
 
 fn main() {
     let a = args::Args::new();
+    let dir = a.get("--maps").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("maps")
+    });
     let specs: Vec<String> = match a.get("--only") {
         Some(s) => s.split(',').map(str::to_string).collect(),
-        None => DEFAULT.iter().map(|s| s.to_string()).collect(),
+        None => BOARDS
+            .iter()
+            .flat_map(|b| {
+                SEEDS.iter().flat_map(move |s| TURNS.iter().map(move |t| format!("{b}:{s}:{t}")))
+            })
+            .collect(),
     };
 
     let mut observations = Vec::new();
@@ -67,20 +53,31 @@ fn main() {
     for spec in &specs {
         let parts: Vec<&str> = spec.split(':').collect();
         if parts.len() != 3 {
-            eprintln!("reference: '{spec}' is not preset:seed:turn");
+            eprintln!("reference: '{spec}' is not board:seed:turn");
             std::process::exit(2);
         }
+        let path = dir.join(format!("{}.json", parts[0]));
+        let board: serde_json::Value = match std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+        {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("reference: {}: {e}", path.display());
+                std::process::exit(2);
+            }
+        };
         let seed = parts[1].parse::<u64>().unwrap_or(0);
         let turn = parts[2].parse::<u16>().unwrap_or(0);
-        match tb_ants::reference_observations(parts[0], seed, turn) {
-            Some(v) => {
+        match tb_ants::reference_observations(&board, seed, turn) {
+            Ok(v) => {
                 from.push(v["generated_from"].clone());
                 if let Some(a) = v["observations"].as_array() {
                     observations.extend(a.iter().cloned());
                 }
             }
-            None => {
-                eprintln!("reference: no preset '{}', or it is played on no board", parts[0]);
+            Err(e) => {
+                eprintln!("reference: {}: {e}", parts[0]);
                 std::process::exit(2);
             }
         }

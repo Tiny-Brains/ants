@@ -1,0 +1,41 @@
+# basic-large-6p: a large board, rooms terrain, 6 seats, 1 hill a seat.
+# The "halls" family under point group d2, 80x96, seat shift (40, 16).
+# Drawn by `mapgen explore` (candidate 65) and picked by eye. A design is
+# data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.
+
+name = "basic-large-6p"
+terrain = "rooms"
+family = "halls"
+rows = 80
+cols = 96
+seats = 6
+shift = [40, 16]
+origin = [32, 24]
+symmetry = "d2"
+water = false
+hills = [[0, 0]]
+
+[[steps]]
+op = "rooms"
+pitch = 8
+corridor = 1
+door = 3
+pct = 7
+loops = 43
+seed = "0x4e7cfb4974123e7f"
+
+[[steps]]
+op = "dots"
+at = [2.0, 2.0]
+r = [0.5, 0.0]
+metric = "l2"
+pitch = 4
+band = [0.125, 3.0]
+from = "hills"
+
+[food]
+per_seat = 18
+bootstrap = 3
+bias = "home"
+sites = 0
+seed = "0x85eb6ac91b15a3a9"

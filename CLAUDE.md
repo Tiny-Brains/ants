@@ -53,8 +53,9 @@ cargo test measure_what_random_play_produces -- --ignored --nocapture  # diagnos
 
 `build.sh` runs `tools/deny.sh` and `cargo test`, clears `dist/`, builds the wasm with every build
 path remapped and component-izes it, runs the `manifest` and `reference` generators into `dist/`,
-then `tools/package.py` writes `plugin.json`, folds the board catalogue and `engine/about.json` into
-`cartridge.json`, copies `maps/` and `engine/plugin.toml`, and prints the **engine digest**. Clearing `dist/` also drops
+then `tools/package.py` writes `plugin.json`, folds the basic boards' catalogue, the `limits.boards`
+envelope derived from them, and `engine/about.json` into `cartridge.json`, copies `maps/` and
+`engine/plugin.toml`, and prints the **engine digest**. Clearing `dist/` also drops
 `dist/viz/`, on purpose: a viewer transpiled from the previous component is a viewer for some other
 engine.
 
@@ -62,18 +63,25 @@ The two host binaries are generators (from `engine/`):
 
 ```sh
 cargo run --bin manifest > ../dist/cartridge.json                  # then tools/package.py folds in maps + about
-cargo run --bin reference > ../dist/reference/observations.json    # -- --only rooms-4:20260918:400 for one spec
+cargo run --bin reference > ../dist/reference/observations.json    # -- --only basic-small-3p:20260919:400 for one spec
 ```
 
-The boards come from `mapgen/`, a crate of its own (from `mapgen/`):
+The boards come from `mapgen/`, a crate of its own (from `mapgen/`). **This repository holds the five
+basic boards and no others**; a season's are made with the same commands pointed outside every
+repository (N28):
 
 ```sh
-cargo run -- generate                    # every recipe under recipes/, into ../maps/ -- replaces a preset's boards whole
-cargo run -- generate recipes/maze-2.toml
+cargo run -- generate                    # every recipe under recipes/, into ../maps/ -- and removes any board none makes
+cargo run -- generate recipes/basic-tiny-2p.toml
 cargo run -- check                       # every committed board is what its recipe makes, byte for byte
 cargo run --release -- check --play 6    # ...and play each one, the same walker in every seat
-cargo run -- show ../maps/maze-2-00.json # draw a board and its metrics
-cargo test                               # 6 tests; build.sh runs them. MAPGEN_DEBUG=1 says why attempts fail
+cargo run -- show ../maps/basic-tiny-2p.json   # draw a board and its metrics
+cargo test                               # 7 tests; build.sh runs them
+cargo run --release -- explore --slots slots.toml --out run --n 500   # propose designs, hundreds a slot
+cargo run --release -- playtest run picks.txt                         # play the picked candidates
+cargo run -- adopt run picks.txt         # write `<slot> <candidate> [name]` picks as recipes/<name>.toml
+cargo run -- generate --recipes ../../maps/recipes --maps ../../maps   # a season's boards, outside the repo
+cargo run -- check    --recipes ../../maps/recipes --maps ../../maps
 cargo run --release -- sweep             # 11 recipe styles x 2-8 seats: generated, played congruently, replayed
 cargo run --release -- sweep --seats 8 --styles cave,rooms --boards 10 --turns 1000 --json out.json --export dir
 ```
@@ -85,14 +93,18 @@ referee's board broke symmetry (`MAPGEN_TRACE=1` draws the squares). It found tw
 square rather than list order, and an open-ended `replay-decode` range over a cut-off recording. Run it
 after any change to a rule that could treat seats differently.
 
-**A board is a recipe and a seed; never edit one.** A recipe (`mapgen/recipes/<preset>.toml`) is
-area knobs — size, `grid`, `warp`, `coverage_pct`, `closure_pct`, `wall`, `loops_pct`, `fill`, hills,
-food — plus `accept` windows a finished board must fall in. `check` regenerates every set and
-compares bytes, so a hand edit or a generator change nobody regenerated for fails `build.sh`. It is a
-separate crate so tuning it is not an engine-digest change; regenerating the boards is one, because
-`build.rs` compiles them in. `mapgen` links this crate and validates through `tb.ants.worldgen`, so
-`build.rs` must keep building with an empty `maps/` (it warns; `tools/package.py` refuses to ship
-one).
+**A board is a design; never edit a board.** A recipe (`mapgen/recipes/<name>.toml`, one board a
+recipe) is the design written out: size, seat `shift`, decorative point group (`symmetry`), `origin`,
+the hills from seat 0's centre, every drawing step (`water`/`land` shapes; `noise`, `ridge`, `maze`,
+`rooms`, `dots`, `border`, `smooth` patterns with their seeds) and the food plan. `design.rs` renders
+it and is the contract; `sample.rs` only proposes (N27), so improving the sampler redraws nothing that
+was picked, while changing the renderer redraws every board. `check` re-renders every recipe and
+compares bytes, so a hand edit or a renderer change nobody regenerated for fails `build.sh`. The old
+area recipes (`recipe.rs`, `make.rs`, `set.rs`) remain only for `sweep` and their own tests. It is a
+separate crate so tuning it is not an engine-digest change -- and since N28 neither is regenerating a
+board: **the component carries none**, so `build.rs` is gone and a board reaches `worldgen` whole.
+`mapgen` links this crate and validates every board it writes through `tb.ants.worldgen`, the check a
+season's upload runs on Soma's node too. `tools/package.py` refuses to ship an empty `maps/`.
 
 The baselines resolve the cartridge at `../dist` (`baselines/games.toml`), so they need `./build.sh`
 run here first. Their guide has the training commands:
@@ -112,7 +124,7 @@ with the encoding and its regenerated manifest in the same commit — and with t
 **Five exports, dispatched by name in `engine/src/lib.rs` and nothing else:**
 
 ```
-tb.ants.worldgen(seeds[], preset, players?, max_turns?, map?/maps?)  → wave_state
+tb.ants.worldgen(seeds[], map | maps, players?, max_turns?)  → wave_state
 tb.ants.observe(wave_state, refs)      → per-seat views, each echoing its opaque ref
 tb.ants.step(wave_state, actions)      → { wave_state, done[], ended[], replay_delta }
 tb.ants.finish(wave_state)             → per-match ranks, scores, reason, and the board it used
@@ -130,7 +142,7 @@ A *wave* is many matches advanced together in one call.
 |---|---|
 | `src/lib.rs` | Plugin dispatch and JSON shapes. No rules |
 | `src/grid.rs` | Wrapping geometry, distances, symmetry, directions, the view/attack/spawn radii, `Bits`, `Rng` |
-| `src/maps.rs` | The board as a file: parsing, validation (the board's own shift, whole hill orbits, one walkable body of land); the catalogue (`MAPS`, embedded by `build.rs`); presets, derived from it |
+| `src/maps.rs` | The board as a file: parsing, validation (the board's own shift, whole hill orbits, one walkable body of land), and resolving what a caller sent -- a board object, and nothing else (N28) |
 | `src/state.rs` | One match while it is played; the cutoff counter's constants |
 | `src/turn.rs` | Turn resolution in a fixed order: move → attack → raze → spawn → gather → spawn food; ending; ranks |
 | `src/food.rs` | Food at the hidden rate: the rate, the symmetric sets, their shuffled rotation, the pending queue |
@@ -138,7 +150,6 @@ A *wave* is many matches advanced together in one call.
 | `src/codec.rs` | The packed, base64 `wave_state`. Opaque outside this file; no version field |
 | `src/replay.rs` | Action-stream recording and re-simulation into frames |
 | `src/authoring.rs` | Host-only: the reference observations — unreachable from a plugin call, so the linker drops it from the component. The board factory is `../mapgen/` |
-| `build.rs` | Embeds every board under `../maps/`; Cargo re-runs it when they change |
 | `plugin.toml`, `about.json` | The authored ABI, and the game's introduction folded into `cartridge.json` |
 
 **Four properties that explain most of the design:**
@@ -147,22 +158,23 @@ A *wave* is many matches advanced together in one call.
    for bit — which is what lets a replay be an action stream instead of frames. `tools/deny.sh`
    greps `engine/src/` for float constructs, excluding `tests/` and `bin/`, which are host tooling
    and never reach the component. Nothing in Rust enforces this.
-2. **Seeds and actions determine the match.** No ambient randomness, no time. The seed also picks
-   the board from the preset's pool when the caller passes none — deliberately, so a competitor
-   cannot train against a board they chose.
+2. **Seeds and actions determine the match**, on the board the caller sends. No ambient randomness,
+   no time. The caller chooses the board -- on the ladder that is pair, which also assigns the seed,
+   so a competitor still cannot train against a board they chose.
 3. **Exploring is remembered.** A model is a pure function of one observation with no state channel,
    so `turn.rs` folds each seat's vision into `known` every turn and observations carry *known
    water*. The per-player seen-masks are ~60% of `wave_state`; that cost is the point.
-4. **Boards are files.** 64 committed under `maps/` at the root (content, not source — `mapgen/`
-   writes them from its recipes and `dist/maps/` ships them), four per preset across sixteen
-   presets from `open-2` to `maze-8` — the runs of one L16 orthogonal array over seats (2 to 8),
-   terrain, board size (80 to 152 a side), hills a seat and food, each recipe's header naming its
-   run — validated and compiled in. A board carries its **shift**
+4. **Boards are files, and the component carries none** (N28). Five basic boards are committed under
+   `maps/` at the root (content, not source — `mapgen/` renders them from its recipes and
+   `dist/maps/` ships them): `basic-tiny-2p` (24 × 24) to `basic-xlarge-8p` (120 × 124), one a size
+   class, two to eight seats. **They are the envelope**: `limits.boards` is what they span, the
+   reference set is drawn on them, and a season's board -- uploaded to Soma, never committed here --
+   must fit inside it. Every board, whoever sends it, is validated before it is played. A board
+   carries its **shift**
    (`symmetry`): seat `k`'s board is seat 0's moved `k` times by it, it travels in `wave_state`, and
    `food::sets` and observer-relative owners both follow it. Hills are listed in orbits, so hill `i`
-   is seat `i % players`'s. A preset exists because boards declare it, and has one seat count. A
-   replay envelope carries its own board *and* its seed, so it re-simulates correctly after the
-   catalogue moves on.
+   is seat `i % players`'s, and a board states its own seat count. A replay envelope carries its own
+   board *and* its seed, so it re-simulates correctly whatever became of the board's season.
 
 ## What breaks if you forget it
 
@@ -203,14 +215,16 @@ A *wave* is many matches advanced together in one call.
   reproduces a release says so rather than cutting another.
 - **Never hand-edit a generated file.** `engine/plugin.toml` is the authored ABI (`plugin.json` is
   derived); `mapgen/recipes/` are authored and `maps/` is generated from them (`mapgen check` fails on
-  a hand edit); `cartridge.json`'s presets are derived from the boards; `engine/about.json` is the one
+  a hand edit); `cartridge.json`'s catalogue and `limits.boards` are derived from them; `engine/about.json` is the one
   hand-written input folded into the manifest.
-- **A preset name is a contract with other repositories.** Seasons and the deploy's `[vars]` list
-  presets by name (soma's `docker/soma.toml.tmpl` and `docs/config.md`), match files name
-  them (ants-starter, the book's tutorials and *Testing*), and baselines' tests pin one. Renaming or
-  retiring a preset is a change to each, and the starter's only through a release. A preset with more
-  seats than a small roster can fill is never paired until one can (soma's `choose` and trial query
-  filter by it), and Kalam claims at most eight seats, mapgen's ceiling.
+- **The basic boards are a contract with other repositories.** Their ids are named by ants-starter's
+  match files, the book's board pages and baselines' tests, and renaming one reaches the starter only
+  through a release. Their span IS `limits.boards`: shrink it and Soma refuses season maps that fit
+  before; grow it and the reference set, and so every admitted adapter, must cover the new corner.
+  Kalam claims at most eight seats, mapgen's ceiling and the envelope's top.
+- **No season's board is ever committed here or shipped in a release** (N28). A season's boards are
+  made with `mapgen --recipes/--maps` outside every repository, uploaded to the season by an admin, and
+  pushed to a backup repository only once the season has closed.
 - **Rules changes cite the reference.** Where the published specification and the 2011 contest
   engine (`aichallenge/ants/ants.py`) disagree, **the engine wins** — it is what every bot was
   scored against. Comments carry `ants.py:NNN` line cites; keep that habit. The Focus Battle page's

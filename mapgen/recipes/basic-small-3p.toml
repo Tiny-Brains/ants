@@ -1,0 +1,204 @@
+# basic-small-3p: a small board, cave terrain, 3 seats, 1 hill a seat.
+# The "grotto" family under point group d2x, 36x36, seat shift (12, 12).
+# Drawn by `mapgen explore` (candidate 15) and picked by eye. A design is
+# data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.
+
+name = "basic-small-3p"
+terrain = "cave"
+family = "grotto"
+rows = 36
+cols = 36
+seats = 3
+shift = [12, 12]
+origin = [17, 17]
+symmetry = "d2x"
+water = true
+hills = [[0, 0]]
+
+[[steps]]
+op = "land"
+shape = "disk"
+r = [5.77, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-14.0, 2.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-10.0, 10.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-2.0, 14.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [14.0, -2.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [10.0, -10.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [2.0, -14.0]
+r = [2.5, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-6.0, -6.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-6.0, -6.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-12.0, 6.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-12.0, 6.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [-6.0, 12.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [-6.0, 12.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [6.0, 6.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [6.0, 6.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [12.0, -6.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [12.0, -6.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+to = [6.0, -12.0]
+width = 2.2
+
+[[steps]]
+op = "land"
+shape = "disk"
+at = [6.0, -12.0]
+r = [2.0, 0.0]
+metric = "l2"
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [-12.0, 6.0]
+to = [-14.0, 2.0]
+width = 1.87
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [-12.0, 6.0]
+to = [-10.0, 10.0]
+width = 1.87
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [-6.0, 12.0]
+to = [-2.0, 14.0]
+width = 1.87
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [12.0, -6.0]
+to = [14.0, -2.0]
+width = 1.87
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [12.0, -6.0]
+to = [10.0, -10.0]
+width = 1.87
+
+[[steps]]
+op = "land"
+shape = "seg"
+at = [6.0, -12.0]
+to = [2.0, -14.0]
+width = 1.87
+
+[[steps]]
+op = "smooth"
+smooth = 2
+
+[[steps]]
+op = "noise"
+pct = 6
+scale = 1
+smooth = 1
+band = [0.26516504294495535, 3.0]
+from = "hills"
+seed = "0xa28616d641f5f7dd"
+
+[food]
+per_seat = 12
+bootstrap = 3
+bias = "uniform"
+sites = 3
+seed = "0x2a7bf36a2738698b"

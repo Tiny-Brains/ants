@@ -36,9 +36,10 @@ fi
 cd "$here/engine"
 cargo test --locked
 
-# The boards: every one under maps/ is what its recipe under mapgen/recipes/ makes, byte for byte,
-# and obeys the rules every board obeys. A crate of its own, so tuning the generator is not an
-# engine-digest change -- regenerating the boards is.
+# The basic boards: every one under maps/ is what its recipe under mapgen/recipes/ makes, byte for
+# byte, and obeys the rules every board obeys. A crate of its own, so tuning the generator is not an
+# engine-digest change -- and since N28 regenerating a board is not one either: the component
+# carries none. A season's boards are made with the same tool, outside this repository.
 (cd "$here/mapgen" && cargo test --locked)
 
 # From scratch: a board deleted from maps/ must not survive in dist/maps/, and a viewer transpiled
@@ -61,7 +62,8 @@ wasm-tools validate "$dist/tb-ants.wasm" --features component-model
 
 # The manifests are generated, because an artifact nobody hand-edits cannot drift from the code
 # that produced it. The reference observations admission validates an adapter against are engine
-# output for the same reason: a hand-kept copy would test a shape the game no longer produces.
+# output for the same reason: a hand-kept copy would test a shape the game no longer produces. They
+# are drawn on the basic boards, which is what makes those boards the envelope an upload must fit.
 cargo run --locked --quiet --bin manifest > "$dist/cartridge.json"
 cargo run --locked --quiet --bin reference > "$dist/reference/observations.json"
 

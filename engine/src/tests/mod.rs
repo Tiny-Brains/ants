@@ -3,6 +3,7 @@
 //! The published rules of Ants are the specification and this is where they are enforced: nothing
 //! at runtime will catch a rule implemented wrongly. Each test names the rule it is for.
 
+mod boards;
 mod ending;
 mod equivalence;
 mod food;

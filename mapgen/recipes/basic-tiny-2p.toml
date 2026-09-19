@@ -1,0 +1,52 @@
+# basic-tiny-2p: a tiny board, open terrain, 2 seats, 1 hill a seat.
+# The "colonnade" family under point group d4, 24x24, seat shift (12, 12).
+# Drawn by `mapgen explore` (candidate 151) and picked by eye. A design is
+# data: the renderer draws exactly this, whatever becomes of the sampler that proposed it.
+
+name = "basic-tiny-2p"
+terrain = "open"
+family = "colonnade"
+rows = 24
+cols = 24
+seats = 2
+shift = [12, 12]
+origin = [6, 18]
+symmetry = "d4"
+water = false
+hills = [[0, 0]]
+
+[[steps]]
+op = "water"
+shape = "disk"
+at = [4.34, 1.93]
+r = [1.0, 0.0]
+metric = "l1"
+
+[[steps]]
+op = "water"
+shape = "disk"
+at = [4.75, 0.19]
+r = [1.0, 0.0]
+metric = "l1"
+
+[[steps]]
+op = "water"
+shape = "disk"
+at = [4.49, -1.57]
+r = [1.0, 0.0]
+metric = "l1"
+
+[[steps]]
+op = "dots"
+r = [1.0, 0.0]
+metric = "linf"
+pitch = 6
+band = [0.4274814045663273, 3.0]
+from = "hills"
+
+[food]
+per_seat = 10
+bootstrap = 3
+bias = "contested"
+sites = 2
+seed = "0xc2233334a23c2361"

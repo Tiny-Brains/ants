@@ -4,7 +4,7 @@
 //! one's input fields:
 //!
 //! ```text
-//! tb.ants.worldgen(seeds[], preset, players?, max_turns?, map?/maps?)  → wave_state
+//! tb.ants.worldgen(seeds[], map | maps, players?, max_turns?)  → wave_state
 //! tb.ants.observe(wave_state, refs)       → [ { m, seat, ref, view } ]
 //! tb.ants.step(wave_state, actions)       → { wave_state, done[], ended[], replay_delta }
 //! tb.ants.finish(wave_state)              → [ { m, ranks, scores, reason, map } ]
@@ -40,7 +40,6 @@ mod turn;
 mod authoring;
 pub use authoring::reference_observations;
 pub use grid::VIEW_RADIUS2;
-pub use maps::{Preset, presets};
 
 use codec::{Wave, pack, unpack};
 use serde_json::{Value, json};
@@ -100,28 +99,22 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
     if seeds.is_empty() {
         return Err(Fault::new("NO_SEEDS", "a wave of no matches has nothing to play"));
     }
-    // A preset is a pool, and it matters only to a match whose board the seed chooses: a caller
-    // naming a preset nothing is played at hears `NO_SUCH_PRESET` from `maps::resolve` then, rather
-    // than "no map", which would send them looking in the catalogue for a fault in the request.
-    let name = input.get("preset").and_then(Value::as_str).unwrap_or("");
     let max_turns = input.get("max_turns").and_then(Value::as_u64).unwrap_or(1000) as u16;
 
-    // What board each match is played on. Three forms, and the platform uses the third:
+    // What board each match is played on, and it is REQUIRED: the component carries none (N28).
     //
-    //   "maps": [<id or object or null>, ...]   one per seed, positionally
-    //   "map":  <id or object>                  the same board for every seed
-    //   absent                                  the preset's pool, chosen by the seed
+    //   "maps": [<board or null>, ...]   one per seed, positionally; a null falls back to `map`
+    //   "map":  <board>                  the same board for every seed
     //
-    // It is deliberate that a caller who does not ask cannot influence the board: pairing assigns
-    // the seed, so the seed assigning the map keeps a competitor from training against a board they
-    // chose.
+    // The caller chooses. On the ladder that is pair, which also assigns the seed, so a competitor
+    // still cannot pick the board they are played on; on a laptop it is whoever wrote the match.
     let per_seed = input.get("maps").and_then(Value::as_array);
     let one = input.get("map");
     let asked_players = input.get("players").and_then(Value::as_u64);
     let mut matches = Vec::with_capacity(seeds.len());
     for (i, &seed) in seeds.iter().enumerate() {
-        let spec = per_seed.map(|a| a.get(i).unwrap_or(&Value::Null)).or(one);
-        let mf = maps::resolve(spec, name, seed).map_err(|e| Fault::new(e.code, e.message))?;
+        let spec = per_seed.and_then(|a| a.get(i)).filter(|v| !v.is_null()).or(one);
+        let mf = maps::resolve(spec).map_err(|e| Fault::new(e.code, e.message))?;
 
         // Seats are a property of the map, so the map is what a caller's `players` is checked
         // against — refused rather than quietly seated short.
@@ -142,7 +135,6 @@ fn f_worldgen(input: &Value) -> Result<Value, Fault> {
         "wave_state": pack(&w),
         "matches": w.matches.len(),
         "seats": seats,
-        "preset": name,
         "map_ids": w.matches.iter().map(|m| m.map_id.clone()).collect::<Vec<_>>(),
     }))
 }
@@ -262,7 +254,7 @@ fn f_finish(input: &Value) -> Result<Value, Fault> {
             // anything is queued, so sending every live match's board would repeat tens of
             // kilobytes a turn to be thrown away.
             "map": if m.done {
-                maps::MapFile::from_match(m, &m.map_id, "").to_json()
+                maps::MapFile::from_match(m, &m.map_id).to_json()
             } else {
                 Value::Null
             },
