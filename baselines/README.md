@@ -88,8 +88,7 @@ with the variable set and the file missing it fails, which is how CI runs it.
 
 **What a deployment owes it: nothing.** These are ordinary submissions with no special access. A
 season's baselines are uploaded on the season's admin page, admitted like any submission and land
-disabled until an admin enables them. On a local stack, web's
-`scripts/dev/upload-baselines.sh <dir> <season-slug>` does the same through the real routes.
+disabled until an admin enables them, on a local stack as in production.
 
 ## Layout
 
