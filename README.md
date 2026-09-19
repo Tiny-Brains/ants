@@ -17,9 +17,11 @@ trained entries for the game beside the rules they encode.
 - The packed game state, and replay reconstruction from recorded actions.
 - The plugin ABI (`engine/plugin.toml`) and the generated registration manifest (`cartridge.json`).
 - The replay viewer (`viz/`), which re-simulates through the component.
-- The platform's trained entries and the pipeline that trains them ([`baselines/`](baselines/README.md)):
-  competitor entries with no special access, kept here so an observation change and the encoding
-  that reads it land together. They are not the cartridge, and the component knows nothing of them.
+- The pipeline that trains the platform's entries ([`baselines/`](baselines/README.md)): the
+  encoding, the teacher, the learners and the export, kept here so an observation change and the
+  encoding that reads it land together. **No trained model is committed** (N29): the ones competitors
+  test against live in ants-starter, and a season's baselines are uploaded into it by an admin. It is
+  not the cartridge, and the component knows nothing of it.
 
 **It does not**
 
@@ -205,7 +207,7 @@ mapgen/                    the board factory: its own crate, so tuning it moves 
   src/set.rs               the area generator's sets, the file format, and the engine's validation
   src/play.rs              the seat-bias smoke check: one walker in every seat
 viz/                       the replay viewer: one bundle for the web app, the book and the CLI
-baselines/                 the trained entries, and how they were trained (not in a release)
+baselines/                 how the platform's entries are trained; no model (not in a release)
 maps/                      the five basic boards, one JSON file each -- never a season's
 tools/deny.sh              the determinism check
 tools/package.py           finishes dist/: plugin.json, the catalogue and limits.boards, the boards, the report

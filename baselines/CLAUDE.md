@@ -32,8 +32,11 @@ Two axes, and they do not cross cleanly:
 - **The method column** — several learners on one class and one dataset, so the comparison is
   between algorithms rather than between algorithms *and* budgets at once.
 
-`models/<class>-<method>/` holds each finished artifact: `model.onnx`, the generated `manifest.json`,
-a `metrics.json` of what the platform said about it, and a `card.md` a person can read.
+`models/<class>-<method>/` is where an export writes each finished artifact: `model.onnx`, the
+generated `manifest.json`, a `metrics.json` of what the platform said about it, and a `card.md` a
+person can read. **It is gitignored** (N29): the platform ships no model. One worth keeping goes to
+`ants-starter/models/` for competitors to test against -- nano-bc, micro-bc and micro-percell live
+there -- or is uploaded into a season as a baseline from the admin page.
 
 ## Working here needs the cartridge built, and one sibling checkout
 
@@ -100,8 +103,10 @@ env. Never report a result from the env as a result.
 - **The engine digest belongs on every artifact.** A model trained against one engine and played
   under another is a model nobody can reproduce, and an engine change is a rules change. The dataset
   header, `metrics.json` and `card.md` all carry it.
-- **`data/`, `runs/` and `replays/` are gitignored output.** The dataset is 90 MB and regenerable
-  from a seed; a checkpoint is not an artifact. Only `models/` is committed.
+- **`data/`, `runs/`, `replays/` and `models/` are gitignored output.** The dataset is 90 MB and
+  regenerable from a seed; a checkpoint is not an artifact; and an exported model is committed
+  nowhere in the platform (N29) -- the conformance test loads `ants-starter/models/micro-bc`, or
+  whatever `TB_CONFORMANCE_ONNX` names.
 
 ## Things that were measured here, and cost time to find
 

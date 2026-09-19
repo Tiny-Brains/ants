@@ -54,11 +54,17 @@ What this directory produces, and what reads it:
 
 | Artifact | Read by |
 |---|---|
-| `models/<class>-<method>/model.onnx` + `manifest.json` | a presigned PUT; admission reads both from the bucket |
-| `models/<class>-<method>/metrics.json` | `soma bootstrap`'s baselines step, through a roster's `source`: both hashes (checked against the bytes), `size_metric_bytes`, `params`, `infer_us_max` |
+| `models/<class>-<method>/model.onnx` + `manifest.json` | a presigned PUT -- a competitor's submission, or an admin's baseline upload into a season (N29); admission reads both from the bucket |
+| `models/<class>-<method>/metrics.json` | people and `eval`: what `tinybrains check` measured. Nothing on the platform reads it; admission measures for itself |
 | `models/<class>-<method>/card.md` | people |
-| `models/nano-bc/model.onnx` + `manifest.json` | ants-starter's `matches/vs-nano-bc.json`, by URL at a pinned commit of this repository — a retrained baseline is a new sha there |
 | the `tb_baselines` package | [ants-starter](https://github.com/Tiny-Brains/ants-starter)'s `train.py`, pip-installed from `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines` |
+
+**`models/` is gitignored, and no model is committed here** (N29, 19 September 2026). The three that
+were -- `nano-bc`, `micro-bc` and `micro-percell` -- moved to `ants-starter/models/`, where a
+competitor tests against them and the starter's match files name them by path; a season's baselines
+are uploaded into it by an admin and admitted like any submission. The conformance test loads the
+starter's micro-bc as the graph its manifest is checked against (`TB_CONFORMANCE_ONNX` names
+another).
 
 ## Run it, test it
 
@@ -71,7 +77,7 @@ pytest tests/ -q                                    # the conformance gate; see 
 python -m tb_baselines.collect --seat-turns 250000  # the teacher dataset, ~9 min, ~90 MB
 python -m tb_baselines.train.bc --class micro --epochs 6
 python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
-python -m tb_baselines.eval models/micro-bc models/nano-bc --boards 3
+python -m tb_baselines.eval models/micro-bc ../../ants-starter/models/nano-bc --boards 3   # against the starter's
 ```
 
 ### The one test that matters
@@ -115,7 +121,7 @@ src/tb_baselines/
   train/bc.py                   behaviour cloning
   export.py                     torch -> ONNX -> fp16 -> the platform's verdict
   eval.py                       round robin through `tinybrains <match>`
-models/                         the finished artifacts, committed
+models/                         exports, gitignored: nothing trained is committed (N29)
 tests/                          the conformance gate
 ```
 
@@ -141,6 +147,14 @@ Dilating the convolutions took micro from 47.2% to 91.1% with fewer parameters.
   cannot say which engine it was trained against cannot be reproduced.
 
 ## Status
+
+**19 September 2026 — no model is committed here (N29).** `models/nano-bc`, `micro-bc` and
+`micro-percell` moved to `ants-starter/models/`, byte for byte, and `models/` is gitignored: a model
+this pipeline exports is committed nowhere in the platform. The platform's baselines are uploaded
+into a season by an admin and admitted like a submission, so the rosters that fetched these
+directories by pinned URL, and `metrics.json`'s one platform reader, are gone. The conformance test
+loads the starter's micro-bc (or `TB_CONFORMANCE_ONNX`), and CI clones the starter before it runs, so
+a missing graph there is a failure rather than a skip: 15 passed against the moved file.
 
 **16 September 2026 — moved into `ants/`.** This was `Tiny-Brains/ants-baselines`; it is now
 `ants/baselines/`, so the rules, the viewer and the entries trained against them come from one

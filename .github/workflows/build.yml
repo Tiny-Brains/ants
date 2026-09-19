@@ -106,11 +106,20 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP/bin" tinybrains
           "$RUNNER_TEMP/bin/tinybrains" --version
 
+      # The starter holds the platform's trained models since N29 -- this repository commits none --
+      # and the conformance test below loads one of its graphs, so it is cloned first.
+      - name: Clone the starter kit
+        run: git clone --depth 1 https://github.com/Tiny-Brains/ants-starter "$RUNNER_TEMP/starter"
+
       # The trainer's encoding against the ladder's adapter, over this build's reference observations
       # (baselines/games.toml points at ../dist). An observation change that the encoding did not
-      # follow fails here, before a release carries it.
+      # follow fails here, before a release carries it. TB_CONFORMANCE_ONNX is the graph the manifest
+      # is loaded against -- the starter's micro-bc -- and naming it turns a missing file into a
+      # failure rather than the skip a checkout without the starter beside it gets.
       - name: Baselines conformance
         working-directory: baselines
+        env:
+          TB_CONFORMANCE_ONNX: ${{ runner.temp }}/starter/models/micro-bc/model.onnx
         run: |
           python -m pip install --quiet numpy pytest
           python -m pytest tests/ -q
@@ -119,7 +128,6 @@ jobs:
       # over its reference observations, and a whole match through the component.
       - name: Play the starter kit against this build
         run: |
-          git clone --depth 1 https://github.com/Tiny-Brains/ants-starter "$RUNNER_TEMP/starter"
           printf '[games.ants]\nname = "Ants"\npath = "%s/dist"\n' "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/registry.toml"
           export TINYBRAINS_REGISTRY="$RUNNER_TEMP/registry.toml"
           cd "$RUNNER_TEMP/starter"

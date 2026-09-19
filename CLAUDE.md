@@ -116,8 +116,10 @@ cd baselines && pytest tests/ -q   # the adapter conformance gate; needs `tinybr
 **An observation change is a baselines change.** `planes.py` encodes what `engine/src/observe.rs` sends,
 and the conformance test runs over `dist/reference/observations.json`, so a change to either lands
 with the encoding and its regenerated manifest in the same commit — and with the competitor guide's
-*What your model sees*. A retrained model is not a rebuild: `baselines/models/` is committed, like
-`maps/`, because training is neither cheap nor bit-reproducible.
+*What your model sees*. A retrained model is not a rebuild, and **no trained model is committed here**
+(N29): an export lands in the gitignored `baselines/models/`, the platform's baselines are uploaded into
+a season by an admin, and the models a competitor tests against live in `ants-starter/models/` --
+which is also where the conformance test finds a graph to load the manifest against.
 
 ## Architecture
 
@@ -240,10 +242,10 @@ A *wave* is many matches advanced together in one call.
 - **`wave_state` stays opaque** to every caller, and turn order in `turn.rs` is a rule, not an
   implementation detail.
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
-  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, and the baseline rosters —
-  soma's `docker/baselines.toml` and web's `compose/baselines.toml` — fetch `baselines/models/<name>/`
-  by raw URL at a pinned commit for `soma bootstrap` to seed. Renaming the directory or the package
-  breaks every starter clone, and every roster the day it is re-pinned. It stays out of a release: `build.sh` never reads it and
+  `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, so renaming the directory or the
+  package breaks every starter clone. It holds the training code and no model: the baseline rosters
+  that fetched `baselines/models/<name>/` by pinned URL are gone with the models (N29), and a
+  season's baselines are uploaded into it. It stays out of a release: `build.sh` never reads it and
   `tools/pack.py` packs `dist/` alone, so no edit there can move the engine digest.
 
 ## Conventions

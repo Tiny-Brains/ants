@@ -27,7 +27,7 @@ that was worked out.
 | Plain series: the training environment (47, 48 of the loader's) | [cli](https://github.com/Tiny-Brains/cli/blob/main/DECISIONS.md) |
 | Plain series: deployment 47 and 49 (the compose file's) | [web](https://github.com/Tiny-Brains/web/blob/main/DECISIONS.md) |
 | **R1, R2, R4, R6, R9, R10, R11** · **R3, R7, R8** · **R5** | soma · kalam · ants |
-| **N3, N6–N8, N12, N13, N15–N19, N28** · **N1, N2, N4, N5, N9** · **N20–N22, N24, N27** · **N23** · **N25** | soma · kalam · ants · cli · web |
+| **N3, N6–N8, N12, N13, N15–N19, N28, N29** · **N1, N2, N4, N5, N9** · **N20–N22, N24, N27** · **N23** · **N25** | soma · kalam · ants · cli · web |
 | Still open | the repository each is forced in: 30, 31, N14 and three unnumbered in soma; N10 and a runner on another network in kalam; 32 in ants; 26, 27, N11 and the orchestrator in web |
 
 The plain series collides with itself once: the retired loader's **47, 48, 49** and deployment's
@@ -51,7 +51,7 @@ Numbered as the build numbered them. Each names the repository it now lives in.
 
 | # | Decision | Taken as |
 |---|---|---|
-| **49** | *(amended by N20 — the repository is `ants/baselines/` now; the rest stands)* **The baselines are trained artifacts in a repository of their own** | `Tiny-Brains/ants-baselines`, a competitor repository the platform owns, with no special access. One fixed teacher distilled into each weight class (the size/fidelity curve the classes exist to measure) plus a method column at micro (one class, one dataset, several learners). It submits through the ordinary gate, which also means the ordinary gate gets exercised by something other than a fixture |
+| **49** | *(amended by N20 — the repository is `ants/baselines/` now — and by N29 (soma), 19 September 2026: the trained artifacts are committed nowhere in the platform; the three that stood as baselines moved to `ants-starter/models/` for testing against, and a season's baselines are uploaded into it by an admin. The training code stands)* **The baselines are trained artifacts in a repository of their own** | `Tiny-Brains/ants-baselines`, a competitor repository the platform owns, with no special access. One fixed teacher distilled into each weight class (the size/fidelity curve the classes exist to measure) plus a method column at micro (one class, one dataset, several learners). It submits through the ordinary gate, which also means the ordinary gate gets exercised by something other than a fixture |
 | **50** | **Above `mini`, the byte cap stops being the binding constraint** | Measured, not predicted. A row owns `turn_ms / rows` of a play call — 31.2 ms at `wave_k` 16 — and a fully convolutional network over the largest board runs out of turn at about 170,000 parameters, which is inside Mini. `small` reaches its share at roughly a quarter of its 4 MiB cap; no dense architecture reaches `large`'s at all. The classes are not wrong, but the top two are byte budgets nobody can currently spend, and closing that means parameters that are *read* rather than multiplied. Tracked in `ants-baselines` (`README.md`, `classes.toml`) |
 
 ### The game and the protocol — [`ants`](https://github.com/Tiny-Brains/ants)

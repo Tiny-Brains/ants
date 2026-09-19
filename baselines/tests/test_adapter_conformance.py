@@ -40,13 +40,19 @@ def dumped(tmp_path_factory):
     node runs them on -- over the cartridge's reference observations.
 
     `adapt` loads the graph too, so a manifest whose declared shapes the graph refuses fails here
-    rather than at admission. Any shipped model serves: the encoding is the manifest's, not the
-    weights'."""
+    rather than at admission. Any trained model serves: the encoding is the manifest's, not the
+    weights'. This repository commits none since N29 -- the platform's trained models live in
+    ants-starter -- so the graph is `$TB_CONFORMANCE_ONNX`, else the starter's micro-bc beside this
+    checkout. Named by the variable and missing is a FAILURE, not a skip: CI names it, and a gate
+    that skips in CI is no gate."""
     if not CLI:
         pytest.skip("no `tinybrains` on PATH; set TINYBRAINS to the binary")
-    onnx = ROOT / "models" / "micro-bc" / "model.onnx"
+    named = os.environ.get("TB_CONFORMANCE_ONNX")
+    onnx = Path(named) if named else ROOT.parents[1] / "ants-starter" / "models" / "micro-bc" / "model.onnx"
     if not onnx.exists():
-        pytest.skip("no exported model to load the manifest against")
+        if named:
+            pytest.fail(f"TB_CONFORMANCE_ONNX names {onnx}, which does not exist")
+        pytest.skip(f"no trained graph to load the manifest against: set TB_CONFORMANCE_ONNX, or check out ants-starter beside ants ({onnx})")
     out = tmp_path_factory.mktemp("tensors")
     manifest = out / "manifest.json"
     manifest.write_text(adapters.dumps())

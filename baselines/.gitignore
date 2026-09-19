@@ -1,7 +1,10 @@
 # Regenerable from a seed and 90 MB of it: `python -m tb_baselines.collect`.
 data/
-# Checkpoints are not artifacts. What ships is models/<class>-<method>/.
+# Checkpoints are not artifacts.
 runs/
+# Nor are exports, since N29: no model is committed to the platform. A model worth keeping goes to
+# ants-starter/models/ (for testing against) or is uploaded into a season as a baseline.
+models/
 replays/
 tensors/
 __pycache__/
