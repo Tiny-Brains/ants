@@ -151,9 +151,10 @@ target_params = 634000
 
 [[class]]
 name = "large"
-max_bytes = 134217728
-## ~25,800,000 fp16 parameters, and 844 GFLOP at full resolution: 145 times the share. NO DENSE
-## ARCHITECTURE REACHES 70% OF THIS CAP INSIDE THE DEADLINE -- even at stride 8 it is 71 ms.
+max_bytes = 67108864
+## ~12,900,000 fp16 parameters, and about 420 GFLOP at full resolution: some 70 times the share. NO
+## DENSE ARCHITECTURE REACHES 70% OF THIS CAP INSIDE THE DEADLINE -- even at stride 8 it is ~36 ms.
+## 64 MiB is also every node's `max_artifact_bytes`, and Soma refuses a class cap above it.
 ##
 ## That is the interesting fact about the top of the ladder rather than a problem with it: large is
 ## byte-rich and FLOP-poor, so its bytes have to buy KNOWLEDGE rather than arithmetic. The planned
