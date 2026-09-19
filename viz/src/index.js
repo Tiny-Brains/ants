@@ -15,7 +15,8 @@ export const meta = { gameId: "ants", abiVersion: 1 };
  * @param {HTMLElement|string} target   an element, or a selector
  * @param {object|string} replay        the envelope, or a URL to fetch it from
  * @param {object} [opts]  turn, from, to, autoplay, speed, theme ("light"|"dark"),
- *                         chrome ("hover"|"always"), height, onTurn,
+ *                         chrome ("hover"|"always"), height (the player's), stageHeight (the
+ *                         board's -- the player is that plus its bars; wins over height), onTurn,
  *                         labels ([{ seat, name, by }] -- what the host calls each seat),
  *                         explored (open with each seat's explored territory drawn)
  * @returns {Promise<Viewer>}  call .destroy() when the page is done with it

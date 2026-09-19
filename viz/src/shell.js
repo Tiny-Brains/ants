@@ -264,8 +264,8 @@ export class Viewer {
   /**
    * @param {HTMLElement} el   where to draw
    * @param {object} replay    the envelope: it carries its own board, so nothing else is needed
-   * @param {object} [opts]    { turn, from, to, autoplay, speed, theme, chrome, height, labels,
-   *                             explored, onTurn }
+   * @param {object} [opts]    { turn, from, to, autoplay, speed, theme, chrome, height, stageHeight,
+   *                             labels, explored, onTurn }
    */
   constructor(el, replay, opts = {}) {
     this.el = el;
@@ -284,8 +284,12 @@ export class Viewer {
     if (opts.theme) el.dataset.tbTheme = opts.theme;
     if (opts.chrome) el.dataset.tbChrome = opts.chrome;
     // A host that says how tall the player is says it once, here, rather than having to know that
-    // the root is a flex column that will otherwise collapse to its bar.
-    if (opts.height) el.style.height = typeof opts.height === "number" ? `${opts.height}px` : opts.height;
+    // the root is a flex column that will otherwise collapse to its bar. `stageHeight` says how tall
+    // the BOARD is instead, and the player is that plus its bars -- which is what a host sizing the
+    // board to the screen means, since the seats' bar is one row or several depending on the width.
+    // Given both, the board's wins: `height` is then a fallback for a viewer from before it.
+    const len = (v) => (typeof v === "number" ? `${v}px` : v);
+    if (opts.height && !opts.stageHeight) el.style.height = len(opts.height);
 
     try {
       // One pass over the match, on construction. Everything after this is an array lookup, which
@@ -356,6 +360,11 @@ export class Viewer {
 
     // ---- stage
     this.stage = mk("div", "tb-stage");
+    if (this.opts.stageHeight) {
+      this.stage.style.flex = "none";
+      this.stage.style.height =
+        typeof this.opts.stageHeight === "number" ? `${this.opts.stageHeight}px` : this.opts.stageHeight;
+    }
     this.canvas = mk("canvas", null, this.stage);
     this.canvas.setAttribute("role", "img");
     this.renderer = new Renderer(this.canvas);

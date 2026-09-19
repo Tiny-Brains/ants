@@ -412,7 +412,10 @@ nothing to operate. Turn zero is the cartridge's (`replay-decode` over an envelo
 opening ants are left out so the hills show. `map.js` loads on first use, so a host copying the
 viewer's modules by name loses nothing. `check.mjs` checks the sizing, that every basic board's turn
 zero is every hill with every seat owning some, and that the map visual has no control. The web's
-`/maps` and the book's board pages use it. No engine change: the digest is the same.
+`/maps` and the book's board pages use it. The player gains `stageHeight`: the host sizes the BOARD
+and the player is that plus its bars, however many rows the seats take at the width -- the web's
+match page asks for three quarters of the screen's shorter side. No engine change: the digest is the
+same.
 
 **19 September 2026 — boards are designs (N27), and the component carries none (N28).** A board is
 a **design** (`mapgen/src/design.rs`) drawn under the seat shift and a decorative point group about

@@ -21,12 +21,14 @@ import { MapView } from "./map.js";
  * @param {"light"|"dark"} [props.theme]   overrides the page; omit it and the viewer follows the
  *                                         page's own tokens and theme switch
  * @param {"hover"|"always"} [props.chrome] whether the tray of readouts is pinned open
+ * @param {number|string} [props.stageHeight]  how tall the board is; the player is that plus its bars
  * @param {{seat: number, name?: string, by?: string}[]} [props.labels]  what to call each seat
  * @param {boolean} [props.explored]  open with each seat's explored territory drawn
  * @param {(frame: object) => void} [props.onTurn]
  */
 export function AntsReplay({
-  replay, turn, from, to, autoplay, speed, theme, chrome, labels, explored, onTurn, style, className,
+  replay, turn, from, to, autoplay, speed, theme, chrome, stageHeight, labels, explored, onTurn, style,
+  className,
 }) {
   const host = useRef(null);
   const cb = useRef(onTurn);
@@ -39,12 +41,12 @@ export function AntsReplay({
     // The callback goes through a ref so a caller passing an inline arrow does not rebuild the
     // viewer -- and rebuilding it means decoding the whole match again.
     const v = new Viewer(host.current, replay, {
-      turn, from, to, autoplay, speed, theme, chrome, explored,
+      turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored,
       labels: said ? JSON.parse(said) : undefined,
       onTurn: (f) => cb.current && cb.current(f),
     });
     return () => v.destroy();
-  }, [replay, turn, from, to, autoplay, speed, theme, chrome, explored, said]);
+  }, [replay, turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored, said]);
 
   // `createElement` rather than JSX, so this file is plain ES the browser and any bundler both
   // accept and the cartridge needs no JSX toolchain of its own.

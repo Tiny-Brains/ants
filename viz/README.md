@@ -75,7 +75,10 @@ without renumbering it, which is how a tutorial points at turns 40–60 of a rea
 reader still sees "turn 47".
 
 `opts` in full: `turn`, `from`, `to`, `autoplay`, `speed`, `zoom`, `centre`, `theme`, `chrome`,
-`height`, `labels`, `explored`, `onTurn`. `optsFromHash()` reads all of the linkable ones out of a
+`height`, `stageHeight`, `labels`, `explored`, `onTurn`. `height` is the whole player's; `stageHeight`
+is the board's, with the player that plus its bars -- what a host sizing the board to the screen
+wants, since the seats' bar is one row on a wide page and two or three on a phone. Given both,
+`stageHeight` wins. `optsFromHash()` reads all of the linkable ones out of a
 URL — `#turn=84`, `#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`, `#chrome=always`,
 `#explored=1` — because a replay is evidence and evidence gets cited by turn and by corner of the
 board, not described.
