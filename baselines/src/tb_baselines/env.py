@@ -113,7 +113,7 @@ class Env:
 
     `maps` is the board pool: ids the release ships, paths to board files, or a directory of them
     (a season's, say) -- a list or one comma-separated string. None is the release's basic boards.
-    There are no presets: the engine carries no boards, so the pool is boards (ants N28).
+    There are no presets: the engine carries no boards, so the pool is boards.
     """
 
     def __init__(

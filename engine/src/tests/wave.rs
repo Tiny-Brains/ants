@@ -223,13 +223,13 @@ fn actions_may_be_positional_or_explicit_and_they_agree() {
 fn refusals() {
     assert_eq!(invoke("tb.ants.nope", json!({})).unwrap_err().code, "UNKNOWN_FUNCTION");
     assert_eq!(invoke("tb.ants.worldgen", json!({"seeds": []})).unwrap_err().code, "NO_SEEDS");
-    // No board, or a board by name: the component carries none to choose or look up (N28).
+    // No board, or a board by name: the component carries none to choose or look up.
     assert_eq!(invoke("tb.ants.worldgen", json!({"seeds": [1]})).unwrap_err().code, "NO_MAP");
     assert_eq!(
         invoke("tb.ants.worldgen", json!({"seeds": [1], "map": boards::DUEL})).unwrap_err().code,
         "MAP_BAD_SHAPE"
     );
-    // Decision 14: the board carries the seat count and a caller that disagrees is refused.
+    // The seat count is a property of the board, and a caller that disagrees is refused.
     assert_eq!(
         invoke(
             "tb.ants.worldgen",

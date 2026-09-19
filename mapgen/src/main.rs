@@ -11,7 +11,7 @@
 //!     cargo run --release -- sweep                       every area style, 2 to 8 seats, played
 //!
 //! `--recipes DIR` and `--maps DIR` point `generate`, `check` and `adopt` somewhere else. **A
-//! season's boards are made that way, outside every repository** (N28): they reach the platform by
+//! season's boards are made that way, outside every repository**: they reach the platform by
 //! an admin's upload and are pushed to a backup only once their season has closed. This repository
 //! holds the five basic boards and nothing else -- the envelope admission is built on.
 //! **A recipe is a design** (`design.rs`): the board, its shift and point group, and every shape

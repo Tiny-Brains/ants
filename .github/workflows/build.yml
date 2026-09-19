@@ -106,8 +106,8 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP/bin" tinybrains
           "$RUNNER_TEMP/bin/tinybrains" --version
 
-      # The starter holds the platform's trained models since N29 -- this repository commits none --
-      # and the conformance test below loads one of its graphs, so it is cloned first.
+      # The starter holds the platform's trained models -- this repository commits none -- and the
+      # conformance test below loads one of its graphs, so it is cloned first.
       - name: Clone the starter kit
         run: git clone --depth 1 https://github.com/Tiny-Brains/ants-starter "$RUNNER_TEMP/starter"
 

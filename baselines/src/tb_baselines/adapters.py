@@ -18,10 +18,10 @@ Orion's `orion:model@1.0.0`: the model's name, its inputs and outputs with their
 and one JSONLogic **adapter** per input that turns the observation into that input's tensor. It is
 the whole competitor-authored surface — there is no second document.
 
-`in` became the `board` input's adapter and `out` is **gone**. The platform reads the head now
-(decision R3): a manifest's `result` expression is evaluated against the output tensors alone, so it
-cannot see the observation and cannot gather at the ants' cells. `tb-match` does the gather, and
-this manifest declares the head shape it will find — `[1, moves, H, W]`, per cell.
+There is one adapter, the `board` input's, and no output decoder. The platform reads the head: a
+manifest's `result` expression is evaluated against the output tensors alone, so it cannot see the
+observation and cannot gather at the ants' cells. `tb-match` does the gather, and this manifest
+declares the head shape it will find — `[1, moves, H, W]`, per cell.
 
 ## Why the shapes are named
 

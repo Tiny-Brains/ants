@@ -1,5 +1,5 @@
 # The cartridge these baselines train against: the build output of the checkout they live in. The
-# starter kit pins a published release of the same tree instead (devops N21), and
+# starter kit pins a published release of the same tree instead, and
 # `tinybrains games` always reports which way it resolved. `../dist` needs `./build.sh` run there
 # first -- the component, cartridge.json and reference/observations.json are not committed.
 #

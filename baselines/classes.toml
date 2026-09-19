@@ -9,14 +9,13 @@
 ## S' = artifact_bytes + len(manifest). The WHOLE .onnx file and the whole manifest document, raw
 ## -- not zstd, and not initializers only. `tinybrains check` reports it as `size_metric_bytes`.
 ##
-## WHY IT CHANGED, 14 September 2026 (devops decision R4). The old `S` compressed
-## `GraphProto.initializer` and the adapter, and both halves were wrong: a graph can carry its
-## weights in `Constant` node attributes instead of initializers -- eight lines of `onnx.helper`,
-## same arithmetic -- and measure as nothing, and nothing on the platform could compress a document
-## on the admission path anyway. `artifact_bytes` is what the node weighed after re-hashing the
+## WHY RAW BYTES. A compressed metric (zstd of `GraphProto.initializer` and the adapter) is wrong
+## on both halves: a graph can carry its weights in `Constant` node attributes instead of
+## initializers -- eight lines of `onnx.helper`, same arithmetic -- and measure as nothing, and
+## nothing on the platform could compress a document on the admission path anyway. `artifact_bytes` is what the node weighed after re-hashing the
 ## object, so it cannot be understated by where the weights sit.
 ##
-## Bytes per parameter under the new metric, measured 14 September 2026 on the shipped artifacts:
+## Bytes per parameter under this metric, measured on the shipped artifacts:
 ##   fp32   (11,350 - 0) / 3,006  = 3.78   (nano-bc)
 ##   fp16   (53,496 - 0) / 24,077 = 2.22   (micro-bc)
 ## Graph structure is no longer free -- it is a few hundred bytes of protobuf, which is why these
@@ -56,12 +55,10 @@ default = "fp16"
 [compute]
 ## THE BYTE CAP IS NOT THE BINDING CONSTRAINT ABOVE `mini`. THE TURN DEADLINE IS.
 ##
-## A SEAT'S SHARE IS THE WHOLE TURN since 14 September 2026 (devops decision R7). The wave is gone:
-## `tb-match` plays one match and calls `model_infer` once per seat, each with its own
-## `timeout_ms`, so nothing is batched and nothing is divided. It used to be `turn_ms / rows` with
-## `wave_k` 16 and two seats -- 31.2 ms -- and this repository still holds itself to a fraction of
-## the turn rather than all of it, because a model that needs 95% of the clock on this machine has
-## nothing left for a slower host.
+## A SEAT'S SHARE IS THE WHOLE TURN. `tb-match` plays one match and calls `model_infer` once per
+## seat, each with its own `timeout_ms`, so nothing is batched and nothing is divided. This
+## repository still holds itself to a fraction of the turn rather than all of it, because a model
+## that needs 95% of the clock on this machine has nothing left for a slower host.
 ##
 ## 70 GFLOP/s is this machine, measured on the artifacts themselves at the WORST reference board
 ## (128x128, which is what `infer_us_max` reports):

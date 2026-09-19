@@ -2,70 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this directory.
 
-`../CLAUDE.md` is the cartridge's guide and `../../CLAUDE.md` the platform's. This file covers only
-what is specific to the baselines.
+`baselines/` is how TinyBrains Ants entries are trained: the `tb_baselines` Python package (the
+encoding, a scripted teacher, the learners, the export) that ants-starter pip-installs with
+`#subdirectory=baselines`, so **the directory name and the package name are a contract with every
+starter clone**. Its entries are ordinary competitor entries with no special access. It keeps its
+own toolchain and ships in no release: `../build.sh` never runs it and `../tools/pack.py` packs
+`../dist` alone, so an edit here cannot move the engine digest. `README.md` is the human guide
+(commands, design rules, artifacts, invariants); `../CLAUDE.md` is the cartridge's guide and
+`../../CLAUDE.md` the platform's.
 
-## What this directory is
+`models/<class>-<method>/` is where an export writes each artifact (`model.onnx`, the generated
+`manifest.json`, `metrics.json`, `card.md`). **It is gitignored**: the platform commits no model
+here. One worth keeping goes to `ants-starter/models/` for competitors to test against, or is
+uploaded into a season as a baseline from the admin page.
 
-**The platform's own trained entries, and the worked example of how they were trained.** They are
-competitor entries that the platform happens to own: they submit ONNX models and declarative
-adapters like anyone else, and they have no special access to anything.
+## Checks
 
-It was `Tiny-Brains/ants-baselines`, its own repository, until 16 September 2026 (devops decision
-N20). It is a subdirectory of `ants/` because everything Ants — the rules, the viewer and the
-entries trained against them — now comes from one repository, and because an observation change
-and the encoding that reads it used to be two commits in two repositories on the same day. The
-competitor-facing starting point is `Tiny-Brains/ants-starter`, which pip-installs this directory
-as a library (`#subdirectory=baselines`), so **the directory name and the `tb_baselines` package
-name are a contract with every starter clone**.
-
-**This directory keeps its own toolchain and ships in no release.** Python, torch and the
-`tinybrains` binary build it; nothing here is part of the cartridge's gate, `../build.sh` does not
-run it, and `../tools/pack.py` packs `../dist` alone, so an edit here cannot move the engine digest.
-The `build` workflow does run `pytest tests/` against each build, because a release whose reference
-observations the encoding no longer matches is a release every trainer inherits.
-
-Two axes, and they do not cross cleanly:
-
-- **The class ladder** — one fixed teacher distilled into each of the five weight classes, which is
-  how the competition's actual question ("how much play fits in N bytes?") gets a measured answer.
-- **The method column** — several learners on one class and one dataset, so the comparison is
-  between algorithms rather than between algorithms *and* budgets at once.
-
-`models/<class>-<method>/` is where an export writes each finished artifact: `model.onnx`, the
-generated `manifest.json`, a `metrics.json` of what the platform said about it, and a `card.md` a
-person can read. **It is gitignored** (N29): the platform ships no model. One worth keeping goes to
-`ants-starter/models/` for competitors to test against -- nano-bc, micro-bc and micro-percell live
-there -- or is uploaded into a season as a baseline from the admin page.
-
-## Working here needs the cartridge built, and one sibling checkout
-
-```text
-tinybrains/
-  ants/             <- games.toml resolves the cartridge from `../dist`; run ./build.sh there first
-    baselines/      <- you are here
-  cli/              <- the `tinybrains` CLI, if you build it rather than install a release
-```
+Needs the cartridge built (`games.toml` resolves `../dist`) and a current `tinybrains`:
 
 ```sh
-(cd .. && ./build.sh)                    # into ../dist: the component, cartridge.json, reference observations
-brew install tiny-brains/cli/tinybrains  # after `brew tap tiny-brains/cli https://github.com/Tiny-Brains/cli`; or: export TINYBRAINS=../../cli/target/release/tinybrains
-pip install -e '.[dev]'                  # torch, numpy, onnx, pytest
-```
-
-## Commands
-
-```sh
-pytest tests/ -q                                   # THE test. See "What must stay true".
+(cd .. && ./build.sh)                              # ../dist: the component, cartridge.json, reference observations
+pip install -e '.[dev]'                            # torch, numpy, onnx, pytest
+pytest tests/ -q                                   # THE test; needs `tinybrains` on PATH or TINYBRAINS set
 python -m tb_baselines.adapters > /tmp/a.json      # the generated adapter
-python -m tb_baselines.collect --seat-turns 250000 # the teacher dataset (about 9 minutes, 90 MB)
-python -m tb_baselines.train.bc --class micro --epochs 6
-python -m tb_baselines.train.bc --class micro --arch percell --channels 112 --blocks 2  # the control
-python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
-python -m tb_baselines.eval models/micro-bc models/nano-bc --boards 3
 ```
 
-## The three gates, and only two of them are real
+The conformance test loads a trained graph: `$TB_CONFORMANCE_ONNX`, else
+`../../ants-starter/models/micro-bc/model.onnx`. CI clones the starter and names it, so a missing
+file there is a failure rather than a skip.
+
+## Rules
+
+**Three gates, and only two of them are real:**
 
 ```
 tinybrains env       training rollouts    fast; NO deadline, NO strikes, NO adapter
@@ -73,67 +41,59 @@ tinybrains <match>   eval.py              the real path, minus admission
 tinybrains check     export.py            what the platform will actually decide
 ```
 
-`tinybrains env` is not the referee. A policy that trains happily can still be struck for missing
-the turn clock or refused for an adapter that goes over budget, because none of that exists in the
-env. Never report a result from the env as a result.
-
-## What must stay true
+A policy that trains happily in the env can still be struck for missing the turn clock or refused
+for an adapter over budget. Never report a result from the env as a result.
 
 - **`planes.py` is the only definition of the encoding, and it is rendered twice.** The numpy
-  encoder trains the network; `adapters.py` generates the `manifest.json` the ladder runs. Two
-  implementations of one encoding is how a model scores worse in the arena than in training, and it
-  fails *silently*. `tests/test_adapter_conformance.py` runs the real evaluator (`tinybrains adapt`,
-  which is **datalogic**, the evaluator an Orion node runs the manifest on) over the cartridge's
-  reference observations and asserts they agree element for element. **It is the most important
-  test here.** It has already caught a plane filter inverted and a dilation radius off by five.
-- **`manifest.json` is generated and never hand-edited.** Same rule as `ants/build.sh`'s manifests,
-  for a sharper reason: editing one rendering of the encoding without the other is exactly the bug
-  the conformance test exists to catch, and a hand-edit is how it gets reintroduced.
+  encoder trains the network; `adapters.py` generates the `manifest.json` the ladder runs.
+  `tests/test_adapter_conformance.py` runs the real evaluator (`tinybrains adapt`, which is
+  **datalogic**, the evaluator an Orion node runs the manifest on) over the cartridge's reference
+  observations and asserts they agree element for element. **It is the most important test here.**
+- **`manifest.json` is generated and never hand-edited.** Editing one rendering of the encoding
+  without the other is exactly the bug the conformance test exists to catch.
+- **An observation change lands here in the same commit.** `planes.py` encodes what
+  `../engine/src/observe.rs` sends; regenerate the manifest and update `manifest_bytes` in
+  `classes.toml` when the plane set changes.
 - **Numbers in `classes.toml` are measured, and the measurement is written down beside them.**
   Nothing there is a guess. When something is re-measured, replace the number *and* its note.
 - **A variant is a command line, not a second table.** `--arch/--channels/--blocks` override the
   class's entry, and the run's `history.json` and the model card record what was actually built.
-  `classes.toml` stays the five classes and does not grow a row per experiment.
+  `classes.toml` stays the five classes.
 - **The teacher is a label source, not a baseline.** It never ships. The class ladder is only
-  meaningful if every class distils the *same* teacher, so changing it invalidates the comparison —
-  regenerate the whole dataset and retrain everything, or don't change it.
+  meaningful if every class distils the *same* teacher, so changing it means regenerating the whole
+  dataset and retraining everything.
 - **The value head is never exported.** `export.py` takes the trunk and the policy head only. It is
   a real saving (at nano a critic would be a third of the budget) and it is what makes privileged
-  input safe: a critic may see the true score because a critic is discarded before anything plays.
-- **The engine digest belongs on every artifact.** A model trained against one engine and played
-  under another is a model nobody can reproduce, and an engine change is a rules change. The dataset
-  header, `metrics.json` and `card.md` all carry it.
+  input safe: a critic may see the true score because it is discarded before anything plays.
+- **The engine digest belongs on every artifact**: the dataset header, `metrics.json` and `card.md`.
+  A model trained against one engine and played under another cannot be reproduced.
 - **`data/`, `runs/`, `replays/` and `models/` are gitignored output.** The dataset is 90 MB and
-  regenerable from a seed; a checkpoint is not an artifact; and an exported model is committed
-  nowhere in the platform (N29) -- the conformance test loads `ants-starter/models/micro-bc`, or
-  whatever `TB_CONFORMANCE_ONNX` names.
+  regenerable from a seed, and a checkpoint is not an artifact.
+- **The model card is generated from `export.py`'s `CARD` template**, and ants-starter commits the
+  cards of its models. A change to the template's fixed text is a hand edit to those cards too.
 
-## Things that were measured here, and cost time to find
+## Gotchas / what breaks
 
-- **Receptive field was the binding constraint, not capacity** — the long version is
-  [`docs/receptive-field.md`](docs/receptive-field.md), and it is the one to read first. Dilation is
-  an attribute of `Conv`, not an operator, so it needs nothing the allowlist does not have.
-
-- **fp16 initializers are free capacity.** A `Cast` back to float32 at each use, which the runtime
-  constant-folds when it optimises the graph, so the *file* halves and the runtime does not change:
-  **2.03x the parameters for the same weight class**, identical play over 396 per-ant orders, same
-  three operators. It matters more under `S'` than it did under `S`, because `S'` is the artifact's
-  raw bytes rather than a compression of its initializers. There is no reason to ship fp32.
-- **Above `mini` the turn deadline binds before the byte cap does.** A seat owns the **whole** turn
-  since the wave went — one `model_infer` per seat, each with its own `timeout_ms` (decision R7) —
-  so the share is 1000 ms rather than the 31.2 ms a 16-row wave divided out. `export.py` still
-  refuses an artifact over 70% of that share, which is the check that turns this from a paragraph
-  into a gate, and the margin is deliberate: a model needing 95% of the clock here has nothing left
-  for a slower host.
+- **An old `tinybrains` fails the env tests.** `tests/test_env.py` needs a binary whose `env`
+  understands `--maps`; an older one exits and every env test errors with "the environment exited".
+  Point `TINYBRAINS` at a current build (`../../cli/target/release/tinybrains`) or the latest release.
+- **Receptive field is the binding constraint, not capacity.** A model with too small a window
+  trains, exports, passes admission and loses quietly. README §Design rules has the rules.
+- **fp16 initializers are free capacity.** A `Cast` back to float32 at each use is constant-folded
+  by the runtime, so the *file* halves and inference does not change: 2.03x the parameters for the
+  same class, identical play. The size metric is the artifact's raw bytes, so there is no reason to
+  ship fp32.
+- **Above `mini` the turn deadline binds before the byte cap does.** A seat owns the whole turn (one
+  `model_infer` per seat, each with its own `timeout_ms`), and `export.py` still refuses an artifact
+  over 70% of that share: a model needing 95% of the clock here has nothing left for a slower host.
 - **`ConvTranspose` is not on the operator allowlist.** `Resize` is the upsampler.
-- **The board wraps, and padding costs.** Wrapping before every convolution measured 2.3x the FLOP
+- **The board wraps, and padding costs.** Wrapping before every convolution cost 2.3x the FLOP
   model; one wrap per resolution stage is the same arithmetic for a third of the copying.
-- **A batch is per board size.** The env plays one board a wave, the basic boards are five sizes
-  (24x24 to 120x124) and a season's any size inside them, and one tensor cannot hold two. `Step.groups` is that, and `Step.boards` raises rather than silently
-  handing back a fraction of the batch.
-- **`dilate` scatters from the ants, it does not roll the plane.** The obvious reading — shift the
-  board by all 241 disk offsets and OR — was 48% of the training loop at 1.86 million `np.roll`
-  calls. Walking the disk out from each set cell is the same answer for 8,700 writes instead of 3.9
-  million. **It is no longer part of the encoding**: the cartridge sends `vis` (decision R5), so
-  `planes.py` reads it with the same `rle_expand` it uses for `water`. The function is kept because
-  it is what proves the engine's mask is the mask the trainer used to derive.
+- **A batch is per board size.** The env plays one board a wave, the basic boards are five sizes and
+  a season's are any size inside them, and one tensor cannot hold two. `Step.groups` is that, and
+  `Step.boards` raises rather than silently handing back a fraction of the batch.
+- **`dilate` scatters from the ants; it does not roll the plane.** Rolling the board by all 241
+  disk offsets was about half the training loop; walking the disk out from each set cell is the same
+  answer for a tiny fraction of the writes. It is not part of the encoding (the cartridge sends
+  `vis`, which `planes.py` reads with `rle_expand`); it is kept as the independent check that the
+  engine's mask is the disk the trainer would derive.

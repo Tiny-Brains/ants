@@ -11,8 +11,8 @@ that misses its class.
 Every export writes three files beside the model: `manifest.json` (generated, never edited),
 `metrics.json` (what the platform said), and `card.md` (what a person needs to reproduce it). The
 card names the **engine digest**, because a baseline that cannot say which engine it was trained
-against is a baseline nobody can reproduce. (It used to name an evaluator digest too; the evaluator
-is datalogic now, and `tinybrains games` prints the version this binary links.)
+against is a baseline nobody can reproduce. (The evaluator is datalogic, and `tinybrains games`
+prints the version this binary links.)
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def halve(path: Path) -> None:
     graph's compute dtype is untouched: the runtime constant-folds `Cast(initializer)` as it
     optimises the graph, so the fp32 tensor is rebuilt once at session load and never per inference.
 
-    Measured 10 September 2026: 2.03x the parameters for the same class, no measurable change in
+    Measured: 2.03x the parameters for the same class, no measurable change in
     inference time, the same three operators, and 396 of 396 per-ant orders identical to the fp32
     graph over three played matches.
     """
@@ -180,8 +180,8 @@ def certify(name: str, said: dict) -> list[str]:
     # The deadline, made a check rather than a paragraph. Above `mini` this is what refuses an
     # artifact, and the byte cap never gets a say.
     #
-    # A SEAT'S SHARE IS THE WHOLE TURN since the wave went (decision R7): one `model_infer` per
-    # seat, each with its own deadline, so there is no shared call to divide. `budget()` keeps the
+    # A SEAT'S SHARE IS THE WHOLE TURN: one `model_infer` per seat, each with its own deadline, so
+    # there is no shared call to divide. `budget()` keeps the
     # fraction this repository holds itself to, which is a self-imposed margin and not the
     # platform's rule.
     share = said["infer_us_max"] / b["share_us"]
@@ -199,7 +199,7 @@ def report(name: str, said: dict) -> dict:
     g = said["graph"]
     return {
         "class": name,
-        # S' = artifact_bytes + len(manifest) (decision R4). Both terms are what a node measures
+        # S' = artifact_bytes + len(manifest). Both terms are what a node measures
         # against a digest it re-hashes, so neither can be understated by where the weights sit --
         # which the old zstd-of-initializers metric could be, and was.
         "size_metric_bytes": said["size_metric_bytes"],
@@ -246,9 +246,9 @@ CARD = """# {name}
 Reproduce with `{repro}`.
 
 Inference time is measured on whatever machine ran the check and is **reported, never a gate**:
-there is no compute cap (devops decision 46). It is here because the turn deadline is what a graph
-too expensive to play runs into, and a seat's share of it is the WHOLE turn -- one `model_infer`
-call per seat, each with its own deadline (decision R7).
+there is no compute cap. It is here because the turn deadline is what a graph too expensive to
+play runs into, and a seat's share of it is the WHOLE turn -- one `model_infer` call per seat,
+each with its own deadline.
 """
 
 

@@ -38,8 +38,8 @@ cargo test --locked
 
 # The basic boards: every one under maps/ is what its recipe under mapgen/recipes/ makes, byte for
 # byte, and obeys the rules every board obeys. A crate of its own, so tuning the generator is not an
-# engine-digest change -- and since N28 regenerating a board is not one either: the component
-# carries none. A season's boards are made with the same tool, outside this repository.
+# engine-digest change -- and neither is regenerating a board: the component carries none. A
+# season's boards are made with the same tool, outside this repository.
 (cd "$here/mapgen" && cargo test --locked)
 
 # From scratch: a board deleted from maps/ must not survive in dist/maps/, and a viewer transpiled

@@ -41,7 +41,7 @@ def dumped(tmp_path_factory):
 
     `adapt` loads the graph too, so a manifest whose declared shapes the graph refuses fails here
     rather than at admission. Any trained model serves: the encoding is the manifest's, not the
-    weights'. This repository commits none since N29 -- the platform's trained models live in
+    weights'. This repository commits none -- the platform's trained models live in
     ants-starter -- so the graph is `$TB_CONFORMANCE_ONNX`, else the starter's micro-bc beside this
     checkout. Named by the variable and missing is a FAILURE, not a skip: CI names it, and a gate
     that skips in CI is no gate."""
@@ -111,7 +111,7 @@ def test_the_generated_manifest_is_byte_stable():
     assert doc["abi"] == adapters.ABI
     assert [i["name"] for i in doc["inputs"]] == ["board"], "the graph declares one input"
     assert [o["name"] for o in doc["outputs"]] == ["policy"]
-    assert "result" not in doc, "the platform reads the head; a manifest may not decode it (R3)"
+    assert "result" not in doc, "the platform reads the head; a manifest may not decode it"
     # The axes are NAMED, which is what lets one session serve every board the season runs.
     assert doc["inputs"][0]["shape"][2:] == ["H", "W"]
     assert doc["outputs"][0]["shape"][2:] == ["H", "W"]
@@ -138,8 +138,8 @@ def test_the_action_table_is_the_channel_order_the_platform_decodes():
     """Channel `i` of the policy head means `MOVES[i]`.
 
     That index is what the cross-entropy label uses (`train/bc.py`'s `MOVE_INDEX`) and what
-    `orders_from_indices` writes back. **The platform closes the loop now, not the manifest**
-    (decision R3): `tb-match` argmaxes the channels and indexes its own table, which is
+    `orders_from_indices` writes back. **The platform closes the loop, not the manifest**:
+    `tb-match` argmaxes the channels and indexes its own table, which is
     `["N","E","S","W","-"]` in `kalam/scripts/gen-kalam.py` and `cli/src/model.rs`. So this
     table is a contract between the trainer and the platform, with no adapter in between — and if
     the two disagreed, every move would be systematically wrong while the model, the loss, the
@@ -163,7 +163,7 @@ def test_the_manifest_reads_the_output_the_export_names():
 
 
 def test_the_visibility_plane_reads_the_engines_mask():
-    """`vis` is SENT now (decision R5), not derived.
+    """`vis` is SENT by the engine, not derived.
 
     The old plane was `tb.dilate(scatter(mine), 77)` and existed because a model cannot tell *known
     empty* from *never seen* without it. The expression language cannot address an enclosing

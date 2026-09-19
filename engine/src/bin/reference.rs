@@ -5,7 +5,7 @@
 //! early turn, a middling one and a busy one, on three seeds. A gate that tested one 96x96 mid-game
 //! board would be asking a competitor for more than it checks.
 //!
-//! **The basic boards are the envelope** (N28). A season's maps are uploaded, not shipped, and may
+//! **The basic boards are the envelope.** A season's maps are uploaded, not shipped, and may
 //! change while the season is live, so a model admitted today must play a board added next week.
 //! The set therefore covers what an upload is ALLOWED to be -- `limits.boards`, which
 //! `tools/package.py` derives from these same five boards -- rather than what any season has now:

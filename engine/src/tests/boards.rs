@@ -1,6 +1,6 @@
 //! The boards the tests play: the basic boards under `../maps/`, read from disk when a test runs.
 //!
-//! The component carries none (N28), so a test that needs a real board loads one exactly as every
+//! The component carries none, so a test that needs a real board loads one exactly as every
 //! caller now does and hands it to `worldgen` whole. Read at run time rather than compiled in with
 //! `include_str!`, so the board `mapgen generate` just wrote is the board the next `cargo test` plays.
 

@@ -69,7 +69,7 @@ fn every_basic_board_is_valid_and_symmetric() {
 
 #[test]
 fn the_basic_boards_reach_from_two_seats_to_eight() {
-    // They are the envelope (N28): `tools/package.py` derives `limits.boards` from them, the
+    // They are the envelope: `tools/package.py` derives `limits.boards` from them, the
     // reference set is drawn on them, and every season upload must fit inside what they span. A set
     // that stopped at six seats would quietly refuse every eight-seat board a season designed.
     let seats: Vec<u8> = boards::all().iter().map(|m| m.players).collect();
@@ -101,7 +101,7 @@ fn a_map_survives_the_round_trip_to_a_file_and_back() {
 
 #[test]
 fn the_caller_hands_over_the_board_and_the_engine_carries_none() {
-    // N28: the component has no catalogue, so a board is never named -- it is sent, whole. On the
+    // The component has no catalogue, so a board is never named -- it is sent, whole. On the
     // ladder pair chooses it and the claim carries it; a competitor still cannot pick their own.
     let duel = boards::json(boards::DUEL);
     let other = boards::board("basic-small-3p");

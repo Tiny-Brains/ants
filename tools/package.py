@@ -13,7 +13,7 @@ carries -- a checkout and a downloaded release are read the same way.
                   read once at registration and stored on the game row, so it carries what a caller
                   needs to CHOOSE and CHECK a board while the boards travel as files. The digest is
                   over the file exactly as committed, so a competitor with a stale export is told so.
-                  `limits.boards` is THE ENVELOPE (N28): the seat counts, sides and cells the basic
+                  `limits.boards` is THE ENVELOPE: the seat counts, sides and cells the basic
                   boards span, which is what the reference set is drawn on and so what admission
                   has proved an adapter against. A season's upload must fit inside it -- Soma
                   refuses one that does not -- because maps change while a season is live and a

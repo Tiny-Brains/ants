@@ -1,180 +1,144 @@
 # The Ants viewer
 
-One bundle, three consumers: the web application's Replay screen, the book's tutorials, and
-`tinybrains view`. It re-simulates through **the same component digest that recorded the match** —
-`replay-decode`, transpiled by `jco` and running in the browser — so the viewer and the referee
-cannot disagree about what happened. There is no JavaScript re-implementation of any rule here,
-and there must never be one.
+One bundle for three consumers: the web application's replay and map pages, the book, and
+`tinybrains view`. It re-simulates a match through the component that recorded it (`replay-decode`,
+transpiled by `jco` and running in the browser), so the viewer and the referee cannot disagree
+about what happened. It ships in the release archive and in `dist/viz/`; web serves it at
+`/cartridges/ants/`.
 
-## The player
-
-It behaves like a media player, because watching a match is what it is for.
-
-| | |
-|---|---|
-| **Transport** | first · previous · play/pause · next · last, all clickable, all with keys. The only thing always on screen |
-| **Timeline** | click anywhere to jump, drag to scrub. Coloured ticks mark the turns worth finding — a hill razed, a colony wiped out — in the seat's own colour |
-| **Title bar** | every seat, always on screen: its colour, its model name and whose it is, then its ants, its hills and its score — the counts in the board's own shapes, a dot and a square, and its share explored beside an eye while territory is on. The owner gives way first and whole, then the name; the numbers never do. Both are in full on hover |
-| **The tray** | zoom buttons and the territory toggle, over the board's top-right corner and out of the way until you hover it, focus it or touch it |
-| **Zoom** | wheel to zoom about the cursor, drag to pan, buttons for −/+/fit. The board opens fitted and stays fitted through a resize until you zoom |
-| **Hill rings** | a hill with an enemy ant within eight moves of it is ringed in its owner's colour — the seat about to lose it — and the ring warms as the attacker closes. Moves, not distance: round water and across the wrap |
-| **Territory** | the eye button, or `E`, draws what each seat has explored: fog where nobody has looked, each seat's colour where it has, each seat's frontier traced, and its share of the board on its chip |
-| **Keys** | `space` play/pause · `←` `→` step (hold shift for ten) · `↑` `↓` ten · `Home` `End` · `+` `−` `0` zoom · `E` territory |
-
-**Two bars and a board.** The seats are a title bar above the board and the transport a bar below
-it, and both are always on screen — who is playing and what the score is are read the whole way
-through a match, so they are not something to go and find. Two seats cost the board one line, about
-34 pixels of a 460-pixel frame; it used to be a strip of wrapping chips that took a fifth of it.
-Four seats and six do not fit one line of the web's home-page frame at any size of type, so the
-seats are a grid whose columns come from the seat count and the width alone (`seatColumns()`): two
-rows of two there, or of three, and one row on the match page. The number of rows never depends on
-the text in them, so nothing a turn changes can move the board. The tools are the only layer over
-the stage, the way a video player's chrome is, and `chrome: "always"` pins them open. The board's
-identity and the cell readout were taken out on 11 September 2026.
-
-**It takes the width its host gives it.** The root has `contain: inline-size`. The title bar is one
-line of text and the canvas is drawn at the pixels it was last given, and without containment
-either became the viewer's minimum width: the day the title bar arrived, the web application's
-home-page replay grew from its 410-pixel column to 871 and squeezed the headline beside it into
-280. A host that sizes to its content — an inline-block, a float — has to give the viewer a width.
-
-## Light and dark
-
-**The chrome follows the page.** Every colour of the frame is one of the platform's design tokens
-with a written-out fallback — `var(--ink, #142642)` and the rest — so on a page that loads
-`design-system/tokens.css` the player is the colour of the card it sits in and follows the theme
-switch with nothing to wire up, and on a page that does not (the book, `tinybrains view`) it still
-looks like TinyBrains and answers `prefers-color-scheme`. Pass `theme: "light" | "dark"` to override
-the page; the book does, because mdBook's theme switch is not the operating system's.
-
-**The board does not.** Its palette is fixed in both themes: a match has to look like itself, the
-way a video does not change colour with the player around it. It is drawn from the platform's own
-blues so it belongs here, but every value is a literal, and the tray's panels are a flat dark that
-belongs to the board rather than to the theme — they are read against terrain, not against the page.
-
-**The stylesheet cannot leave the viewer.** One `<style>` goes into the host document on mount; it
-is not a shadow root. Every rule in it starts at `.tb-viz`, and `check.mjs` fails the build if one
-does not — an unscoped `.tb-bar` in here once landed on the web application's own header and
-silently relaid it out the moment a replay mounted.
-
-## Using it
+## Usage
 
 ```js
-// Anything that is not a React application: the book, tinybrains view, a plain page.
+// The web application, the book, tinybrains view: any page.
 import { mount } from "/cartridges/ants/viz.js";
 const viewer = await mount("#replay", replayEnvelope, { from: 40, to: 60, autoplay: true });
 // viewer.destroy() when the page is done with it
 
-// The web application.
-import { AntsReplay } from "/cartridges/ants/react.js";
+// A React host can use the wrapper instead. React is a peer dependency.
+import { AntsReplay } from "./react.js";
 <AntsReplay replay={envelope} onTurn={(f) => setScore(f.score)} />
 ```
 
-A replay carries its own board, so the envelope is the only input. `from`/`to` narrow the timeline
-without renumbering it, which is how a tutorial points at turns 40–60 of a real match and the
-reader still sees "turn 47".
+The web application imports `viz.js` directly and serves only the modules it needs, not `react.js`.
 
-`opts` in full: `turn`, `from`, `to`, `autoplay`, `speed`, `zoom`, `centre`, `theme`, `chrome`,
-`height`, `stageHeight`, `labels`, `explored`, `onTurn`. `height` is the whole player's; `stageHeight`
-is the board's, with the player that plus its bars -- what a host sizing the board to the screen
-wants, since the seats' bar is one row on a wide page and two or three on a phone. Given both,
-`stageHeight` wins. `optsFromHash()` reads all of the linkable ones out of a
-URL — `#turn=84`, `#from=40&to=60&autoplay=1`, `#turn=84&zoom=4&centre=31,72`, `#chrome=always`,
-`#explored=1` — because a replay is evidence and evidence gets cited by turn and by corner of the
-board, not described.
+`mount(target, replay, opts)` takes an element or a selector, and the envelope or a URL to fetch it
+from. A replay carries its own board, so the envelope is the only input. `viz.js` also exports
+`mountMap`, `optsFromHash`, `Viewer`, `SEATS`, `frameAt`, `allFrames`, `board` and `meta`.
 
-`labels` is what the host calls each seat: `[{ seat, name, by }]`, shown as given. An envelope only
-has the referee's name for a seat — a weights hash, or a label a local run chose — so without it the
-tray said `6fae1212` while every other panel on the page said `mover` `by @someone`. The web
-application passes the model's name and `@owner`; the book and `tinybrains view` pass nothing and
-get the envelope's.
+The player is two bars and a board: the seats are a title bar above it (colour, model name and
+owner, then ants, hills and score), and the transport a bar below it. Seats lay out in a grid whose
+columns come from the seat count and the width alone (`seatColumns()`), so nothing a turn changes
+can move the board. The zoom buttons and the territory toggle sit in a tray over the board's
+top-right corner, hidden until hovered, focused or touched.
 
-## The map visual
+| Control | Does |
+|---|---|
+| Transport | first, previous, play/pause, next, last |
+| Timeline | click to jump, drag to scrub; ticks mark a hill razed or a colony wiped out, in the seat's colour |
+| Zoom | wheel about the cursor, drag to pan, −/+/fit buttons; opens fitted and stays fitted through a resize until zoomed |
+| Hill rings | a hill with an enemy ant within eight moves (round water, across the wrap) is ringed in its owner's colour |
+| Territory | the eye button or `E`: fog where nobody has looked, each seat's explored area and frontier, its share on its chip |
+| Keys | `space` play/pause · `←` `→` step (shift for ten) · `↑` `↓` ten · `Home` `End` · `+` `−` `0` zoom · `E` territory |
+
+The root has `contain: inline-size`, so the viewer takes the width its host gives it. A host that
+sizes to its content (an inline-block, a float) must give it a width.
+
+## Options and hash parameters
+
+| Option | Meaning |
+|---|---|
+| `turn` | The turn to open on |
+| `from`, `to` | Narrow the timeline without renumbering it: a tutorial shows turns 40–60 and the reader still sees "turn 47" |
+| `autoplay`, `speed` | Start playing, and how fast |
+| `zoom`, `centre` | Open zoomed about `[row, col]` |
+| `theme` | `"light"` or `"dark"`; overrides the page |
+| `chrome` | `"hover"` (default) or `"always"`, which pins the tray open |
+| `height` | The whole player's height |
+| `stageHeight` | The board's height; the player is that plus its bars. Wins over `height` |
+| `labels` | `[{ seat, name, by }]`: what the host calls each seat. Without it a seat shows the envelope's name |
+| `explored` | Open with territory drawn |
+| `onTurn` | Called with each frame shown |
+
+`AntsReplay` takes `replay` and the same options except `height`, `zoom` and `centre`, plus `style`
+and `className`.
+
+`optsFromHash(url = location)` reads the linkable options from a URL's hash (or query), so a link can
+cite a moment and a corner of the board: `#turn=84`, `#from=40&to=60&autoplay=1`,
+`#turn=84&zoom=4&centre=31,72`, `#chrome=always`, `#explored=1`. It reads `turn`, `from`, `to`,
+`speed`, `autoplay`, `explored`, `zoom`, `centre` (or `center`), `theme` and `chrome`.
+
+**Theme.** Every colour of the frame is a platform design token with a written-out fallback
+(`var(--ink, #142642)`), so on a page that loads `design-system/tokens.css` the player follows the
+page's theme with nothing to wire up, and elsewhere it answers `prefers-color-scheme`. The book
+passes `theme` because mdBook's switch is not the operating system's. The board's palette is fixed
+in both themes: a match looks like itself.
+
+## Map visual
 
 A board on its own, for a season's map page, an admin's list of uploads and the book's board pages:
-**the board at turn zero under exactly three facts -- its name, how many play it, and its size in
-cells** -- and nothing else. No seats' title bar, no transport, no tray; nothing to click, hover or
-zoom. A board is read, not played.
+the board at turn zero under its name, how many play it and its size in cells. No seats, no
+transport, no tray; nothing to click, hover or zoom.
 
 ```js
 import { mountMap } from "/cartridges/ants/viz.js";
 const view = await mountMap("#board", mapFile, { maxHeight: 520 });   // the map file, whole, or a URL
 // view.destroy() when the page is done with it
 
-import { AntsMap } from "/cartridges/ants/react.js";
+import { AntsMap } from "./react.js";
 <AntsMap board={mapFile} />
 ```
 
-`opts`: `name` (instead of the board's own `id`), `theme`, `maxHeight`. It takes the host's width and
-the height the board's shape asks for (`mapFrame()`), capped at `maxHeight`, so a list of boards is
-a list of their own shapes rather than letterboxed frames. **Turn zero comes from the cartridge**:
-the board goes through `replay-decode` as an envelope of no moves, so which seat owns which hill and
-what food it opens on are the engine's to say, and a board the engine refuses is shown as refused.
-Of that frame it draws the terrain, the hills and the food -- not the opening ants, which are the
-match's and would hide every hill. `map.js` is loaded by `mountMap` on first use rather than with
-`viz.js`, so a host that copies the viewer's modules by name keeps its replays working with a list
-that predates it. The book's slots take it with `data-view="map"`.
+Options: `name` (instead of the board's own `id`), `theme`, `maxHeight`. It takes the host's width
+and the height the board's shape asks for (`mapFrame()`), capped at `maxHeight`. Turn zero comes
+from the cartridge (`replay-decode` over an envelope of no moves), so a board the engine refuses is
+shown as refused. It draws the terrain, the hills and the food, not the opening ants. `map.js` is
+loaded by `mountMap` on first use, not with `viz.js`. The book's slots take it with
+`data-view="map"`.
 
-## Building
+## Build and checks
 
 ```sh
-./build.sh          # jco transpile, geometry checks, copy; writes ../dist/viz/ (needs ../build.sh first)
+./build.sh          # jco transpile, copy, then check.mjs; writes ../dist/viz/ (needs ../build.sh first)
 node check.mjs      # just the checks
 ```
 
-`check.mjs` is what can be checked without eyes: fitting a board to a frame, zooming about a point,
-clamping a pan, turning a click back into a cell. Arithmetic that is out by one looks almost right
-on a screen and is never noticed — the first version of the fit logic opened a 96×96 board at four
-pixels a cell in a 900-pixel frame, and no test would have said so.
+`check.mjs` checks what needs no browser: fitting a board to a frame, zooming about a point,
+clamping a pan, turning a click back into a cell, hill-ring step counts, territory, seat labels, the
+map visual's sizing and turn zero on every basic board, and a replay of
+`engine/src/tests/fixtures/replay-maze-03.json` through the geometry. It fails if a stylesheet rule
+is not scoped to `.tb-viz`, if the tray is not hidden until hovered, or if `.tb-viz[hidden]` is
+missing (a host hides the player with it while it fetches a replay). It imports the built shell,
+because a backtick inside a CSS comment ends the template literal and `node --check` does not notice.
 
-It also reads the stylesheet the shell carries and fails if a rule is not scoped to `.tb-viz`, if
-the tray is not hidden until it is hovered, or if `.tb-viz[hidden]` goes missing — the line a host
-depends on to hide the player while it fetches a replay. And it imports the built shell, because a
-backtick inside a CSS comment ends the template literal and `node --check` on a `.js` file reads the
-wreckage as a script and says nothing.
-
-The bundle is not committed. It lands in `../dist/viz/` beside the component it was transpiled
-from, and ships in the artifact image under `/artifacts/viz/`, so only someone changing the viewer
-needs Node. `engine.json` records the component digest the bundle carries: a replay naming a
-different `engine_digest` is one this build cannot faithfully show, and `tinybrains view` says so
-rather than drawing it anyway.
+`engine.json` records the component digest the bundle was transpiled from. A replay naming a
+different `engine_digest` is one this build cannot faithfully show, and `tinybrains view` says so.
 
 ## Layout
 
 ```text
-src/engine.js   the cartridge in the browser -- decode one frame, or a range in one pass
-src/render.js   pixels: terrain, territory, rings, food, hills, ants, and the zoom/pan geometry. Decides nothing
-src/shell.js    the player: title bar, transport, timeline with event marks, the tools tray, the
-                stylesheet, and what is drawn over the board -- the rings' step counts and the
-                territory's fold
-src/map.js      the map visual: a board on its own at turn zero, its name, player count and size
-check.mjs       checks that need no browser: geometry, step counts, territory, labels, CSS scoping
-src/index.js    mount() and mountMap() -- built to viz.js, the path the platform loads
-src/react.js    the same viewer, and the map visual, as React components; React is a peer
+src/index.js    mount(), mountMap(), optsFromHash() -- built to viz.js, the path the platform loads
+src/shell.js    the player: title bar, transport, timeline and its marks, the tray, the stylesheet,
+                and what is drawn over the board (ring step counts, the territory's fold)
+src/render.js   pixels: terrain, territory, rings, food, hills, ants, and the zoom/pan geometry
+src/engine.js   the cartridge in the browser: decode one frame, or a range in one pass
+src/map.js      the map visual: a board on its own at turn zero
+src/react.js    AntsReplay and AntsMap, the same viewer as React components (web does not use them)
+check.mjs       checks that need no browser
+build.sh        the build into ../dist/viz/
 ```
 
-## Three choices worth knowing
+## Invariants
 
-**Territory comes from the engine; the rings do not need it.** Vision is a rule — a radius, on a
-board that wraps — and a viewer that drew it would be a second engine free to disagree with the
-first. So each `replay-decode` frame says what each seat saw for the first time that turn, out of
-the same `known` mask its observations are built from, and the shell only folds those from turn
-zero. How many moves an ant is from a hill is the other case: it decides nothing about the match, so
-the shell counts them itself — round water, since a ring that lit up for an enemy on the far side of
-a wall would point at nothing, and ignoring food, which comes and goes and would make a ring flicker.
-
-**The shell lives here, not in the web application.** The first contract put it in the platform
-and left the cartridge "owning pixels". The viewer has three consumers that are not one
-application, and a shell split across three of them is a shell maintained in three places. The
-trade is that a second cartridge writes its own scrubber, and the extraction point is whenever that
-cartridge exists and there are two real viewers to generalise from.
-
-**It is framework-free, with a React wrapper.** This is a canvas, a slider and a few readouts;
-React buys it nothing and would tie the cartridge to a React version. `react.js` is the only file
-that mentions React at all.
-
-## What the viewer never does
-
-**Run a model.** It re-simulates from recorded actions — no ONNX, no adapter, no competitor code
-in the browser. That is why the docs and the marketing site can embed it without inheriting the
-evaluator's security surface.
+- **No rule is re-implemented here.** Territory comes from the engine: each `replay-decode` frame
+  says what each seat saw for the first time, and the shell only folds those. Ring step counts are
+  computed in the shell because they decide nothing about the match.
+- **The viewer never runs a model.** It re-simulates recorded actions: no ONNX, no adapter, no
+  competitor code in the browser.
+- **The stylesheet cannot leave the viewer.** One `<style>` goes into the host document on mount,
+  not a shadow root, so every rule starts at `.tb-viz` and `check.mjs` enforces it.
+- **The module list is a contract with web.** Web's `Dockerfile` and `scripts/vendor-viewers.sh`
+  copy `viz.js shell.js render.js engine.js map.js` and the transpiled component by name. A new
+  static import from `viz.js` is a change to both lists; that is why `map.js` loads on first use.
+- **The bundle and the component travel together.** Neither is committed; both land in `dist/` and
+  ship in one release, and `engine.json` names the digest the bundle carries.
+- **`react.js` is the only file that mentions React.**
