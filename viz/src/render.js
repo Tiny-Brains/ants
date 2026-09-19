@@ -16,9 +16,10 @@
 // Every colour here is a literal. The board keeps its palette in both themes: a match has to look
 // like itself, and a token would make one change colour when the reader flipped the page.
 
-/** Seat colours. Two is the case that exists; the rest are here so a four-seat board is not a bug.
- *  They have to read on three grounds — the board's land, the seat chips, and the timeline's rail —
- *  which is what makes them bright rather than deep. */
+/** Seat colours, one for every seat a board can hold: the catalogue seats two to eight, and two
+ *  seats sharing a colour is two colonies the eye reads as one. They have to read on three grounds
+ *  — the board's land, the seat chips, and the timeline's rail — which is what makes them bright
+ *  rather than deep. */
 export const SEATS = [
   "#FF6B41", // ember
   "#5AB0FF", // azure
@@ -26,6 +27,8 @@ export const SEATS = [
   "#C58BFF", // orchid
   "#FFC658", // amber
   "#4FD9BE", // teal
+  "#FF7AB6", // rose
+  "#D9DEE8", // silver
 ];
 
 // The board, in the platform's own family of blues. Fixed in both themes, and dark on purpose:
@@ -325,7 +328,7 @@ export class Renderer {
       ctx.lineWidth = Math.max(1, Math.min(2, s * 0.12));
       this.frontier.forEach((edges, seat) => {
         if (!edges.length) return;
-        const [cr, cg, cb] = hexToRgb(SEATS[seat]);
+        const [cr, cg, cb] = hexToRgb(SEATS[seat % SEATS.length]);
         ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.85)`;
         ctx.beginPath();
         for (let k = 0; k < edges.length; k += 3) {
