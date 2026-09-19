@@ -57,7 +57,7 @@ class Ended:
     scores: list[int]
     reason: str
     turns: int
-    preset: str
+    map: str                                # the board the match was played on
     map_id: str
     seed: int
 
@@ -67,10 +67,11 @@ class Group:
     """Every live seat on one board size, stacked.
 
     **A batch is per board size, and that is not an implementation detail.** The pool holds several
-    waves, `worldgen` takes one preset a wave, and the presets come in three sizes — 64x96, 96x96
-    and 128x128. The policy is fully convolutional so it runs on any of them, but a single tensor
-    cannot hold two, so a trainer loops the groups. The ladder never has this problem: every seat of
-    a match is its own `model_infer` call.
+    waves, each wave is played on one board, and the boards come in many sizes — the five basic
+    ones run from 24x24 to 120x124, and a season's anywhere inside that. The policy is fully
+    convolutional so it runs on any of them, but a single tensor cannot hold two, so a trainer loops
+    the groups. The ladder never has this problem: every seat of a match is its own `model_infer`
+    call.
     """
 
     size: tuple[int, int]
@@ -89,13 +90,13 @@ class Step:
 
     @property
     def boards(self) -> np.ndarray:
-        """The one group, for a run pinned to a single preset. Raises when the pool is mixed,
+        """The one group, for a run pinned to boards of one size. Raises when the pool is mixed,
         rather than silently handing back a fraction of the batch."""
         if len(self.groups) != 1:
             raise EnvError(
                 f"this step spans {len(self.groups)} board sizes "
                 f"({', '.join(f'{r}x{c}' for r, c in (g.size for g in self.groups))}). "
-                "Loop `step.groups`, or pass `preset=` to pin the Env to one size."
+                "Loop `step.groups`, or pass `maps=` boards of one size to pin the Env to it."
             )
         return self.groups[0].boards
 
@@ -109,6 +110,10 @@ class Env:
 
     Deterministic: given `seed` and the action stream, every board, every food respawn and every
     match is reproducible. That is what makes a training run something you can repeat.
+
+    `maps` is the board pool: ids the release ships, paths to board files, or a directory of them
+    (a season's, say) -- a list or one comma-separated string. None is the release's basic boards.
+    There are no presets: the engine carries no boards, so the pool is boards (ants N28).
     """
 
     def __init__(
@@ -117,7 +122,7 @@ class Env:
         matches_per_wave: int = 16,
         max_turns: int = 300,
         seed: int = 1,
-        preset: str | None = None,
+        maps: str | list[str] | None = None,
         game: str | None = None,
         scores: str = "every",
         cwd: Path | None = None,
@@ -137,8 +142,8 @@ class Env:
             "--seed", str(seed),
             "--scores", scores,
         ]
-        if preset:
-            argv += ["--preset", preset]
+        if maps:
+            argv += ["--maps", maps if isinstance(maps, str) else ",".join(str(m) for m in maps)]
         if game:
             argv += ["--game", game]
 
@@ -192,7 +197,7 @@ class Env:
             ended=[
                 Ended(
                     ep=e["ep"], seat_count=len(e["scores"]), ranks=e["ranks"], scores=e["scores"],
-                    reason=e["reason"], turns=e["turns"], preset=e["preset"],
+                    reason=e["reason"], turns=e["turns"], map=e["map"],
                     map_id=e["map_id"], seed=e["seed"],
                 )
                 for e in reply["ended"]

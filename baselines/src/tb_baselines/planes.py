@@ -49,7 +49,7 @@ class Plane:
     """One channel of the board tensor.
 
     `logic` is the JSONLogic that computes it inside `manifest.json`, as a function of the size
-    expression (the adapter cannot hard-code a board size: the presets come in three sizes).
+    expression (the adapter cannot hard-code a board size: a season's boards come in many).
     `numpy` computes the same plane from the same observation, for the trainer.
     """
 
@@ -236,6 +236,6 @@ def encode(obs: dict) -> np.ndarray:
 
 
 def encode_batch(observations: list[dict]) -> np.ndarray:
-    """A wave's worth. Every board in one wave is one preset and so one size — `worldgen` takes a
-    single preset per call — so these always stack."""
+    """A wave's worth. Every match of a wave is played on one board and so one size — the env
+    hands `worldgen` one board a wave — so these always stack."""
     return np.concatenate([encode(o) for o in observations], axis=0)

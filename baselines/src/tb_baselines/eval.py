@@ -82,59 +82,65 @@ def cli() -> str:
     return found
 
 
-def boards(preset: str | None, limit: int) -> list[tuple[str, str]]:
-    """`(preset, map_id)` for the boards to play, from the cartridge's own catalogue.
+def boards(maps: str | None, limit: int) -> list[str]:
+    """The two-seat boards to play, as a match file names them: an id or a path.
 
-    Read off `tinybrains maps` rather than hard-coded, because the board list belongs to the
-    cartridge and a game shipping different boards should just work. That means parsing a
-    human-readable table, so the parse is CHECKED: an empty result would otherwise play no matches
-    and print a round robin of all zeroes, which reads like a field of draws rather than like a bug.
+    `maps` is a directory of boards (a season's, say), or comma-separated ids or paths; None is
+    every two-seat board the release ships, read off `tinybrains maps` rather than hard-coded,
+    because the board list belongs to the cartridge. That means parsing a human-readable table, so
+    the parse is CHECKED: an empty result would otherwise play no matches and print a round robin of
+    all zeroes, which reads like a field of draws rather than like a bug. A round robin is head to
+    head, so a board seating more than two is not one of its boards.
     """
+    if maps and Path(maps).is_dir():
+        picked = []
+        for f in sorted(Path(maps).glob("*.json")):
+            if json.loads(f.read_text()).get("players") == 2:
+                picked.append(str(f.resolve()))
+        if not picked:
+            raise SystemExit(f"no two-seat boards in {maps}")
+        return picked[:limit]
+    if maps:
+        return [m.strip() for m in maps.split(",") if m.strip()][:limit]
+
     out = subprocess.run([cli(), "maps"], cwd=ROOT, capture_output=True, text=True)
     if out.returncode != 0:
         raise SystemExit(f"tinybrains maps failed:\n{out.stderr or out.stdout}")
     rows = []
     for line in out.stdout.splitlines()[1:]:      # line 0 is the "<game> N boards" header
         parts = line.split()
-        # id, preset, dimensions, seats -- enough shape to notice if the table changes. A round robin
-        # is head to head, so a board seating more than two is not one of its boards.
-        if len(parts) >= 4 and "x" in parts[2] and parts[3] == "2":
-            rows.append((parts[1], parts[0]))
+        # id, dimensions, seats -- enough shape to notice if the table changes.
+        if len(parts) >= 4 and "x" in parts[1] and parts[2] == "2" and parts[3] == "seats":
+            rows.append(parts[0])
     if not rows:
         raise SystemExit(
-            "could not read a board out of `tinybrains maps`; its output format has changed:\n"
-            + "\n".join(out.stdout.splitlines()[:4])
+            "could not read a two-seat board out of `tinybrains maps`; its output format has "
+            "changed, or the release ships none:\n" + "\n".join(out.stdout.splitlines()[:4])
         )
-    if preset:
-        rows = [r for r in rows if r[0] == preset]
-        if not rows:
-            raise SystemExit(f"no boards for preset '{preset}'")
-    picked: dict[str, list[str]] = {}
-    for p, m in rows:
-        picked.setdefault(p, []).append(m)
-    return [(p, m) for p, ms in picked.items() for m in ms[:limit]]
+    return rows[:limit]
 
 
-def play(entrants: list[Entrant], board_limit: int, preset: str | None,
+def play(entrants: list[Entrant], board_limit: int, maps: str | None,
          max_turns: int, seed: int, out_dir: Path) -> dict[str, Record]:
-    """Every pair, both seat orders, every board. One match file a preset, since a wave is one."""
+    """Every pair, both seat orders, every board -- one match file, since a wave needs one seat
+    count and every board here seats two."""
     records = {e.name: Record() for e in entrants}
     pairs = list(itertools.combinations(range(len(entrants)), 2))
     if not pairs:
         raise SystemExit("a round robin needs at least two entrants")
 
-    by_preset: dict[str, list[dict]] = {}
+    rows: list[dict] = []
     labels: dict[str, tuple[str, str]] = {}
-    for preset_name, map_id in boards(preset, board_limit):
+    for board in boards(maps, board_limit):
+        name = Path(board).stem if board.endswith(".json") else board
         for a, b in pairs:
             for flip in (0, 1):
                 first, second = (a, b) if not flip else (b, a)
-                mid = f"{entrants[first].name}-vs-{entrants[second].name}-{map_id}-{flip}"
-                by_preset.setdefault(preset_name, []).append({
+                mid = f"{entrants[first].name}-vs-{entrants[second].name}-{name}-{flip}"
+                rows.append({
                     "id": mid,
-                    "seed": seed + len(by_preset.get(preset_name, [])),
-                    "preset": preset_name,
-                    "map": map_id,
+                    "seed": seed + len(rows),
+                    "map": board,
                     "seat_count": 2,
                     "seats": [entrants[first].seat(0), entrants[second].seat(1)],
                 })
@@ -142,33 +148,32 @@ def play(entrants: list[Entrant], board_limit: int, preset: str | None,
 
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        for preset_name, rows in by_preset.items():
-            mf = Path(tmp) / f"{preset_name}.json"
-            mf.write_text(json.dumps(
-                {"game": "ants", "vars": {"max_turns": max_turns}, "rows": rows}))
-            r = subprocess.run(
-                [cli(), str(mf), "--out", str(out_dir)],
-                cwd=ROOT, capture_output=True, text=True,
-            )
-            if r.returncode != 0:
-                raise SystemExit(f"{preset_name}: {r.stderr or r.stdout}")
+        mf = Path(tmp) / "round-robin.json"
+        mf.write_text(json.dumps(
+            {"game": "ants", "vars": {"max_turns": max_turns}, "rows": rows}))
+        r = subprocess.run(
+            [cli(), str(mf), "--out", str(out_dir)],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            raise SystemExit(f"round robin: {r.stderr or r.stdout}")
 
-            for row in rows:
-                replay = json.loads((out_dir / f"{row['id']}.json").read_text())
-                left, right = labels[row["id"]]
-                ranks, scores = replay["engine_ranks"], replay["scores"]
-                for who, mine, theirs in ((left, 0, 1), (right, 1, 0)):
-                    rec = records[who]
-                    rec.matches += 1
-                    rec.score_for += scores[mine]
-                    rec.score_against += scores[theirs]
-                    rec.reasons[replay["reason"]] = rec.reasons.get(replay["reason"], 0) + 1
-                    if ranks[mine] < ranks[theirs]:
-                        rec.wins += 1
-                    elif ranks[mine] > ranks[theirs]:
-                        rec.losses += 1
-                    else:
-                        rec.draws += 1
+        for row in rows:
+            replay = json.loads((out_dir / f"{row['id']}.json").read_text())
+            left, right = labels[row["id"]]
+            ranks, scores = replay["engine_ranks"], replay["scores"]
+            for who, mine, theirs in ((left, 0, 1), (right, 1, 0)):
+                rec = records[who]
+                rec.matches += 1
+                rec.score_for += scores[mine]
+                rec.score_against += scores[theirs]
+                rec.reasons[replay["reason"]] = rec.reasons.get(replay["reason"], 0) + 1
+                if ranks[mine] < ranks[theirs]:
+                    rec.wins += 1
+                elif ranks[mine] > ranks[theirs]:
+                    rec.losses += 1
+                else:
+                    rec.draws += 1
     return records
 
 
@@ -194,8 +199,9 @@ def entrant_from(path: str) -> Entrant:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("entrants", nargs="+", help="exported model directories")
-    ap.add_argument("--boards", type=int, default=3, help="boards a preset")
-    ap.add_argument("--preset", default=None)
+    ap.add_argument("--boards", type=int, default=3, help="two-seat boards to play, at most")
+    ap.add_argument("--maps", default=None,
+                    help="board ids, paths, or a directory of boards; default the release's own")
     ap.add_argument("--max-turns", type=int, default=300)
     ap.add_argument("--seed", type=int, default=90000)
     ap.add_argument("--out", type=Path, default=Path("replays"))
@@ -203,7 +209,7 @@ def main(argv: list[str] | None = None) -> None:
     a = ap.parse_args(argv)
 
     entrants = [entrant_from(e) for e in a.entrants]
-    records = play(entrants, a.boards, a.preset, a.max_turns, a.seed, a.out)
+    records = play(entrants, a.boards, a.maps, a.max_turns, a.seed, a.out)
     if a.as_json:
         print(json.dumps({n: vars(r) for n, r in records.items()}, indent=2))
     else:

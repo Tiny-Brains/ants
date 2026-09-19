@@ -41,7 +41,7 @@ def collect(
     matches_per_wave: int = 16,
     max_turns: int = 300,
     seed: int = 1,
-    preset: str | None = None,
+    maps: str | None = None,
 ) -> dict:
     """Play until `seat_turns` rows are written, and report what was collected."""
     teacher = Teacher()
@@ -55,7 +55,7 @@ def collect(
     started = time.time()
 
     with Env(waves=waves, matches_per_wave=matches_per_wave, max_turns=max_turns,
-             seed=seed, preset=preset) as env, gzip.open(out, "wt") as f:
+             seed=seed, maps=maps) as env, gzip.open(out, "wt") as f:
         # The header is the provenance. A dataset that cannot name the engine that produced it is a
         # dataset nobody can reproduce, and an engine change is a rules change.
         f.write(json.dumps({
@@ -65,7 +65,7 @@ def collect(
             # names it by version (R10), which is what a version skew between a local pass and a
             # remote refusal would show up in.
             "evaluator": env.evaluator,
-            "presets": [p["name"] for p in env.hello["presets"]],
+            "maps": [m["id"] for m in env.hello["maps"]],
             "max_turns": max_turns,
             "env_seed": seed,
             # The teacher is a pure function of the observation, so the env seed is the whole
@@ -120,12 +120,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--matches-per-wave", type=int, default=16)
     ap.add_argument("--max-turns", type=int, default=300)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--preset", default=None, help="pin to one preset; default is all three")
+    ap.add_argument("--maps", default=None,
+                    help="board ids, paths, or a directory of boards; default the release's basic ones")
     a = ap.parse_args(argv)
 
     stats = collect(
         a.out, a.seat_turns, waves=a.waves, matches_per_wave=a.matches_per_wave,
-        max_turns=a.max_turns, seed=a.seed, preset=a.preset,
+        max_turns=a.max_turns, seed=a.seed, maps=a.maps,
     )
     (a.out.with_suffix("").with_suffix(".stats.json")).write_text(json.dumps(stats, indent=2) + "\n")
     print(json.dumps(stats, indent=2))

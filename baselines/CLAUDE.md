@@ -123,8 +123,8 @@ env. Never report a result from the env as a result.
 - **`ConvTranspose` is not on the operator allowlist.** `Resize` is the upsampler.
 - **The board wraps, and padding costs.** Wrapping before every convolution measured 2.3x the FLOP
   model; one wrap per resolution stage is the same arithmetic for a third of the copying.
-- **A batch is per board size.** Three presets are three sizes (64x96, 96x96, 128x128) and one
-  tensor cannot hold two. `Step.groups` is that, and `Step.boards` raises rather than silently
+- **A batch is per board size.** The env plays one board a wave, the basic boards are five sizes
+  (24x24 to 120x124) and a season's any size inside them, and one tensor cannot hold two. `Step.groups` is that, and `Step.boards` raises rather than silently
   handing back a fraction of the batch.
 - **`dilate` scatters from the ants, it does not roll the plane.** The obvious reading — shift the
   board by all 241 disk offsets and OR — was 48% of the training loop at 1.86 million `np.roll`

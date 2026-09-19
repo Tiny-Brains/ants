@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def env():
-    e = Env(waves=1, matches_per_wave=4, max_turns=40, seed=7, preset="open-2")
+    e = Env(waves=1, matches_per_wave=4, max_turns=40, seed=7, maps="basic-tiny-2p")
     yield e
     e.close()
 
@@ -44,8 +44,8 @@ def test_hello_names_the_engine_and_the_evaluator(env):
 def test_seats_and_boards_line_up(env):
     step = env.reset()
     assert len(step.seats) == 8, "four matches of two seats"
-    # The board's size is the view's to say, not this test's: a preset's boards are regenerated
-    # from recipes, and `open-2` has already been two sizes.
+    # The board's size is the view's to say, not this test's: the basic boards are regenerated from
+    # recipes, and a season's boards can be any size inside the cartridge's envelope.
     rows, cols = step.seats[0].obs["size"]
     assert step.boards.shape == (8, N_PLANES, rows, cols), "one plane stack a seat, the board's size"
     for i, seat in enumerate(step.seats):
@@ -80,12 +80,12 @@ def test_scores_are_live_and_keyed_by_episode(env):
 
 
 def test_a_mixed_pool_refuses_to_pretend_it_is_one_batch():
-    """Three presets are three board sizes and one tensor cannot hold two. Handing back a fraction
-    of the batch would be a silent third of a training step."""
+    """Three waves on the basic boards are three board sizes, and one tensor cannot hold two.
+    Handing back a fraction of the batch would be a silent third of a training step."""
     e = Env(waves=3, matches_per_wave=2, max_turns=20, seed=3)
     try:
         step = e.reset()
-        assert len(step.groups) > 1, "three waves cycle the three presets"
+        assert len(step.groups) > 1, "three waves draw three of the basic boards"
         with pytest.raises(EnvError, match="board sizes"):
             _ = step.boards
         assert sum(len(g.indices) for g in step.groups) == len(step.seats)

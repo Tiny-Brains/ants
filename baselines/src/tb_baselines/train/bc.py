@@ -102,8 +102,8 @@ class Rows:
 def batches(rows: Rows, indices: list[int], size: int, rng: random.Random, shuffle: bool = True):
     """Batches of one board size.
 
-    Grouping by size is not a convenience: the presets come in three board sizes and one tensor
-    cannot hold two. Shuffling happens inside each group, so a batch is always uniform and the
+    Grouping by size is not a convenience: the boards come in many sizes and one tensor cannot
+    hold two. Shuffling happens inside each group, so a batch is always uniform and the
     epoch still sees the groups interleaved.
     """
     by_size: dict[tuple[int, int], list[int]] = {}

@@ -8,9 +8,11 @@ by wrapping, built from `cat` of edge slices — which exports to `Slice` + `Con
 operator allowlist, where `padding_mode="circular"` exports to a `Pad` mode that only exists from
 opset 18.
 
-**The board has three sizes.** 64x96, 96x96 and 128x128, across the presets. Fully convolutional handles
-that for free, and it is the main reason to stay fully convolutional; where a net downsamples, the
-factor divides all three (they are all multiples of 32).
+**The board has many sizes.** Anything from 24 to 124 a side (the cartridge's `limits.boards`), and a
+season's boards change while it runs. Fully convolutional handles that for free, and it is the main
+reason to stay fully convolutional. Where a net downsamples (`EncDec`), the stride must divide
+every side it is run on: the basic boards' sides all divide by four, and many of season 1's do not
+(26, 45, 49, 105 ...), so a strided net needs padding to the stride before it is fit to submit.
 
 **Above `mini` the turn deadline binds before the byte cap does.** See `classes.toml` `[compute]`.
 So the ladder is not one architecture scaled up: `trunk` spends its parameters at full resolution,
@@ -158,7 +160,7 @@ class EncDec(nn.Module):
         planes: int = N_PLANES, moves: int = N_MOVES,
     ):
         super().__init__()
-        assert stride in (2, 4), "a stride that does not divide 64, 96 and 128 breaks a preset"
+        assert stride in (2, 4), "a stride must divide every side the net is run on"
         self.stride = stride
         stem_ch = max(8, channels // 4)
         # The stem stays undilated: it runs at full resolution and its job is per-cell detail. Reach
