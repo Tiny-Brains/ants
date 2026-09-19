@@ -101,7 +101,10 @@ To build Soma, Kalam, web or the book against an unreleased engine, pass
 The `build` workflow (`.github/workflows/build.yml`) is the only build that ships. Every push to
 `main` runs the gate on an `ubuntu-24.04-arm` runner, builds every artifact, packs `dist/`, runs the
 baselines' conformance test, plays ants-starter against the build, and reports which release this
-build reproduces byte for byte, or the tag publishing it would cut.
+build reproduces byte for byte, or the tag publishing it would cut. Both use a CLI built from `cli`'s
+`main`, not its latest release, so a change to the match-file format releases here first: then
+ants-starter's `games.toml` moves and the CLI releases together, and the starter's CI checks the CLI
+competitors install.
 
 ```sh
 gh workflow run build.yml                   # a rehearsal: all of the above, nothing published

@@ -94,16 +94,21 @@ jobs:
         id: pack
         run: python3 tools/pack.py "$RUNNER_TEMP/release"
 
-      # The newest CLI release, checked against that release's SHA256SUMS -- the binary a competitor
-      # installs, not a build of it.
-      - name: Install the CLI
+      # THE CLI FROM cli's MAIN, NOT ITS LATEST RELEASE. The CLI is this build's test harness -- it
+      # hosts datalogic for the conformance test and plays a whole match through the component -- so
+      # it must speak the match files the starter speaks now. A release is the wrong one exactly when
+      # the format changes: the new engine and the new CLI then each wait on the other's release.
+      # Whether the CLI competitors have installed still plays is the starter's CI's question, asked
+      # when its games.toml moves to this release. Built in its own checkout under its own pinned
+      # rustc, so nothing here reaches the engine's digest.
+      - name: Build the CLI
         run: |
-          base=https://github.com/Tiny-Brains/cli/releases/latest/download
-          archive=tinybrains-aarch64-unknown-linux-gnu.tar.gz
-          cd "$RUNNER_TEMP"
-          curl -fsSLO "$base/$archive"
-          curl -fsSL "$base/SHA256SUMS" | grep " $archive\$" | sha256sum -c -
-          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" tinybrains
+          git clone --depth 1 https://github.com/Tiny-Brains/cli "$RUNNER_TEMP/cli"
+          cd "$RUNNER_TEMP/cli"
+          echo "cli $(git rev-parse --short HEAD)"
+          rustup toolchain install
+          cargo build --release --locked
+          install -m 0755 target/release/tinybrains "$RUNNER_TEMP/bin/tinybrains"
           "$RUNNER_TEMP/bin/tinybrains" --version
 
       # The starter holds the platform's trained models -- this repository commits none -- and the
