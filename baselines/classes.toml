@@ -55,7 +55,7 @@ default = "fp16"
 [compute]
 ## THE BYTE CAP IS NOT THE BINDING CONSTRAINT ABOVE `mini`. THE TURN DEADLINE IS.
 ##
-## A SEAT'S SHARE IS THE WHOLE TURN. `tb-match` plays one match and calls `model_infer` once per
+## A SEAT'S SHARE IS THE WHOLE TURN. `kalam-match` plays one match and calls `model_infer` once per
 ## seat, each with its own `timeout_ms`, so nothing is batched and nothing is divided. This
 ## repository still holds itself to a fraction of the turn rather than all of it, because a model
 ## that needs 95% of the clock on this machine has nothing left for a slower host.

@@ -139,7 +139,7 @@ def test_the_action_table_is_the_channel_order_the_platform_decodes():
 
     That index is what the cross-entropy label uses (`train/bc.py`'s `MOVE_INDEX`) and what
     `orders_from_indices` writes back. **The platform closes the loop, not the manifest**:
-    `tb-match` argmaxes the channels and indexes its own table, which is
+    `kalam-match` argmaxes the channels and indexes its own table, which is
     `["N","E","S","W","-"]` in `kalam/scripts/gen-kalam.py` and `cli/src/model.rs`. So this
     table is a contract between the trainer and the platform, with no adapter in between — and if
     the two disagreed, every move would be systematically wrong while the model, the loss, the

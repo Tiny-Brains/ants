@@ -188,7 +188,7 @@ fn a_replay_the_platform_actually_wrote_decodes() {
     // tests build their own envelope in-process and would keep passing if Kalam and the engine
     // drifted apart about what a replay is — which has happened, silently, once already.
     //
-    // Captured from a `tb-match` run after the Orion 1.8.1 rebuild: `maze-03`, 256 turns,
+    // Captured from a `kalam-match` run after the Orion 1.8.1 rebuild: `maze-03`, 256 turns,
     // `rank_stabilized` 3–0. So it also pins the post-rebuild envelope shape — `orion_version`
     // where `evaluator_digest` and `dialect_version` used to be.
     let raw = include_str!("fixtures/replay-maze-03.json");
