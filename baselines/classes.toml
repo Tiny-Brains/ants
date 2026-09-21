@@ -121,10 +121,19 @@ max_bytes = 1048576
 arch = "encdec"
 channels = 64
 stride = 2
-blocks = 5
-## Measured at blocks = 4: 159,221 parameters, S = 287,763 (55%), 16.8 ms (54% of a share). The
-## fifth block is what fills the class; the deadline still allows it, just.
-target_params = 196000
+## THREE, NOT FIVE, AND THE BOARD DECIDES IT. `Stage` pads toroidally by its total dilation --
+## `doubling(blocks + 1, cap=4)` -- and at stride 2 that wrap is applied to a board of side/2. Five
+## blocks reach 19, so they need side >= 38: the engine's own basic boards (24, 36) and a third of a
+## season's are smaller. It does not fail loudly either -- `wrap` slices, Python slicing CLAMPS, so
+## the pad comes up short in silence and the unpadded convolutions shrink the board until the skip
+## concat dies three frames from the cause. Three blocks reach 11, so side >= 22, which every board
+## the platform ships or a season has ever carried clears.
+blocks = 3
+## Measured at blocks = 3: 122,293 parameters, S' = 254,323 (a 253,393-byte graph and a 930-byte
+## manifest). Five blocks were what filled the class (196,149); with the depth capped by the board,
+## filling it again is width's job. No time yet: `tinybrains check` refuses every encdec graph at
+## the skip concat, at any depth, so there is no deadline measurement to write down.
+target_params = 122000
 
 [[class]]
 name = "small"
