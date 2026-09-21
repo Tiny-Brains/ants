@@ -26,9 +26,10 @@ declares the head shape it will find — `[1, moves, H, W]`, per cell.
 ## Why the shapes are named
 
 `H` and `W` are variable axes (Orion 1.8.1). A season runs several board sizes and a name binds to
-what the call brings, so one manifest and one loaded session serve 64x96, 96x96 and 128x128 alike.
-`probe_dims` is what admission's five zero-filled inferences run at, and it is set to the largest
-board the catalogue ships: probing the smallest would gate a board nobody plays.
+what the call brings, so one manifest and one loaded session serve every board from 24x24 to
+120x124. `probe_dims` is what admission's five zero-filled inferences run at, and 128x128 covers the
+longest side any board may have (124, `limits.boards` in cartridge.json): probing the smallest would
+gate a board nobody plays.
 """
 
 from __future__ import annotations
@@ -40,8 +41,8 @@ from .planes import DTYPE, N_MOVES, N_PLANES, PLANES
 
 ABI = "orion:model@1.0.0"
 
-# What the admission probe binds each named axis to. The largest board the cartridge ships, because
-# `probe_ms` is only as representative as the size it was measured at.
+# What the admission probe binds each named axis to. At least the longest side any board may have
+# (124, `limits.boards`), because `probe_ms` is only as representative as the size it ran at.
 PROBE_DIMS = {"H": 128, "W": 128}
 
 
