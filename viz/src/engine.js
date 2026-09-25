@@ -42,6 +42,27 @@ export function allFrames(replay) {
   return call({ payload: replay, from: 0, to }).frames;
 }
 
+/**
+ * The frames from turn `from` to turn `to`, inclusive, in one pass: `replay-decode`'s range form.
+ *
+ * A Tile's hover preview is the last forty turns, and this is how it gets them without asking for
+ * the nine hundred and sixty before. The decode still re-simulates from turn zero -- a replay is
+ * actions, not states -- but it photographs only the turns asked for.
+ */
+export function framesBetween(replay, from, to) {
+  return call({ payload: replay, from, to }).frames;
+}
+
+/**
+ * A board's turn zero, as the cartridge opens a match on it: the board sent as an envelope of no
+ * moves. The ants a match opens with are left out -- on a board they sit on every hill and hide it,
+ * and a match nobody has played yet has not put them there.
+ */
+export function openingOf(board) {
+  const f = frameAt({ seed: 1, max_turns: 1, turns: 0, map: board, deltas: [] }, 0);
+  return { ...f, ants: [] };
+}
+
 /** The board, without instantiating anything: it is in the envelope, in readable form. */
 export function board(replay) {
   return replay.map ?? null;

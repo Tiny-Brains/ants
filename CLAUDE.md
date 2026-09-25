@@ -200,8 +200,9 @@ A *wave* is many matches advanced together in one call.
   only once the season has closed.
 - **`viz/check.mjs` fails the build if a stylesheet rule is not scoped to `.tb-viz`**: the viewer's
   one `<style>` goes into the host document, and an unscoped selector relays out the host page.
-  Web copies the viewer's modules by name, so a new static import in `viz.js` is a change to web's
-  list too (`map.js` is loaded on first use for that reason).
+  Web copies the viewer's modules by name (`viz.js shell.js render.js engine.js map.js graph.js`), so
+  a new static import in `viz.js` is a change to web's list too (`map.js` and `graph.js` are loaded
+  on first use for that reason).
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
   `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, so renaming the directory or the
   package breaks every starter clone. It stays out of a release: `build.sh` never reads it and

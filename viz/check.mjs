@@ -10,7 +10,10 @@
 // Run by build.sh. It stubs the few DOM calls the renderer makes -- a canvas, its 2d context, and
 // devicePixelRatio -- and asserts on numbers.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 // ---------------------------------------------------------------- a canvas that counts
 function stubDom() {
@@ -46,6 +49,164 @@ function stubDom() {
   globalThis.document = { createElement: () => makeCanvas() };
   globalThis.window = { devicePixelRatio: 1 };
   return { canvas: makeCanvas(), makeStubCanvas: makeCanvas, calls };
+}
+
+// ---------------------------------------------------------------- a document that keeps what it is told
+//
+// For the tiers: elements that keep their children, classes, attributes, data, styles and
+// listeners, canvases whose context records every call, ResizeObservers that fire when told to and
+// animation frames that run when told to. An element is as big as its nearest ancestor that was
+// given a `rect`, and a host is given one.
+function fakeDom() {
+  const calls = [];
+  const observers = [];
+  let frames = [];
+  let nextFrame = 1;
+  const ctx = () =>
+    new Proxy(
+      {
+        createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+      },
+      {
+        get(t, k) {
+          if (k in t) return t[k];
+          return (...args) => calls.push([k, ...args]);
+        },
+        set(t, k, v) {
+          t[k] = v;
+          return true;
+        },
+      }
+    );
+  class Node {
+    constructor(doc, tag) {
+      this.ownerDocument = doc;
+      this.tagName = tag.toUpperCase();
+      this.children = [];
+      this.parentNode = null;
+      this.className = "";
+      this.dataset = {};
+      this.attrs = {};
+      this.listeners = {};
+      this.style = { setProperty(k, v) { this[k] = String(v); }, removeProperty(k) { delete this[k]; } };
+      this.hidden = false;
+      this.textContent = "";
+      this.html = "";
+      if (tag === "canvas") {
+        this.width = 0;
+        this.height = 0;
+        const c = ctx();
+        this.getContext = () => c;
+      }
+    }
+    get classList() {
+      const names = () => this.className.split(/\s+/).filter(Boolean);
+      return {
+        contains: (c) => names().includes(c),
+        add: (...cs) => (this.className = [...new Set([...names(), ...cs])].join(" ")),
+        remove: (...cs) => (this.className = names().filter((n) => !cs.includes(n)).join(" ")),
+      };
+    }
+    set innerHTML(v) {
+      this.html = String(v);
+      for (const c of this.children) c.parentNode = null;
+      this.children = [];
+    }
+    get innerHTML() {
+      return this.html;
+    }
+    appendChild(n) {
+      return this.insertBefore(n, null);
+    }
+    insertBefore(n, ref) {
+      if (n.parentNode) n.parentNode.children = n.parentNode.children.filter((c) => c !== n);
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at < 0) this.children.push(n);
+      else this.children.splice(at, 0, n);
+      n.parentNode = this;
+      return n;
+    }
+    setAttribute(k, v) {
+      this.attrs[k] = String(v);
+    }
+    getAttribute(k) {
+      return this.attrs[k] ?? null;
+    }
+    removeAttribute(k) {
+      delete this.attrs[k];
+    }
+    addEventListener(type, fn) {
+      (this.listeners[type] ??= []).push(fn);
+    }
+    removeEventListener(type, fn) {
+      this.listeners[type] = (this.listeners[type] ?? []).filter((f) => f !== fn);
+    }
+    fire(type, ev = {}) {
+      for (const fn of this.listeners[type] ?? []) fn({ pointerId: 1, pointerType: "mouse", preventDefault() {}, ...ev });
+    }
+    setPointerCapture() {}
+    releasePointerCapture() {}
+    getBoundingClientRect() {
+      for (let n = this; n; n = n.parentNode) if (n.rect) return { ...n.rect };
+      return { left: 0, top: 0, width: 0, height: 0 };
+    }
+    get clientWidth() {
+      return this._cw ?? this.getBoundingClientRect().width;
+    }
+  }
+  const window = { devicePixelRatio: 1, scrollX: 0, scrollY: 0, getComputedStyle: () => ({ getPropertyValue: () => "" }) };
+  const document = new Node(null, "#document");
+  document.ownerDocument = null;
+  document.defaultView = window;
+  document.fullscreenElement = null;
+  document.head = new Node(document, "head");
+  document.createElement = (tag) => new Node(document, tag);
+  document.createTextNode = (text) => Object.assign(new Node(document, "#text"), { textContent: text });
+  document.getElementById = (id) => document.head.children.find((c) => c.id === id) ?? null;
+  globalThis.document = document;
+  globalThis.window = window;
+  globalThis.ResizeObserver = class {
+    constructor(cb) {
+      this.cb = cb;
+      this.live = true;
+      observers.push(this);
+    }
+    observe() {}
+    disconnect() {
+      this.live = false;
+    }
+  };
+  globalThis.requestAnimationFrame = (cb) => {
+    frames.push({ id: nextFrame, cb });
+    return nextFrame++;
+  };
+  globalThis.cancelAnimationFrame = (id) => {
+    frames = frames.filter((f) => f.id !== id);
+  };
+  return {
+    calls,
+    window,
+    document,
+    host(width = 1000, height = 700) {
+      const el = document.createElement("div");
+      el.rect = { left: 0, top: 0, width, height };
+      el._cw = width;
+      return el;
+    },
+    /** Fire every live ResizeObserver, as a resize would. */
+    resize() {
+      for (const o of observers) if (o.live) o.cb([]);
+    },
+    /** Run the queued animation frames, each a long way after the last, until none is queued. */
+    runFrames() {
+      for (let k = 0; k < 1000 && frames.length; k++) {
+        const due = frames;
+        frames = [];
+        for (const f of due) f.cb(performance.now() + 1e7);
+      }
+    },
+  };
 }
 
 let failures = 0;
@@ -222,27 +383,31 @@ check("the board's ground is a literal", /--tb-void:#/.test(css));
 // viewer is hovered, focused or touched. A frame is 420 pixels on a match page and the seat strip
 // used to spend a fifth of it.
 console.log("the tray");
-check("the tray exists", /"tb-tray"/.test(mod) && /\.tb-viz \.tb-tray\{/.test(css));
+check("the tray exists", /"tb-tray\b/.test(mod) && /\.tb-viz \.tb-tray\{/.test(css));
 check("it is hidden until wanted", /\.tb-viz \.tb-tray\{[^}]*opacity:0/.test(css));
 check(
   "hover, focus and touch raise it",
   /:hover/.test(css) && /:focus-within/.test(css) && /\[data-tb-peek\]/.test(css) && /pointerType === "touch"/.test(mod)
 );
-check("the transport is not in it", /mk\("div", "tb-bar"\)/.test(mod));
+check("the transport is not in it", /make\("div", "tb-bar"\)/.test(mod));
 // The seats are the other half of what is always on screen: who is playing and the score are read
 // the whole way through, so they sit in a bar of their own above the board rather than in the tray.
 check(
   "the seats are a bar of their own, always on screen",
-  /this\.seats = mk\("div", "tb-top"\);/.test(mod) &&
+  /this\.seats = this\.make\("div", "tb-top"\);/.test(mod) &&
     /\.tb-viz \.tb-top\{/.test(css) &&
     !/\.tb-top\{[^}]*opacity/.test(css)
 );
+// One card per seat: its colour the card's left edge, name and owner on top, the score large.
 check(
-  "each seat shows its colour, name and score",
-  /"tb-chip"/.test(mod) && /"tb-name"/.test(mod) && /"tb-score"/.test(mod)
+  "each seat is a card: its colour, name and score",
+  /\.tb-viz \.tb-seat\{[^}]*border-left:3px solid var\(--tb-seat\)/.test(css) &&
+    /"tb-name"/.test(mod) &&
+    /"tb-score"/.test(mod) &&
+    /\.tb-viz \.tb-score\{[^}]*font:650 22px/.test(css)
 );
 check("the board's label and the cell readout are gone", !/tb-tip|tb-meta|showTip/.test(mod));
-check("seat chips are built once, not per frame", /buildSeats\(\)/.test(mod) && !/this\.seats\.innerHTML = ""/.test(mod));
+check("seat cards are built once, not per frame", /buildSeats\(\)/.test(mod) && !/this\.seats\.innerHTML = ""/.test(mod));
 // Four seats and six do not fit one line of a 505-pixel frame, so the seats are a grid -- and its
 // columns come from the seat count and the width alone, so no turn can change how many rows the
 // bar takes and move the board under it.
@@ -370,22 +535,37 @@ if (shellLoads) {
     shell.seatLabels({ seats: [{ seat: 0, weights_hash: "sha256:0123456789abcdef" }] }, 1)[0].name === "01234567"
   );
 
-  // The seats' layout at the widths the viewer is given: the web's home page (505 pixels), its
-  // match page (1112) and a phone (352).
+  // The seat cards' layout at the widths the viewer is given: a phone (352), the web's home page
+  // (505), a model page (800), its match page (1112) and a theatre (1400).
   const columns = shell.seatColumns;
   check("two seats are one row on the home page", columns(2, 505) === 2);
   check("four there are two rows of two", columns(4, 505) === 2);
-  check("six there are two rows of three, not four over two", columns(6, 505) === 3);
-  check("six on the match page are one row", columns(6, 1112) === 6);
+  check("four on a model page are one row", columns(4, 800) === 4);
+  check("six on the match page are two rows of three, not four over two", columns(6, 1112) === 3);
   check("six on a phone are three rows of two", columns(6, 352) === 2);
+  let wraps = true;
+  let why = "";
+  for (const n of [5, 6, 7, 8]) {
+    for (const w of [640, 800, 1112, 1400, 2400]) {
+      const c = columns(n, w);
+      if (Math.ceil(n / c) !== 2) {
+        wraps = false;
+        why = `${n} seats at ${w}px: ${c} columns`;
+      }
+    }
+  }
+  check("five to eight seats wrap onto two rows at any width from 640", wraps, why);
+  let pairs = true;
+  for (const n of [2, 3, 4, 5, 6, 7, 8]) for (const w of [240, 352, 505, 639]) if (columns(n, w) !== 2) pairs = false;
+  check("below 640 pixels the cards go two to a row", pairs);
   let roomy = true;
   for (const n of [1, 2, 3, 4, 5, 6, 8]) {
-    for (const w of [240, 352, 505, 640, 800, 1112]) {
+    for (const w of [640, 800, 1112, 1400]) {
       const c = columns(n, w);
       if (c < 1 || c > n || (c > 1 && w / c < 160)) roomy = false;
     }
   }
-  check("no seat is laid out narrower than a seat can be", roomy);
+  check("no card is laid out narrower than a card can be", roomy);
 }
 
 // ---------------------------------------------------------------- the map visual
@@ -404,7 +584,6 @@ console.log("map visual");
   check("a board with no size draws nothing", eq(mapFrame(300, 0, 0), { w: 300, h: 1 }));
 
   const { frameAt } = await import("../dist/viz/engine.js");
-  const { readdirSync } = await import("node:fs");
   let whole = true;
   let why = "";
   for (const f of readdirSync("../maps").filter((n) => n.endsWith(".json"))) {
@@ -425,5 +604,442 @@ console.log("map visual");
   );
 }
 
-console.log(failures ? `\n${failures} FAILURE(S)` : "\nall geometry checks passed");
+// ---------------------------------------------------------------- the tiers
+//
+// What each tier builds, and what it does with the frames it is given, need a document -- but not a
+// browser: a page's worth of elements that keep their children, classes, attributes and listeners,
+// and canvases that count what is drawn on them. Layout is the one thing faked outright: an element
+// is as big as its nearest ancestor that was given a size, which is how each host below is sized.
+console.log("tiers");
+const fx = fakeDom();
+const shellT = await import("../dist/viz/shell.js");
+const vizT = await import("../dist/viz/viz.js");
+const { Viewer } = shellT;
+const find = (root, cls) => {
+  const out = [];
+  const walk = (n) => {
+    for (const c of n.children) {
+      if (c.classList.contains(cls)) out.push(c);
+      walk(c);
+    }
+  };
+  walk(root);
+  return out;
+};
+const has = (v, cls) => find(v.el, cls).length > 0;
+const board = (id) => JSON.parse(readFileSync(`../maps/${id}.json`, "utf8"));
+const unplayed = (map) => ({ seed: 1, max_turns: 1, turns: 0, map, deltas: [] });
+const lastFrame = JSON.parse(readFileSync("./last-frame-basic-xlarge-8p.json", "utf8"));
+const labels8 = lastFrame.seats.map((s) => ({ seat: s.seat, name: s.name }));
+const labels2 = [
+  { seat: 0, name: "left-model", by: "@one" },
+  { seat: 1, name: "right-model", by: "@two" },
+];
+
+{
+  const stage = new Viewer(fx.host(1000, 700), replay, {});
+  check("a stage is the default tier", stage.tier === "stage" && stage.el.classList.contains("tb-tier-stage"));
+  check(
+    "a stage builds seat cards, the tray, the transport, speed, the key list and fullscreen",
+    ["tb-top", "tb-seat", "tb-tray", "tb-bar", "tb-track", "tb-speed", "tb-keys-btn", "tb-keys", "tb-full"].every((c) =>
+      has(stage, c)
+    ) && stage.el.tabIndex === 0
+  );
+  check("and nothing a tile or a thumb has", !has(stage, "tb-over") && !has(stage, "tb-chips"));
+  check("its cards carry the counts line", find(stage.el, "tb-nums").length === 2 && has(stage, "tb-hill"));
+
+  const player = new Viewer(fx.host(720, 520), replay, { tier: "player" });
+  check(
+    "a player builds cards, the transport and fullscreen",
+    ["tb-top", "tb-bar", "tb-track", "tb-turn", "tb-full"].every((c) => has(player, c)) &&
+      [player.firstBtn, player.prevBtn, player.playBtn, player.nextBtn, player.lastBtn].every(Boolean)
+  );
+  check(
+    "and no tray, speed or key list",
+    !has(player, "tb-tray") && !has(player, "tb-speed") && !has(player, "tb-keys-btn") && !has(player, "tb-keys")
+  );
+  const scale = player.renderer.scale;
+  player.zoom(2);
+  player.key({ key: "+", preventDefault() {} });
+  check("a player does not zoom", player.renderer.scale === scale);
+  check("a player's cards drop the counts line", /\.tb-viz\.tb-tier-player \.tb-nums\{display:none\}/.test(css));
+
+  const tile = new Viewer(fx.host(320, 200), null, { tier: "tile", frame: frames.at(-1), labels: labels2 });
+  check(
+    "a tile builds the board and its overlay, and nothing to operate",
+    has(tile, "tb-stage") &&
+      has(tile, "tb-over") &&
+      ["tb-top", "tb-bar", "tb-tray", "tb-full"].every((c) => !has(tile, c)) &&
+      tile.el.tabIndex === undefined &&
+      Object.keys(tile.el.listeners).length === 0
+  );
+  const thumb = vizT.drawFrame(fx.host(112, 70), frames.at(-1));
+  check(
+    "a thumb is the canvas and a chip",
+    thumb.tier === "thumb" &&
+      has(thumb, "tb-stage") &&
+      has(thumb, "tb-chips") &&
+      ["tb-top", "tb-bar", "tb-tray", "tb-over"].every((c) => !has(thumb, c)) &&
+      thumb.el.tabIndex === undefined
+  );
+  check("a tile and a thumb are a 16:10 box", /\.tb-viz:is\(\.tb-tier-tile,\.tb-tier-thumb\)\{[^}]*aspect-ratio:16 \/ 10/.test(css));
+  let refused = 0;
+  for (const [r, o] of [
+    [null, { tier: "stage" }],
+    [null, { tier: "player" }],
+    [null, { tier: "tile", frame: frames.at(-1) }],
+  ]) {
+    try {
+      new Viewer(fx.host(), r, o);
+    } catch {
+      refused++;
+    }
+  }
+  check("a stage or player without a replay, or a tile without one or labels, is refused", refused === 3);
+}
+
+// Seat cards: one a seat, the columns from seatColumns(), two rows from five seats up, and the
+// owners gone below 640 pixels. Each board's turn zero, so every seat count the envelope has.
+{
+  let laid = true;
+  let why = "";
+  for (const [id, n, cols] of [
+    ["basic-small-3p", 3, 3],
+    ["basic-medium-4p", 4, 4],
+    ["basic-large-6p", 6, 3],
+    ["basic-xlarge-8p", 8, 4],
+  ]) {
+    const v = new Viewer(fx.host(1200, 800), unplayed(board(id)), {});
+    const got = Number(v.seats.style["--tb-cols"]);
+    if (v.seatRows.length !== n || find(v.el, "tb-seat").length !== n || got !== cols) {
+      laid = false;
+      why = `${id}: ${v.seatRows.length} cards in ${got} columns`;
+    }
+    if (v.el.dataset.tbNarrow) laid = false;
+    v.el._cw = 600;
+    v.fit();
+    if (Number(v.seats.style["--tb-cols"]) !== 2 || !v.el.dataset.tbNarrow) {
+      laid = false;
+      why = `${id} at 600px: ${v.seats.style["--tb-cols"]} columns, narrow ${v.el.dataset.tbNarrow}`;
+    }
+    v.el._cw = 1200;
+    v.fit();
+    if (v.el.dataset.tbNarrow) laid = false;
+  }
+  check("3, 4, 6 and 8 seats lay out as 3, 4, 3+3 and 4+4, and two a row below 640", laid, why);
+  check("below 640 the owners drop", /\.tb-viz\[data-tb-narrow\] \.tb-by\{display:none\}/.test(css));
+
+  const hills8 = shellT.hillsPerSeat(board("basic-xlarge-8p"), 8);
+  check("each seat starts with its orbit's hills", hills8.every((h) => h === 2), JSON.stringify(hills8));
+  const v = new Viewer(fx.host(1000, 700), replay, { turn: replay.turns });
+  const f = frames.at(-1);
+  let squares = true;
+  v.seatRows.forEach((row, seat) => {
+    const standing = f.hills.filter((h) => h[2] === seat).length;
+    const filled = row.squares.filter((sq) => "on" in sq.dataset).length;
+    if (row.squares.length !== shellT.hillsPerSeat(replay.map, 2)[seat] || filled !== standing) squares = false;
+  });
+  check("a card's hills are filled while they stand and hollow once razed", squares);
+}
+
+// The tile's overlay is a layer beside the canvas, never inside it: two seats in mirrored corners,
+// three to eight the two leaders and how many more.
+{
+  const two = new Viewer(fx.host(320, 200), null, { tier: "tile", frame: frames.at(-1), labels: labels2 });
+  const corners = find(two.el, "tb-corner");
+  const f = frames.at(-1);
+  check(
+    "two seats sit in mirrored top corners",
+    corners.length === 2 &&
+      corners[0].classList.contains("tb-l") &&
+      corners[1].classList.contains("tb-r") &&
+      find(corners[0], "tb-nm")[0].textContent === "left-model" &&
+      find(corners[1], "tb-sc")[0].textContent === String(f.score[1])
+  );
+  check(
+    "the overlay is outside the drawing",
+    two.overlay.parentNode === two.el && two.canvas.children.length === 0 && two.stage.children.includes(two.canvas)
+  );
+  check("the turn sits bottom right", two.turnTag.textContent === String(f.turn) && !two.turnTag.hidden);
+
+  const eight = new Viewer(fx.host(400, 250), null, { tier: "tile", frame: lastFrame.frame, labels: labels8 });
+  const score = lastFrame.frame.score;
+  const lead = score
+    .map((s, seat) => ({ s, seat }))
+    .sort((a, b) => b.s - a.s || a.seat - b.seat)
+    .slice(0, 2)
+    .map((x) => labels8[x.seat].name);
+  const names = find(eight.el, "tb-nm").map((n) => n.textContent);
+  check(
+    "eight seats show the two leaders by score and +6",
+    find(eight.el, "tb-list").length === 1 &&
+      names.join() === lead.join() &&
+      find(eight.el, "tb-more")[0]?.textContent === "+6",
+    `${names} vs ${lead}`
+  );
+
+  const queued = new Viewer(fx.host(320, 200), null, { tier: "tile", board: board("basic-tiny-2p"), labels: labels2 });
+  check(
+    "a board nobody has played shows turn zero with no scores and no turn",
+    queued.turn === 0 && find(queued.el, "tb-sc").every((n) => n.textContent === "—") && queued.turnTag.hidden
+  );
+}
+
+// drawFrame never calls the component. Proved by drawing with a copy of the viewer whose component
+// throws on any call: a stored 8-seat last frame, a thousand turns in, drawn whole.
+{
+  const dir = mkdtempSync(join(tmpdir(), "tb-viz-stub-"));
+  for (const f of readdirSync("../dist/viz").filter((n) => n.endsWith(".js"))) {
+    writeFileSync(join(dir, f), readFileSync(`../dist/viz/${f}`));
+  }
+  mkdirSync(join(dir, "engine"));
+  writeFileSync(
+    join(dir, "engine/tb-ants.js"),
+    `export const functions = { invoke() { globalThis.__tbComponentCalls = (globalThis.__tbComponentCalls ?? 0) + 1; throw new Error("the component was called"); } };\n`
+  );
+  const stubbed = await import(pathToFileURL(join(dir, "viz.js")).href);
+  let live = false;
+  try {
+    stubbed.frameAt(replay, 1);
+  } catch {
+    live = true;
+  }
+  globalThis.__tbComponentCalls = 0;
+  const f = lastFrame.frame;
+  const before = fx.calls.length;
+  const v = stubbed.drawFrame(fx.host(200, 125), f);
+  const drawn = fx.calls.slice(before);
+  const arcs = drawn.filter((c) => c[0] === "arc").length;
+  const squares = drawn.filter((c) => c[0] === "strokeRect").length;
+  check("the stubbed component refuses every call", live);
+  check(
+    "drawFrame draws a stored 8-seat last frame without calling the component",
+    globalThis.__tbComponentCalls === 0 && !/tb-err/.test(v.el.innerHTML) && v.frames[0] === f,
+    `${globalThis.__tbComponentCalls} calls`
+  );
+  check(
+    "on the frame's own board",
+    v.renderer.rows === f.size[0] && v.renderer.cols === f.size[1] && lastFrame.turn === 1000 && f.score.length === 8,
+    `${v.renderer.rows}x${v.renderer.cols}`
+  );
+  check(
+    "every ant, food and standing hill of it",
+    arcs >= f.ants.length + f.food.length && squares >= f.hills.length + 1,
+    `${arcs} arcs, ${squares} squares`
+  );
+  const water = shellT.boardOfFrame(f);
+  check("the frame's water is the board's", water.water === f.water.rle && water.rows === 120 && water.cols === 124);
+  const tile = stubbed.drawFrame(fx.host(320, 200), f, { tier: "tile", labels: labels8 });
+  check("a tile given a frame goes the same way", tile.tier === "tile" && globalThis.__tbComponentCalls === 0);
+  rmSync(dir, { recursive: true, force: true });
+
+  // The chip, from 160 pixels up: whatever a ResizeObserver reports.
+  const small = vizT.drawFrame(fx.host(112, 70), f);
+  const wide = vizT.drawFrame(fx.host(200, 125), f);
+  check("a thumb under 160 pixels has no chip", small.chips.hidden === true);
+  check("from 160 it has one", wide.chips.hidden === false && find(wide.el, "tb-more")[0]?.textContent === "+6");
+  wide.el._cw = 150;
+  fx.resize();
+  check("and loses it when it shrinks", wide.chips.hidden === true);
+}
+
+// A tile's preview: the last forty turns through the range form, played once and rested on the
+// last, then stop() back to the frame it rests on. The ends: a match shorter than forty turns, and
+// one that never left turn zero.
+{
+  check(
+    "the preview range is the last forty turns, or all of fewer",
+    [
+      [1000, 960, 1000],
+      [256, 216, 256],
+      [41, 1, 41],
+      [40, 0, 40],
+      [25, 0, 25],
+      [0, 0, 0],
+    ].every(([t, a, b]) => {
+      const [x, y] = shellT.previewRange(t);
+      return x === a && y === b;
+    })
+  );
+  const rest = frames.at(-1);
+  const tile = new Viewer(fx.host(320, 200), null, { tier: "tile", frame: rest, labels: labels2 });
+  const short = { ...replay, turns: 20, deltas: replay.deltas.slice(0, 20) };
+  await tile.preview(short);
+  check(
+    "a match shorter than forty turns previews whole",
+    tile.frames.length === 21 && tile.frames[0].turn === 0 && tile.frames.at(-1).turn === 20 && tile.playing
+  );
+  fx.runFrames();
+  check("it plays once and rests on its last frame", !tile.playing && tile.turn === 20 && tile.i === tile.hi);
+  tile.stop();
+  check("stop() goes back to the resting frame", tile.frames[0] === rest && tile.turn === rest.turn);
+  await tile.preview({ ...replay, turns: 0, deltas: [] });
+  check("a match at turn zero previews one frame", tile.frames.length === 1 && tile.turn === 0);
+  fx.runFrames();
+  tile.stop();
+  let fetches = 0;
+  globalThis.fetch = async () => {
+    fetches++;
+    return { json: async () => replay };
+  };
+  await tile.preview("https://example.test/replay.json");
+  check(
+    "a whole match previews its last forty turns",
+    tile.frames.length === 41 && tile.frames[0].turn === replay.turns - 40,
+    `${tile.frames.length} frames from ${tile.frames[0].turn}`
+  );
+  fx.runFrames();
+  tile.stop();
+  await tile.preview("https://example.test/replay.json");
+  check("and fetches its replay once", fetches === 1, `${fetches} fetches`);
+  tile.stop();
+  const pending = tile.preview("https://example.test/other.json");
+  tile.stop();
+  await pending;
+  check("a preview stopped while it fetched never plays", !tile.playing && tile.frames[0] === rest);
+  let refused = false;
+  try {
+    await new Viewer(fx.host(), replay, {}).preview(replay);
+  } catch {
+    refused = true;
+  }
+  check("only a tile previews", refused);
+}
+
+// The public surface the graph reads, and that series() is the frames' own counts.
+{
+  const v = new Viewer(fx.host(1000, 700), replay, {});
+  const s = v.series();
+  let same = s.ants.length === 2 && s.ants[0].length === frames.length;
+  for (let t = 0; t < frames.length && same; t++) {
+    for (let seat = 0; seat < 2; seat++) {
+      const f = frames[t];
+      if (
+        s.ants[seat][t] !== f.ants.filter((a) => a[2] === seat).length ||
+        s.hills[seat][t] !== f.hills.filter((h) => h[2] === seat).length ||
+        s.score[seat][t] !== f.score[seat]
+      ) {
+        same = false;
+      }
+    }
+  }
+  check("series() is each frame's own counts, [seat][turn]", same);
+  check("and is counted once", v.series() === s);
+  check("range is the timeline's turns", v.range.lo === 0 && v.range.hi === replay.turns);
+  const seen = [];
+  const off = v.on("turn", (t) => seen.push(t));
+  v.seek(50);
+  check("seek() shows a turn and on('turn') hears it", v.turn === 50 && seen.at(-1) === 50);
+  off();
+  v.seek(60);
+  check("and the unsubscribe it returned stops it", seen.at(-1) === 50 && v.turn === 60);
+  check(
+    "events say which seat lost what, and when",
+    v.events.every((e) => (e.kind === "razed" || e.kind === "wiped") && e.turn === frames[e.i].turn && e.seat >= 0)
+  );
+  v.track.rect = { left: 180, top: 600, width: 500, height: 28 };
+  fx.window.scrollX = 10;
+  const boxes = [];
+  v.on("layout", (b) => boxes.push(b));
+  v.fit();
+  fx.window.scrollX = 0;
+  check(
+    "trackBox() is the track in page pixels, and a layout re-emits it",
+    boxes.length === 1 && boxes[0].left === 190 && boxes[0].width === 500
+  );
+}
+
+// Fullscreen promotes a player to a stage in place: the same element, canvas and frames, with the
+// stage's parts built on first use, and a player again after.
+{
+  const el = fx.host(720, 520);
+  const v = new Viewer(el, replay, { tier: "player" });
+  const canvas = v.canvas;
+  const stageEl = v.stage;
+  const seats = v.seatRows;
+  v.fullscreen();
+  check(
+    "fullscreen makes a player a stage without a remount",
+    v.tier === "stage" &&
+      el.classList.contains("tb-tier-stage") &&
+      !el.classList.contains("tb-tier-player") &&
+      v.canvas === canvas &&
+      v.stage === stageEl &&
+      v.seatRows === seats &&
+      el.children.includes(stageEl) &&
+      has(v, "tb-tray") &&
+      has(v, "tb-speed") &&
+      el.dataset.tbFull === "1"
+  );
+  v.fullscreen(false);
+  check(
+    "and leaving it makes it a player again, the stage's parts put away",
+    v.tier === "player" && el.classList.contains("tb-tier-player") && v.canvas === canvas && !el.dataset.tbFull &&
+      find(el, "tb-tray")[0].classList.contains("tb-so") &&
+      /\.tb-viz\.tb-tier-player \.tb-so\{display:none\}/.test(css)
+  );
+  // The Fullscreen API, where the browser has one.
+  el.requestFullscreen = () => {
+    fx.document.fullscreenElement = el;
+    fx.document.fire("fullscreenchange");
+    return Promise.resolve();
+  };
+  fx.document.exitFullscreen = () => {
+    fx.document.fullscreenElement = null;
+    fx.document.fire("fullscreenchange");
+  };
+  v.fullscreen();
+  const up = v.tier === "stage" && v.isFull() && v.fullBtn.getAttribute("aria-pressed") === "true";
+  v.fullscreen();
+  check("the browser's own fullscreen does the same", up && v.tier === "player" && !v.isFull() && v.canvas === canvas);
+  const stage = new Viewer(fx.host(), replay, {});
+  stage.fullscreen();
+  check("a stage stays a stage", stage.tier === "stage" && stage.isFull());
+  stage.fullscreen(false);
+}
+
+// graph.js: loaded on first use, its x-axis the timeline's, one line a seat, hovering scrubs.
+console.log("the ants graph");
+{
+  const index = readFileSync("./src/index.js", "utf8");
+  check(
+    "graph.js and map.js are loaded on first use, not with viz.js",
+    !/^import[^;]*"\.\/(graph|map)\.js"/m.test(index) && /await import\("\.\/graph\.js"\)/.test(index)
+  );
+  const { stepOffset, plotSpan } = await import("../dist/viz/graph.js");
+  check("two seats level on a step series draw 1.5 pixels apart", stepOffset(0, 2) === -0.75 && stepOffset(1, 2) === 0.75);
+  const eight = Array.from({ length: 8 }, (_, s) => stepOffset(s, 8));
+  check(
+    "eight are spread evenly about the value",
+    near(eight.reduce((a, b) => a + b, 0), 0) && near(eight[7] - eight[0], 7 * 1.5)
+  );
+  check("a graph with no track to follow keeps its own gutters", plotSpan(null, 0, 600).x0 === 34);
+
+  const v = new Viewer(fx.host(1000, 700), replay, {});
+  v.track.rect = { left: 180, top: 600, width: 600, height: 28 };
+  const gh = fx.host(1000, 200);
+  const g = await vizT.mountGraph(gh, v);
+  check("its x-axis is the timeline's", g.span.x0 === 180 && g.span.w === 600, JSON.stringify(g.span));
+  check(
+    "a three-way switch, ants first, and a legend a seat",
+    g.switches.length === 3 &&
+      g.switches[0].getAttribute("aria-pressed") === "true" &&
+      g.kind === "ants" &&
+      find(gh, "tb-legend")[0].children.length === 2
+  );
+  g.canvas.fire("pointermove", { clientX: 180 + 300 });
+  check("hovering scrubs the viewer", v.turn === Math.round(replay.turns / 2), `turn ${v.turn}`);
+  v.seek(10);
+  check("the playhead follows the viewer", g.label.textContent.startsWith("turn 10 "));
+  g.setKind("hills");
+  check("the switch changes the series", g.kind === "hills" && g.switches[1].getAttribute("aria-pressed") === "true");
+  v.track.rect = { left: 220, top: 600, width: 520, height: 28 };
+  v.fit();
+  check("a layout moves its x-axis with the track", g.span.x0 === 220 && g.span.w === 520);
+  const listening = v.listeners.turn.size;
+  g.destroy();
+  check("destroy() stops following", v.listeners.turn.size === listening - 1);
+}
+
+console.log(failures ? `\n${failures} FAILURE(S)` : "\nall viewer checks passed");
 process.exit(failures ? 1 : 0);

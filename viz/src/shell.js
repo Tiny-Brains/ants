@@ -7,13 +7,30 @@
 // board to say where to look: a ring around any hill an enemy is within eight moves of, and -- on a
 // toggle -- the territory each seat has explored, from the engine's own record of what it saw.
 //
+// **Four tiers, one viewer.** A host picks the tier by the job the viewer does on its page, and the
+// tier decides which parts `build()` makes; it never changes what is simulated.
+//
+//   stage    seat cards with ants and hills, the board with its tray, the full transport with speed,
+//            the key list and fullscreen. The default, so the book and `tinybrains view` are this.
+//   player   seat cards with name, owner and score, the board, the transport and fullscreen -- no
+//            tray, no zoom, no territory. Fullscreen promotes it to a stage in place, no remount.
+//   tile     the board in a 16:10 box with the seats' names and scores laid over it and the turn in
+//            a corner. Nothing to operate: `preview()` plays the last forty turns, `stop()` rests it.
+//   thumb    one frame of the board, and a score chip once the box is 160 pixels wide.
+//
+// A tile or a thumb can be drawn with no replay at all: from the last frame Soma keeps for a match
+// (`frame`), which carries its own size and water, or from the board alone at turn zero (`board`).
+// Neither decodes anything, which is what lets a grid of cards draw at the speed of a grid.
+//
 // Three rules this file keeps.
 //
-// **Two bars and a board.** The seats are a title bar above the board and the transport a bar below
-// it, and both are always on screen: who is playing and what the score is are read the whole way
-// through a match, so they are not something to go and find. The tools -- zoom and the territory
-// toggle -- are the only layer over the stage, and appear on hover, on keyboard focus and on a
-// touch, the way a video player's chrome does. `chrome: "always"` pins them open.
+// **Two bars and a board**, on the stage and the player. The seats are cards above the board and
+// the transport a bar below it, and both are always on screen: who is playing and what the score is
+// are read the whole way through a match, so they are not something to go and find. The tools --
+// zoom and the territory toggle -- are the only layer over the stage, and appear on hover, on
+// keyboard focus and on a touch, the way a video player's chrome does. `chrome: "always"` pins them
+// open. A tile's names are a layer too, but a DOM one outside the drawing, so a long name never
+// moves a cell.
 //
 // **The chrome follows the page; the board does not.** Every colour of the frame is one of the
 // platform's design tokens with a written-out fallback, so the player is the colour of the card it
@@ -25,7 +42,7 @@
 // on mount; it is not a shadow root, and `check.mjs` fails the build on an unscoped rule. An
 // unscoped `.tb-bar` in here once landed on the web application's own header.
 
-import { allFrames } from "./engine.js";
+import { allFrames, framesBetween, openingOf } from "./engine.js";
 import { Renderer, SEATS, expandRle } from "./render.js";
 
 const CSS = `
@@ -55,7 +72,7 @@ const CSS = `
   font:13px/1.5 var(--tb-sans);
   overflow:hidden;-webkit-font-smoothing:antialiased;
   contain:inline-size}
-/* Its width is the host's, never its content's. The title bar is one line of text and the canvas
+/* Its width is the host's, never its content's. The seat cards are lines of text and the canvas
    is drawn at the pixels it was last given, and either would otherwise become the viewer's minimum
    width: a grid column holding it grew to fit, which put the web application's home-page replay at
    871 pixels in a 410-pixel column. A host that sizes to its content has to give it a width. */
@@ -87,58 +104,66 @@ const CSS = `
 .tb-viz:focus{outline:none}
 .tb-viz:focus-visible{outline:2px solid var(--tb-accent);outline-offset:-2px}
 
-/* ---------- the title bar: every seat, always on screen ----------
-   A seat is its colour, its name and three numbers: its ants, its hills, its score. The counts are
-   the board's own shapes, a dot for an ant and a square for a hill, rather than spelt out -- the
-   words took a hundred pixels a seat and were the first thing cut, so a 505-pixel frame read
-   "1 ant · 1 h…" and never said how many hills anyone had. The chip and the numbers never give
-   way. The owner goes first, and whole; the name after it, with an ellipsis; both are in full on
-   hover.
+/* ---------- the seat cards: every seat, always on screen ----------
+   One card per seat, so each number sits with the player it belongs to: the seat's colour as the
+   card's left edge, name and owner on top, the score large at the right, and on the stage a second
+   line with the ants alive and one square a hill -- filled while it stands, hollow once it is
+   razed. The flat row this replaced ran four seats' ants, hills and scores into one line, and the
+   eye had to count along it to find whose 12 that was.
 
-   A grid rather than a row, because four seats and six do not fit one line of the frames the
-   player is given. seatColumns() picks the columns from the seat count and the width and nothing
-   else, so how many rows there are never depends on the text in them: a count that grows by a
-   digit, or a long name, cannot move the board under it. */
-.tb-viz .tb-top{display:grid;grid-template-columns:repeat(var(--tb-cols,2),minmax(0,1fr));
-  flex:none;min-width:0;background:var(--tb-panel);border-bottom:1px solid var(--tb-line)}
-/* Each seat rules its own right and bottom edges: the root clips the last column's, the last row's
-   lands on the bar's border, and a short last row draws no line where there is no seat. */
-.tb-viz .tb-seat{display:flex;align-items:center;gap:6px;min-width:0;padding:7px 9px;
-  white-space:nowrap;overflow:hidden;box-shadow:1px 0 0 var(--tb-line),0 1px 0 var(--tb-line)}
+   A grid, because four seats and eight do not fit one line of the frames the player is given.
+   seatColumns() picks the columns from the seat count and the width and nothing else, so how many
+   rows there are never depends on the text in them: a count that grows by a digit, or a long name,
+   cannot move the board under it. Every card of a tier is the same height for the same reason. */
+.tb-viz .tb-top{display:grid;grid-template-columns:repeat(var(--tb-cols,2),minmax(0,1fr));gap:6px;
+  flex:none;min-width:0;padding:8px 10px;background:var(--tb-panel);
+  border-bottom:1px solid var(--tb-line)}
+.tb-viz .tb-seat{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:1px;
+  align-items:center;min-width:0;padding:5px 10px 5px 9px;border-radius:var(--tb-r);
+  border-left:3px solid var(--tb-seat);
+  background:color-mix(in srgb,var(--tb-seat) 9%,var(--tb-raised))}
 .tb-viz .tb-seat[data-out=true]{opacity:.55}
-.tb-viz .tb-chip{width:10px;height:10px;border-radius:3px;flex:none}
-/* The name and the owner share what the numbers leave, on a line that wraps but is one line tall.
-   An owner with no room for seven characters beside the name wraps onto the line nobody sees,
-   rather than standing there cut to a lone "@"; a name too long for the line is cut on its own. */
-.tb-viz .tb-id{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;flex:1 1 0;
-  min-width:0;height:1.5em;overflow:hidden}
+/* The name and the owner share the top line, on a line that wraps but is one line tall. An owner
+   with no room for seven characters beside the name wraps onto the line nobody sees, rather than
+   standing there cut to a lone "@"; a name too long for the line is cut on its own. */
+.tb-viz .tb-id{grid-column:1;grid-row:1;display:flex;flex-wrap:wrap;align-items:baseline;
+  column-gap:6px;min-width:0;height:1.5em;overflow:hidden;white-space:nowrap}
 .tb-viz .tb-name{font-weight:650;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.tb-viz .tb-by{color:var(--tb-dim);flex:1 1 7ch;max-width:max-content;min-width:0;overflow:hidden;
-  text-overflow:ellipsis}
-.tb-viz .tb-nums{display:flex;align-items:center;gap:6px;flex:none;font:11px/1 var(--tb-mono);
-  font-variant-numeric:tabular-nums;color:var(--tb-dim)}
-.tb-viz .tb-n{display:inline-flex;align-items:center;gap:3px}
+.tb-viz .tb-by{color:var(--tb-dim);font-size:12px;flex:1 1 7ch;max-width:max-content;min-width:0;
+  overflow:hidden;text-overflow:ellipsis}
+/* The score at the right, where a scoreboard keeps it, the one figure on the card in large type.
+   It spans both lines of a stage card, so the card's height is the two lines and not the digits. */
+.tb-viz .tb-score{grid-column:2;grid-row:1 / span 2;font:650 22px/1 var(--tb-mono);
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.tb-viz .tb-nums{grid-column:1;grid-row:2;display:flex;align-items:center;gap:10px;min-width:0;
+  height:15px;font:11px/1 var(--tb-mono);font-variant-numeric:tabular-nums;color:var(--tb-dim)}
+.tb-viz .tb-n{display:inline-flex;align-items:center;gap:4px}
 .tb-viz .tb-n[hidden]{display:none}
-.tb-viz .tb-n b{font-weight:inherit}
-/* Room held for the digits a count reaches, so ants passing ten do not take a letter off the name. */
+.tb-viz .tb-n b{font-weight:600;color:var(--tb-ink)}
+/* Room held for the digits a count reaches, so ants passing ten do not shift the hills. */
 .tb-viz .tb-n-ants b{min-width:2ch}
 .tb-viz .tb-n-seen b{min-width:3ch}
-.tb-viz .tb-ant{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
-.tb-viz .tb-hill{width:8px;height:8px;border:1.5px solid currentColor;flex:none;
-  background:color-mix(in srgb,currentColor 30%,transparent)}
+.tb-viz .tb-ant{width:7px;height:7px;border-radius:50%;background:var(--tb-seat);flex:none}
+.tb-viz .tb-hills{gap:3px;color:var(--tb-seat)}
+.tb-viz .tb-hill{width:8px;height:8px;border:1.5px solid currentColor;border-radius:2px;flex:none}
+.tb-viz .tb-hill[data-on]{background:currentColor}
 .tb-viz .tb-eye svg{display:block}
-/* The score last, where a scoreboard keeps it, and the one figure in the bar's full ink. Held a
-   little apart from the hills beside it, so "1" and "1" never read as "11". No room held for a
-   second digit: every seat starts on one point a hill and gains two a raze, so a score past nine
-   is a rare moment rather than a whole match of empty space. */
-.tb-viz .tb-score{font:600 15px/1 var(--tb-mono);font-variant-numeric:tabular-nums;flex:none;
-  margin-left:3px}
+/* The player keeps name, owner and score: one line, a smaller score, no counts. */
+.tb-viz.tb-tier-player .tb-nums{display:none}
+.tb-viz.tb-tier-player .tb-score{grid-row:1;font-size:18px}
+/* A narrow viewer -- under 640 pixels, which seatColumns() also reads -- sets its cards two to a
+   row and drops the owners before it cuts a name. */
+.tb-viz[data-tb-narrow] .tb-by{display:none}
+.tb-viz[data-tb-narrow] .tb-top{gap:5px;padding:6px 8px}
+.tb-viz[data-tb-narrow] .tb-score{font-size:18px}
 
 /* ---------- the stage ---------- */
 .tb-viz .tb-stage{position:relative;flex:1 1 auto;min-height:200px;display:flex;overflow:hidden;
   background:var(--tb-void);cursor:grab}
 .tb-viz .tb-stage.tb-drag{cursor:grabbing}
 .tb-viz .tb-stage canvas{display:block;margin:auto}
+/* Only a stage zooms and pans; everywhere else the board is looked at, not held. */
+.tb-viz:not(.tb-tier-stage) .tb-stage{cursor:default}
 
 /* ---------- the tray ----------
    One layer over the board, out of the way until it is wanted. Flat and opaque rather than a
@@ -161,9 +186,20 @@ const CSS = `
 .tb-viz .tb-tools button[aria-pressed=true]{background:rgba(238,243,255,.24)}
 .tb-viz .tb-tools .tb-sep{width:1px;margin:5px 3px;background:var(--tb-over-line)}
 
+/* The key list, over the board's bottom-left corner while its button is pressed. */
+.tb-viz .tb-keys{position:absolute;left:9px;bottom:9px;margin:0;padding:8px 12px;
+  display:grid;grid-template-columns:auto auto;gap:3px 14px;font-size:12px;line-height:1.4}
+.tb-viz .tb-keys[hidden]{display:none}
+.tb-viz .tb-keys dt{font:600 11.5px/1.4 var(--tb-mono);white-space:nowrap}
+.tb-viz .tb-keys dd{margin:0;color:var(--tb-over-dim)}
+
+/* Parts only a stage has. A player that was promoted to a stage for fullscreen keeps them built
+   when it comes back, and this is what puts them away. */
+.tb-viz.tb-tier-player .tb-so{display:none}
+
 /* ---------- the transport, which is always on screen ---------- */
-.tb-viz .tb-bar{display:flex;align-items:center;gap:10px;padding:8px 10px;flex:none;
-  background:var(--tb-panel);border-top:1px solid var(--tb-line)}
+.tb-viz .tb-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;
+  flex:none;background:var(--tb-panel);border-top:1px solid var(--tb-line)}
 .tb-viz button{font:inherit;color:var(--tb-ink);background:transparent;border:1px solid transparent;
   border-radius:5px;padding:5px 7px;cursor:pointer;line-height:1;display:inline-flex;
   align-items:center;justify-content:center}
@@ -175,14 +211,18 @@ const CSS = `
 .tb-viz .tb-play{background:var(--tb-accent);color:var(--tb-accent-ink);
   width:36px;height:36px;border-radius:50%}
 .tb-viz .tb-play:hover:not(:disabled){background:var(--tb-accent);filter:brightness(1.06)}
+.tb-viz .tb-end{display:flex;align-items:center;gap:2px;flex:none}
+.tb-viz .tb-end button{height:30px;min-width:30px;padding:0 5px}
+.tb-viz .tb-end button[aria-pressed=true]{background:var(--tb-raised)}
 
-.tb-viz .tb-track{position:relative;flex:1 1 auto;height:28px;display:flex;align-items:center;
+.tb-viz .tb-track{position:relative;flex:1 1 80px;height:28px;display:flex;align-items:center;
   cursor:pointer;touch-action:none;min-width:80px}
 .tb-viz .tb-rail{position:absolute;left:0;right:0;height:5px;border-radius:3px;
   background:var(--tb-raised)}
 .tb-viz .tb-fill{position:absolute;left:0;height:5px;border-radius:3px;background:var(--tb-accent)}
 .tb-viz .tb-mark{position:absolute;width:2px;height:12px;border-radius:1px;
   transform:translateX(-1px);opacity:.9}
+.tb-viz .tb-mark[data-kind=wiped]{width:3px;height:16px}
 .tb-viz .tb-thumb{position:absolute;width:13px;height:13px;border-radius:50%;
   background:var(--tb-accent);border:2px solid var(--tb-panel);transform:translateX(-6.5px);
   box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -190,6 +230,52 @@ const CSS = `
   white-space:nowrap;min-width:74px;text-align:right}
 .tb-viz .tb-speed{font:11px/1 var(--tb-mono);min-width:36px;color:var(--tb-dim)}
 .tb-viz .tb-err{padding:16px;color:var(--tb-bad);font:13px/1.6 var(--tb-sans)}
+/* A phone: the timeline takes a row of its own above the buttons, and speed and the key list go. */
+.tb-viz[data-tb-narrow] .tb-track{order:-1;flex:1 1 100%}
+.tb-viz[data-tb-narrow] .tb-transport{margin-right:auto}
+.tb-viz[data-tb-narrow] :is(.tb-speed,.tb-keys-btn){display:none}
+
+/* ---------- fullscreen ----------
+   The stage with the page gone. The board takes whatever the seats and the transport leave, over
+   any height the host gave it. Where the browser has no fullscreen for an element -- a phone's --
+   the viewer fills the window instead, and that is the same rule. */
+.tb-viz:fullscreen,.tb-viz[data-tb-full]{width:100%;height:100% !important}
+.tb-viz[data-tb-full]{position:fixed;inset:0;z-index:2147483000}
+.tb-viz:fullscreen .tb-stage,.tb-viz[data-tb-full] .tb-stage{flex:1 1 auto !important;
+  height:auto !important}
+
+/* ---------- the tile and the thumb: a board in a box ----------
+   The box is 16:10 unless the host gives it a height, and the board keeps its own shape inside it,
+   letterboxed on the void. Nothing here takes focus, a key or a pointer. */
+.tb-viz:is(.tb-tier-tile,.tb-tier-thumb){position:relative;aspect-ratio:16 / 10}
+.tb-viz:is(.tb-tier-tile,.tb-tier-thumb) .tb-stage{position:absolute;inset:0;min-height:0}
+/* The tile's overlay: a DOM layer over the canvas, never drawn into it, in the tray's fixed colours
+   because it is read against the board and not against the page. */
+.tb-viz .tb-over{position:absolute;inset:0;pointer-events:none;color:var(--tb-over-ink);
+  font:600 12px/1.3 var(--tb-sans)}
+.tb-viz .tb-tag{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.tb-viz .tb-tag i{width:8px;height:8px;border-radius:2px;flex:none;background:var(--tb-seat)}
+.tb-viz .tb-tag .tb-nm{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tb-viz .tb-tag .tb-sc{font:650 13px/1 var(--tb-mono);font-variant-numeric:tabular-nums}
+.tb-viz .tb-corner{position:absolute;top:6px;max-width:calc(50% - 9px);padding:3px 7px;
+  border-radius:5px;background:rgba(13,23,41,.82)}
+.tb-viz .tb-corner.tb-l{left:6px}
+.tb-viz .tb-corner.tb-r{right:6px;flex-direction:row-reverse}
+.tb-viz .tb-list{position:absolute;top:6px;left:6px;display:grid;gap:2px;max-width:calc(100% - 12px);
+  padding:4px 8px;border-radius:5px;background:rgba(13,23,41,.82)}
+.tb-viz .tb-list .tb-sc{margin-left:auto;padding-left:10px}
+.tb-viz .tb-more{color:var(--tb-over-dim);font-weight:500;font-size:11.5px}
+.tb-viz .tb-at{position:absolute;right:6px;bottom:6px;padding:2px 6px;border-radius:5px;
+  background:rgba(13,23,41,.82);font:600 11.5px/1.2 var(--tb-mono);
+  font-variant-numeric:tabular-nums}
+.tb-viz .tb-at[hidden]{display:none}
+/* The thumb's one addition, from 160 pixels up. */
+.tb-viz .tb-chips{position:absolute;left:5px;bottom:5px;display:flex;align-items:center;gap:6px;
+  padding:2px 6px;border-radius:5px;background:rgba(13,23,41,.82);color:var(--tb-over-ink);
+  font:600 11.5px/1.2 var(--tb-mono);font-variant-numeric:tabular-nums;pointer-events:none}
+.tb-viz .tb-chips[hidden]{display:none}
+.tb-viz .tb-chips i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;
+  background:var(--tb-seat)}
 
 /* ---------- the map visual: a board, not a match (map.js) ----------
    Three facts over the board and nothing else: its name, how many play it, how many cells it is.
@@ -206,6 +292,28 @@ const CSS = `
 .tb-viz .tb-map-fact svg{display:block}
 .tb-viz .tb-map-board{display:flex;flex:none;overflow:hidden;background:var(--tb-void)}
 .tb-viz .tb-map-board canvas{display:block;margin:auto}
+
+/* ---------- the ants graph (graph.js) ----------
+   The match as three lines a seat, under the player and the same width as it: a switch, the plot,
+   and a legend for a reader who has scrolled the seat cards away. The plot's colours are the
+   seats'; its grid and playhead are the page's. */
+.tb-viz[data-tb-mode=graph]{cursor:default}
+.tb-viz .tb-g-head{display:flex;align-items:center;gap:10px;padding:6px 10px;flex:none;min-width:0;
+  border-bottom:1px solid var(--tb-line)}
+.tb-viz .tb-seg{display:inline-flex;gap:2px;padding:2px;flex:none;border-radius:6px;
+  background:var(--tb-raised)}
+.tb-viz .tb-seg button{padding:4px 10px;font-size:12px;border-radius:4px;color:var(--tb-dim)}
+.tb-viz .tb-seg button[aria-pressed=true]{background:var(--tb-panel);color:var(--tb-ink);
+  box-shadow:0 0 0 1px var(--tb-line)}
+.tb-viz .tb-g-lab{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font:12px/1.3 var(--tb-mono);font-variant-numeric:tabular-nums}
+.tb-viz .tb-g-plot{position:relative;flex:none;min-width:0}
+.tb-viz .tb-g-plot canvas{display:block;cursor:crosshair;touch-action:none}
+.tb-viz .tb-legend{display:flex;flex-wrap:wrap;gap:4px 14px;padding:4px 10px 8px;flex:none;
+  font-size:12px;color:var(--tb-dim)}
+.tb-viz .tb-legend span{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.tb-viz .tb-legend i{width:12px;height:3px;border-radius:2px;flex:none;background:var(--tb-seat)}
+.tb-viz .tb-legend b{color:var(--tb-ink);font-weight:600}
 
 @media (prefers-reduced-motion:reduce){
   .tb-viz .tb-tray,.tb-viz .tb-head{transition:none}}
@@ -228,15 +336,30 @@ export function injectCss(doc) {
   doc.head.appendChild(el);
 }
 
+/** The tiers, in the order of how much each one draws. */
+export const TIERS = ["stage", "player", "tile", "thumb"];
+/** The tiers with seat cards and a transport: the ones that play a match rather than show one. */
+const FULL = new Set(["stage", "player"]);
+
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const TURNS_PER_SECOND = 10;
 /** How long the tray stays up after a touch, which has no hover to keep it up. */
 const PEEK_MS = 2600;
 /** How near an enemy ant has to be to a hill, in moves, before the hill is ringed. */
 const THREAT_STEPS = 8;
-/** The narrowest a seat in the title bar may be: its chip, seven or eight letters of its name and
- *  its three numbers. Six seats in the web's 505-pixel home-page frame are then two rows of three. */
+/** The narrowest a seat card may be: its edge, seven or eight letters of its name and its score.
+ *  Six seats in an 800-pixel frame are then two rows of three. */
 const MIN_SEAT = 160;
+/** The most cards a row holds. Five to eight seats wrap onto two rows at any width, so a card
+ *  never gets so wide that its score is a long way from its name. */
+const MAX_SEAT_COLS = 4;
+/** Below this width the viewer is a phone's: two cards a row, no owners, the timeline on its own
+ *  row. The viewer's own width, not the window's, because a host column can be narrow on a desk. */
+export const NARROW = 640;
+/** How wide a thumb has to be before its score chip fits beside the board it describes. */
+export const CHIP_MIN = 160;
+/** How many turns a tile's hover preview plays: the end of the match, where the result is. */
+export const PREVIEW_TURNS = 40;
 
 // Inline SVG rather than glyphs: "⏮" renders as a different width, weight and baseline on every
 // platform, and transport controls that jump about are the first thing that makes a player feel
@@ -255,58 +378,94 @@ const ICON = {
   fit: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.8 6V2.8H6M10 2.8h3.2V6M13.2 10v3.2H10M6 13.2H2.8V10"/></svg>',
   // An eye, because a seat's territory is what it has seen.
   explored: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.6 8s2.4-4.3 6.4-4.3S14.4 8 14.4 8s-2.4 4.3-6.4 4.3S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>',
-  // The tray's eye again, at the size of the title bar's figures: the share beside it is what that
+  // The tray's eye again, at the size of the card's figures: the share beside it is what that
   // button draws.
   seen: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.6 8s2.4-4.3 6.4-4.3S14.4 8 14.4 8s-2.4 4.3-6.4 4.3S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>',
+  // Arrows out of the corners to fill the screen, into them to leave it: the tray's fit button is
+  // the bare corners, and the two sit a few centimetres apart.
+  full: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2V2.5h3.7M2.5 2.5l3.8 3.8M13.5 6.2V2.5H9.8M13.5 2.5 9.7 6.3M2.5 9.8v3.7h3.7M2.5 13.5l3.8-3.8M13.5 9.8v3.7H9.8M13.5 13.5 9.7 9.7"/></svg>',
+  unfull: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.3 2.5v3.8H2.5M9.7 2.5v3.8h3.8M6.3 13.5V9.7H2.5M9.7 13.5V9.7h3.8"/></svg>',
+  keys: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="4" width="13" height="8.5" rx="1.6"/><path d="M4.2 7h.6M7.2 7h.6M10.2 7h.6M4.8 9.8h6.4"/></svg>',
 };
+
+/** What the key list says, in the order a reader reaches for them. */
+const KEYS = [
+  ["space", "play, pause"],
+  ["← →", "a turn (shift: ten)"],
+  ["↑ ↓", "ten turns"],
+  ["Home End", "first, last"],
+  ["+ − 0", "zoom, fit"],
+  ["E", "territory"],
+  ["F", "fullscreen"],
+  ["?", "this list"],
+];
 
 export class Viewer {
   /**
    * @param {HTMLElement} el   where to draw
-   * @param {object} replay    the envelope: it carries its own board, so nothing else is needed
-   * @param {object} [opts]    { turn, from, to, autoplay, speed, theme, chrome, height, stageHeight,
-   *                             labels, explored, onTurn }
+   * @param {object|null} replay  the envelope: it carries its own board. May be null for a tile or
+   *                           a thumb given `frame` or `board` instead
+   * @param {object} [opts]    { tier, frame, board, turn, from, to, autoplay, speed, theme, chrome,
+   *                             height, stageHeight, labels, explored, onTurn }
    */
   constructor(el, replay, opts = {}) {
     this.el = el;
-    this.replay = replay;
+    this.replay = replay ?? null;
     this.opts = opts;
     this.onTurn = opts.onTurn;
+    this.tier = TIERS.includes(opts.tier) ? opts.tier : "stage";
     this.playing = false;
     this.speed = opts.speed ?? 1;
     this.raf = null;
     this.peekTimer = null;
     this.destroyed = false;
+    this.listeners = { turn: new Set(), layout: new Set() };
+    this.previewToken = 0;
+
+    // A host bug, said as one, rather than a player with nothing in it. A stage or a player IS a
+    // replay; a tile draws names, and without an envelope nothing here knows any.
+    if (FULL.has(this.tier) && !this.replay) throw new Error(`a ${this.tier} needs a replay`);
+    if (this.tier === "tile" && !this.replay && !Array.isArray(opts.labels)) {
+      throw new Error("a tile with no replay needs `labels`: nothing else names its seats");
+    }
 
     injectCss(el.ownerDocument);
     el.innerHTML = "";
-    el.classList.add("tb-viz");
+    el.classList.add("tb-viz", `tb-tier-${this.tier}`);
     if (opts.theme) el.dataset.tbTheme = opts.theme;
     if (opts.chrome) el.dataset.tbChrome = opts.chrome;
     // A host that says how tall the player is says it once, here, rather than having to know that
     // the root is a flex column that will otherwise collapse to its bar. `stageHeight` says how tall
     // the BOARD is instead, and the player is that plus its bars -- which is what a host sizing the
-    // board to the screen means, since the seats' bar is one row or several depending on the width.
-    // Given both, the board's wins: `height` is then a fallback for a viewer from before it.
+    // board to the screen means, since the seat cards are one row or several depending on the
+    // width. Given both, the board's wins: `height` is then a fallback for a viewer from before it.
+    // A tile and a thumb are boxes whose shape the host sets, and take neither.
     const len = (v) => (typeof v === "number" ? `${v}px` : v);
-    if (opts.height && !opts.stageHeight) el.style.height = len(opts.height);
+    if (FULL.has(this.tier) && opts.height && !opts.stageHeight) el.style.height = len(opts.height);
 
+    let source;
     try {
-      // One pass over the match, on construction. Everything after this is an array lookup, which
-      // is what makes scrubbing feel like scrubbing rather than like waiting.
-      this.frames = allFrames(replay);
+      source = sourceOf(this.tier, this.replay, opts);
     } catch (e) {
       el.innerHTML = `<div class="tb-err">This replay could not be decoded.<br>${esc(e.message)}</div>`;
       return;
     }
+    // Where the frames came from: the whole replay, one stored frame, or a board's turn zero. Only
+    // the first has a match's worth of anything; the last has no scores yet.
+    this.from = source.kind;
+    this.frames = source.frames;
+    this.map = source.map;
 
     // A range narrows what the timeline covers without changing what a turn number means, so a
-    // tutorial can point at turns 40-60 of a real match and the reader still sees "turn 47".
-    this.lo = clamp(opts.from ?? 0, 0, this.frames.length - 1);
-    this.hi = clamp(opts.to ?? this.frames.length - 1, this.lo, this.frames.length - 1);
-    this.i = clamp(opts.turn ?? this.lo, this.lo, this.hi);
+    // tutorial can point at turns 40-60 of a real match and the reader still sees "turn 47". A tile
+    // or a thumb rests on the last frame it has: a finished match is shown as it finished.
+    const last = this.frames.length - 1;
+    this.lo = clamp(opts.from ?? 0, 0, last);
+    this.hi = clamp(opts.to ?? last, this.lo, last);
+    this.i = clamp(opts.turn ?? (FULL.has(this.tier) ? this.lo : this.hi), this.lo, this.hi);
+    this.rest = { frames: this.frames, lo: this.lo, hi: this.hi, i: this.i };
 
-    this.labels = seatLabels(replay, this.frames[0].score.length, opts.labels);
+    this.labels = seatLabels(this.replay ?? {}, this.frames[0].score.length, opts.labels);
     this.names = this.labels.map((l) => l.name);
     this.events = findEvents(this.frames, this.lo, this.hi);
     // Derived from the frames on first use and kept: the board's step counts on the first paint,
@@ -315,93 +474,292 @@ export class Viewer {
     this.firstSeen = null;
     // Only a cartridge that reports what each seat saw can draw it. This bundle ships with one that
     // does; a shell copied beside an older engine would otherwise draw the whole board as fog.
-    this.canExplore = Array.isArray(this.frames[0].discovered);
+    this.canExplore = this.tier === "stage" && Array.isArray(this.frames[0].discovered);
     this.explored = Boolean(opts.explored) && this.canExplore;
 
     this.build();
-    this.renderer.setBoard(replay.map);
+    this.renderer.setBoard(this.map);
     this.observe();
     // A tutorial points at a turn AND a place: `zoom` is a multiple of the fitted scale, `centre`
     // is the cell to put in the middle. Applied after the first layout, because both are relative
-    // to a viewport that does not exist until then.
-    if (opts.zoom && opts.zoom > 1) {
+    // to a viewport that does not exist until then. Only a stage zooms.
+    if (this.tier === "stage" && opts.zoom && opts.zoom > 1) {
       this.renderer.zoomAt(opts.zoom, 0, 0);
       const c = opts.centre ?? this.busiestCell();
       this.renderer.centreOn(c[0], c[1]);
-    } else if (opts.centre) {
+    } else if (this.tier === "stage" && opts.centre) {
       this.renderer.centreOn(opts.centre[0], opts.centre[1]);
     }
     this.show();
-    if (opts.autoplay) this.play();
+    if (opts.autoplay && FULL.has(this.tier)) this.play();
+  }
+
+  // ------------------------------------------------------------------ the public surface
+  //
+  // What a host -- and graph.js -- may read and call. Everything else on this class is the
+  // viewer's own and may change without notice.
+
+  /** The turn shown. In a replay a frame's index and its turn are the same number. */
+  get turn() {
+    return this.frames?.[this.i]?.turn ?? 0;
+  }
+
+  /** The turns the timeline covers: `from` and `to`, or the whole match. */
+  get range() {
+    if (!this.frames) return { lo: 0, hi: 0 };
+    return { lo: this.frames[this.lo].turn, hi: this.frames[this.hi].turn };
+  }
+
+  /** Show a turn, clamped to the range. Does not pause: a host scrubbing decides that. */
+  seek(turn) {
+    if (!this.frames) return;
+    this.goto(Number(turn) - this.frames[0].turn);
+  }
+
+  /**
+   * Each seat's ants alive, hills standing and score at every turn: `{ ants, hills, score }`, each
+   * `[seat][turn]`. Counted once from the frames and kept, so a graph reads a thousand turns of
+   * eight seats as array lookups.
+   */
+  series() {
+    if (!this.frames) return { ants: [], hills: [], score: [] };
+    if (this.seriesCache?.frames === this.frames) return this.seriesCache.value;
+    const n = this.frames[0].score.length;
+    const T = this.frames.length;
+    const blank = () => Array.from({ length: n }, () => new Array(T).fill(0));
+    const value = { ants: blank(), hills: blank(), score: blank() };
+    this.frames.forEach((f, t) => {
+      for (const a of f.ants) if (a[2] < n) value.ants[a[2]][t]++;
+      for (const h of f.hills) if (h[2] < n) value.hills[h[2]][t]++;
+      for (let s = 0; s < n; s++) value.score[s][t] = f.score[s];
+    });
+    this.seriesCache = { frames: this.frames, value };
+    return value;
+  }
+
+  /**
+   * Listen for `"turn"` (called with the turn and its frame, each time one is shown) or `"layout"`
+   * (called with `trackBox()` each time the timeline may have moved). Returns the unsubscribe.
+   * `onTurn` stays the host's single callback; this is for anything else that follows the player.
+   */
+  on(type, fn) {
+    const set = this.listeners[type];
+    if (!set) throw new Error(`no such event: ${type}`);
+    set.add(fn);
+    return () => set.delete(fn);
+  }
+
+  /**
+   * Where the timeline's track is, in page pixels: `{ left, width }`, or null in a tier that has
+   * none. The ants graph lines its x-axis up with it, so a tick in one sits over the same tick in
+   * the other; it moves when the viewer is resized, and `"layout"` says so.
+   */
+  trackBox() {
+    if (!this.track) return null;
+    const r = this.track.getBoundingClientRect();
+    const view = this.el.ownerDocument.defaultView;
+    return { left: r.left + (view?.scrollX ?? 0), width: r.width };
+  }
+
+  /**
+   * A tile's hover preview: the last forty turns of its match, played once, ending on the last.
+   *
+   * The replay is fetched and decoded once and kept, so hovering the same card again costs
+   * nothing. The host owns the delay before a hover counts and keeps one preview playing at a time;
+   * nothing here ever moves on to another match.
+   *
+   * @param {object|string} [replay]  the envelope, or a URL to fetch it from; the one the tile was
+   *                                  mounted with when omitted
+   */
+  async preview(replay) {
+    if (this.tier !== "tile") throw new Error("preview() is a tile's");
+    if (!this.frames) return;
+    const token = ++this.previewToken;
+    let env = replay ?? this.previewEnv ?? this.replay;
+    if (typeof env === "string") {
+      if (env === this.previewUrl && this.previewEnv) env = this.previewEnv;
+      else {
+        const url = env;
+        env = await (await fetch(url)).json();
+        this.previewUrl = url;
+      }
+    }
+    if (!env) throw new Error("preview() needs a replay");
+    this.previewEnv = env;
+    // Stopped, or asked again, while it fetched: this one is no longer wanted.
+    if (token !== this.previewToken || this.destroyed) return;
+    if (this.previewFor !== env) {
+      const [from, to] = previewRange(Number(env.turns ?? 0));
+      this.previewFrames = framesBetween(env, from, to);
+      this.previewFor = env;
+    }
+    this.pause();
+    this.frames = this.previewFrames;
+    this.lo = 0;
+    this.hi = this.frames.length - 1;
+    this.i = 0;
+    this.show();
+    this.play();
+  }
+
+  /** Stop a preview and go back to the frame the tile rests on. */
+  stop() {
+    this.previewToken++;
+    this.pause();
+    if (!this.rest || this.frames === this.rest.frames) return;
+    ({ frames: this.frames, lo: this.lo, hi: this.hi, i: this.i } = this.rest);
+    this.show();
+  }
+
+  /**
+   * Fill the screen with the viewer, or leave it. A player is promoted to a stage for as long as
+   * it lasts -- the same element, the same canvas, the same frames, with the stage's parts built
+   * the first time -- and goes back to a player after.
+   */
+  fullscreen(on = !this.isFull()) {
+    if (!FULL.has(this.tier) || !this.frames) return;
+    const d = this.el.ownerDocument;
+    if (on) {
+      if (this.isFull()) return;
+      if (this.tier === "player") {
+        this.promoted = true;
+        this.setTier("stage");
+      }
+      // Where the browser refuses -- a phone has no fullscreen for an element, and a call outside
+      // a click is refused everywhere -- the viewer fills the window instead.
+      const req = this.el.requestFullscreen?.();
+      if (req && typeof req.catch === "function") req.catch(() => this.fillWindow(true));
+      else if (!req) this.fillWindow(true);
+      this.writeFull();
+    } else if (d.fullscreenElement === this.el) {
+      d.exitFullscreen?.(); // fullscreenchange does the rest
+    } else {
+      this.fillWindow(false);
+      this.leftFullscreen();
+    }
   }
 
   // ------------------------------------------------------------------ building
 
-  build() {
-    const d = this.el.ownerDocument;
-    const mk = (tag, cls, parent, html) => {
-      const n = d.createElement(tag);
-      if (cls) n.className = cls;
-      if (html != null) n.innerHTML = html;
-      (parent || this.el).appendChild(n);
-      return n;
-    };
-    const btn = (parent, icon, title, fn, cls) => {
-      const b = mk("button", cls, parent, icon);
-      b.type = "button";
-      b.title = title;
-      b.setAttribute("aria-label", title);
-      b.onclick = fn;
-      return b;
-    };
+  make(tag, cls, parent, html) {
+    const n = this.el.ownerDocument.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    (parent || this.el).appendChild(n);
+    return n;
+  }
 
-    // ---- the title bar: every seat, always on screen
-    this.seats = mk("div", "tb-top");
+  button(parent, icon, title, fn, cls) {
+    const b = this.make("button", cls, parent, icon);
+    b.type = "button";
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.onclick = fn;
+    return b;
+  }
+
+  build() {
+    const full = FULL.has(this.tier);
+
+    // ---- the seat cards: every seat, always on screen
+    if (full) this.seats = this.make("div", "tb-top");
 
     // ---- stage
-    this.stage = mk("div", "tb-stage");
-    if (this.opts.stageHeight) {
+    this.stage = this.make("div", "tb-stage");
+    if (full && this.opts.stageHeight) {
       this.stage.style.flex = "none";
       this.stage.style.height =
         typeof this.opts.stageHeight === "number" ? `${this.opts.stageHeight}px` : this.opts.stageHeight;
     }
-    this.canvas = mk("canvas", null, this.stage);
+    this.canvas = this.make("canvas", null, this.stage);
     this.canvas.setAttribute("role", "img");
     this.renderer = new Renderer(this.canvas);
 
+    if (full) {
+      this.buildBar();
+      this.buildSeats();
+      if (this.tier === "stage") this.buildStageParts();
+      // ---- input. A player takes the transport's keys; zoom, pan and territory are the stage's,
+      // and each handler asks which tier it is in, since a player can become a stage.
+      this.el.tabIndex = 0;
+      this.el.addEventListener("keydown", (e) => this.key(e));
+      this.stage.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
+      this.stage.addEventListener("pointerdown", (e) => this.onDown(e));
+      this.stage.addEventListener("pointermove", (e) => this.onMove(e));
+      this.stage.addEventListener("pointerup", (e) => this.onUp(e));
+      this.onFullChange = () => {
+        if (this.el.ownerDocument.fullscreenElement !== this.el && !this.el.dataset.tbFull) {
+          this.leftFullscreen();
+        }
+        this.writeFull();
+      };
+      this.el.ownerDocument.addEventListener("fullscreenchange", this.onFullChange);
+    } else if (this.tier === "tile") {
+      this.buildOverlay();
+    } else {
+      this.buildChips();
+    }
+  }
+
+  /** The transport: first, previous, play, next, last, the timeline, the turn, and fullscreen. */
+  buildBar() {
+    const bar = this.make("div", "tb-bar");
+    this.bar = bar;
+    const t = this.make("div", "tb-transport", bar);
+    this.firstBtn = this.button(t, ICON.first, "First turn (Home)", () => this.goto(this.lo));
+    this.prevBtn = this.button(t, ICON.prev, "Previous turn (←)", () => this.step(-1));
+    this.playBtn = this.button(t, ICON.play, "Play (space)", () => (this.playing ? this.pause() : this.play()), "tb-play");
+    this.nextBtn = this.button(t, ICON.next, "Next turn (→)", () => this.step(1));
+    this.lastBtn = this.button(t, ICON.last, "Last turn (End)", () => this.goto(this.hi));
+
+    this.buildTrack(this.make("div", "tb-track", bar));
+    this.turnLabel = this.make("span", "tb-turn", bar);
+    this.end = this.make("div", "tb-end", bar);
+    this.fullBtn = this.button(this.end, ICON.full, "Fullscreen (F)", () => this.fullscreen(), "tb-full");
+    this.fullBtn.setAttribute("aria-pressed", "false");
+  }
+
+  /**
+   * What only a stage has: the tray with zoom and territory, playback speed, and the key list.
+   * Built with a stage, or the first time a player is promoted to one, and never twice.
+   */
+  buildStageParts() {
+    if (this.stageBuilt) return;
+    this.stageBuilt = true;
+
     // ---- the tray: the tools, over the board's top-right corner
-    const tray = mk("div", "tb-tray", this.stage);
-    const head = mk("div", "tb-row tb-head", tray);
-    const tools = mk("div", "tb-tools tb-pane", head);
-    this.exploreBtn = btn(tools, ICON.explored, "Explored territory (E)", () =>
+    const tray = this.make("div", "tb-tray tb-so", this.stage);
+    const head = this.make("div", "tb-row tb-head", tray);
+    const tools = this.make("div", "tb-tools tb-pane", head);
+    this.exploreBtn = this.button(tools, ICON.explored, "Explored territory (E)", () =>
       this.setExplored(!this.explored)
     );
+    this.canExplore = Array.isArray(this.frames[0].discovered);
     this.exploreBtn.setAttribute("aria-pressed", String(this.explored));
     if (!this.canExplore) {
       this.exploreBtn.disabled = true;
       this.exploreBtn.title = "This engine does not report what each seat has seen";
     }
-    mk("span", "tb-sep", tools);
-    btn(tools, ICON.minus, "Zoom out (−)", () => this.zoom(1 / 1.4));
-    btn(tools, ICON.plus, "Zoom in (+)", () => this.zoom(1.4));
-    btn(tools, ICON.fit, "Fit the board (0)", () => {
+    this.make("span", "tb-sep", tools);
+    this.button(tools, ICON.minus, "Zoom out (−)", () => this.zoom(1 / 1.4));
+    this.button(tools, ICON.plus, "Zoom in (+)", () => this.zoom(1.4));
+    this.button(tools, ICON.fit, "Fit the board (0)", () => {
       this.renderer.fit();
       this.paint();
     });
 
-    // ---- transport
-    const bar = mk("div", "tb-bar");
-    const t = mk("div", "tb-transport", bar);
-    this.firstBtn = btn(t, ICON.first, "First turn (Home)", () => this.seek(this.lo));
-    this.prevBtn = btn(t, ICON.prev, "Previous turn (←)", () => this.step(-1));
-    this.playBtn = btn(t, ICON.play, "Play (space)", () => (this.playing ? this.pause() : this.play()), "tb-play");
-    this.nextBtn = btn(t, ICON.next, "Next turn (→)", () => this.step(1));
-    this.lastBtn = btn(t, ICON.last, "Last turn (End)", () => this.seek(this.hi));
+    // ---- the key list, over the board's bottom-left corner
+    this.keyList = this.make("dl", "tb-keys tb-pane tb-so", this.stage);
+    this.keyList.hidden = true;
+    for (const [k, what] of KEYS) {
+      this.make("dt", null, this.keyList).textContent = k;
+      this.make("dd", null, this.keyList).textContent = what;
+    }
 
-    this.buildTrack(mk("div", "tb-track", bar));
-    this.turnLabel = mk("span", "tb-turn", bar);
-
-    this.speedBtn = mk("button", "tb-speed", bar);
+    // ---- speed and the key list's button, before fullscreen at the transport's end
+    const d = this.el.ownerDocument;
+    this.speedBtn = d.createElement("button");
+    this.speedBtn.className = "tb-speed tb-so";
     this.speedBtn.type = "button";
     this.speedBtn.title = "Playback speed";
     this.speedBtn.onclick = () => {
@@ -409,20 +767,20 @@ export class Viewer {
       this.speedBtn.textContent = `${this.speed}×`;
     };
     this.speedBtn.textContent = `${this.speed}×`;
-
-    this.buildSeats();
-
-    // ---- input
-    this.el.tabIndex = 0;
-    this.el.addEventListener("keydown", (e) => this.key(e));
-    this.stage.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
-    this.stage.addEventListener("pointerdown", (e) => this.onDown(e));
-    this.stage.addEventListener("pointermove", (e) => this.onMove(e));
-    this.stage.addEventListener("pointerup", (e) => this.onUp(e));
+    this.end.insertBefore(this.speedBtn, this.fullBtn);
+    this.keysBtn = d.createElement("button");
+    this.keysBtn.className = "tb-keys-btn tb-so";
+    this.keysBtn.type = "button";
+    this.keysBtn.title = "Keyboard shortcuts (?)";
+    this.keysBtn.setAttribute("aria-label", "Keyboard shortcuts (?)");
+    this.keysBtn.setAttribute("aria-pressed", "false");
+    this.keysBtn.innerHTML = ICON.keys;
+    this.keysBtn.onclick = () => this.showKeys(this.keyList.hidden);
+    this.end.insertBefore(this.keysBtn, this.fullBtn);
   }
 
   /**
-   * The title bar's seats, built once and then written to.
+   * The seat cards, built once and then written to.
    *
    * They used to be rebuilt from scratch on every frame, which is ten times a second at 1× and
    * eighty at 8×: a row of elements thrown away and remade while the reader is trying to read the
@@ -450,27 +808,74 @@ export class Viewer {
       if (html) s.innerHTML = html;
       return { n, value: n.appendChild(d.createElement("b")) };
     };
-    this.seatRows = this.frames[this.i].score.map((_, seat) => {
+    // How many hills each seat started with, from the board: the squares a razed hill leaves
+    // hollow. A frame lists only the hills still standing, so the board is the only place the
+    // razed ones are still written down.
+    const started = hillsPerSeat(this.map, this.labels.length);
+    const standing = this.series().hills;
+    this.seatRows = this.labels.map(({ name, by }, seat) => {
       const row = d.createElement("div");
       row.className = "tb-seat";
-      span(row, "tb-chip").style.background = SEATS[seat % SEATS.length];
-      const { name, by } = this.labels[seat];
+      row.style.setProperty("--tb-seat", SEATS[seat % SEATS.length]);
       const id = span(row, "tb-id");
       span(id, "tb-name", name);
       if (by) span(id, "tb-by", by);
-      const nums = span(row, "tb-nums");
-      const ants = count(nums, "ants", "tb-ant", "ants");
-      const hills = count(nums, "hills", "tb-hill", "hills");
-      // Territory is a toggle, so its share is built with the rest and shown only while it is on.
-      const seen = count(nums, "seen", "tb-eye", "explored", ICON.seen);
       const score = span(row, "tb-score");
       score.title = "score";
+      const nums = span(row, "tb-nums");
+      const ants = count(nums, "ants", "tb-ant", "ants");
+      const hills = span(nums, "tb-n tb-hills");
+      hills.setAttribute("role", "img");
+      const most = Math.max(started[seat], ...standing[seat]);
+      const squares = Array.from({ length: most }, () => span(hills, "tb-hill"));
+      // Territory is a toggle, so its share is built with the rest and shown only while it is on.
+      const seen = count(nums, "seen", "tb-eye", "explored", ICON.seen);
       this.seats.appendChild(row);
-      return { row, score, nums, ants: ants.value, hills: hills.value, seen: seen.n, pct: seen.value };
+      return { row, score, nums, ants: ants.value, hills, squares, seen: seen.n, pct: seen.value };
     });
     // One row until the first layout says otherwise: see seatColumns().
     this.seatCols = this.seatRows.length;
     this.seats.style.setProperty("--tb-cols", String(this.seatCols));
+  }
+
+  /**
+   * A tile's overlay: the seats' names and scores, and the turn. Two seats sit in the top corners,
+   * mirrored like a scoreboard; three to eight are the two leading seats and how many more there
+   * are. A layer of its own over the canvas, so a long name is cut in the overlay and never moves
+   * the board.
+   */
+  buildOverlay() {
+    const over = this.make("div", "tb-over", this.el);
+    this.overlay = over;
+    const n = this.labels.length;
+    const tag = (parent, cls) => {
+      const t = this.make("span", `tb-tag ${cls}`, parent);
+      const sw = this.make("i", null, t);
+      const nm = this.make("span", "tb-nm", t);
+      const sc = this.make("span", "tb-sc", t);
+      return { t, sw, nm, sc };
+    };
+    if (n === 2) {
+      this.tags = [tag(over, "tb-corner tb-l"), tag(over, "tb-corner tb-r")];
+    } else {
+      const list = this.make("span", "tb-list", over);
+      this.tags = Array.from({ length: Math.min(n, 2) }, () => tag(list, ""));
+      if (n > 2) this.make("span", "tb-more", list).textContent = `+${n - 2}`;
+    }
+    this.turnTag = this.make("span", "tb-at", over);
+    this.turnTag.title = "turn";
+  }
+
+  /** A thumb's score chip: shown once the box is wide enough to hold it beside the board. */
+  buildChips() {
+    this.chips = this.make("span", "tb-chips", this.el);
+    this.chips.hidden = true;
+    const n = this.labels.length;
+    this.chipTags = Array.from({ length: Math.min(n, 2) }, () => {
+      const s = this.make("span", null, this.chips);
+      return { sw: this.make("i", null, s), sc: this.make("span", null, s) };
+    });
+    if (n > 2) this.make("span", "tb-more", this.chips).textContent = `+${n - 2}`;
   }
 
   buildTrack(track) {
@@ -490,9 +895,10 @@ export class Viewer {
     for (const ev of this.events) {
       const m = d.createElement("div");
       m.className = "tb-mark";
+      m.dataset.kind = ev.kind;
       m.style.left = `${this.pct(ev.i)}%`;
       m.style.background = SEATS[ev.seat % SEATS.length];
-      m.title = `turn ${this.frames[ev.i].turn}: ${ev.what}`;
+      m.title = `turn ${ev.turn}: ${this.names[ev.seat]}, ${ev.what}`;
       track.appendChild(m);
     }
 
@@ -510,10 +916,10 @@ export class Viewer {
       track.setPointerCapture(e.pointerId);
       this.scrubbing = true;
       this.pause();
-      this.seek(at(e));
+      this.goto(at(e));
     });
     track.addEventListener("pointermove", (e) => {
-      if (this.scrubbing) this.seek(at(e));
+      if (this.scrubbing) this.goto(at(e));
     });
     const end = (e) => {
       if (!this.scrubbing) return;
@@ -527,26 +933,96 @@ export class Viewer {
   }
 
   observe() {
-    const fit = () => {
+    this.fit = () => {
+      if (this.destroyed) return;
       // The seats first: the rows they take are what the stage has left.
       const w = this.el.clientWidth;
-      if (w >= 2) this.layoutSeats(w);
+      if (w >= 2 && this.seatRows) this.layoutSeats(w);
+      if (this.chips) this.chips.hidden = !(w >= CHIP_MIN) || this.from === "board";
       const r = this.stage.getBoundingClientRect();
-      if (r.width < 2 || r.height < 2) return;
-      this.renderer.resize(r.width, r.height);
-      this.paint();
+      if (r.width >= 2 && r.height >= 2) {
+        this.renderer.resize(r.width, r.height);
+        this.paint();
+      }
+      if (this.track) this.emit("layout", this.trackBox());
     };
-    this.ro = new ResizeObserver(fit);
+    this.ro = new ResizeObserver(this.fit);
     this.ro.observe(this.stage);
-    fit();
+    // The track moves when the buttons beside it change as well as when the viewer resizes.
+    if (this.track) this.ro.observe(this.track);
+    this.fit();
   }
 
-  /** Lay the title bar's seats out for a width -- see seatColumns() -- writing only a change. */
+  /**
+   * Lay the seat cards out for a width -- see seatColumns() -- writing only a change. Below
+   * `NARROW` the root says so, and the stylesheet drops the owners and gives the timeline a row.
+   */
   layoutSeats(width) {
+    const narrow = width < NARROW;
+    if (narrow !== Boolean(this.el.dataset.tbNarrow)) {
+      if (narrow) this.el.dataset.tbNarrow = "1";
+      else delete this.el.dataset.tbNarrow;
+    }
     const cols = seatColumns(this.seatRows.length, width);
     if (cols === this.seatCols) return;
     this.seatCols = cols;
     this.seats.style.setProperty("--tb-cols", String(cols));
+  }
+
+  /**
+   * Switch between a stage and a player in place: the same element, canvas and frames, only the
+   * parts shown change. The stage's own are built the first time they are wanted.
+   */
+  setTier(tier) {
+    if (!FULL.has(tier) || !FULL.has(this.tier) || tier === this.tier) return;
+    this.el.classList.remove(`tb-tier-${this.tier}`);
+    this.tier = tier;
+    this.el.classList.add(`tb-tier-${tier}`);
+    if (tier === "stage") {
+      this.buildStageParts();
+    } else {
+      // A player neither zooms nor draws territory, so it comes back as it was.
+      this.showKeys(false);
+      if (this.explored) this.setExplored(false);
+      this.renderer.fit();
+    }
+    this.fit();
+    this.writeSeats();
+  }
+
+  isFull() {
+    return this.el.ownerDocument.fullscreenElement === this.el || Boolean(this.el.dataset.tbFull);
+  }
+
+  fillWindow(on) {
+    if (on) this.el.dataset.tbFull = "1";
+    else delete this.el.dataset.tbFull;
+    this.writeFull();
+    if (this.fit) this.fit();
+  }
+
+  leftFullscreen() {
+    if (this.promoted) {
+      this.promoted = false;
+      this.setTier("player");
+    }
+    this.writeFull();
+  }
+
+  writeFull() {
+    if (!this.fullBtn) return;
+    const on = this.isFull();
+    this.fullBtn.innerHTML = on ? ICON.unfull : ICON.full;
+    const title = on ? "Leave fullscreen (F)" : "Fullscreen (F)";
+    this.fullBtn.title = title;
+    this.fullBtn.setAttribute("aria-label", title);
+    this.fullBtn.setAttribute("aria-pressed", String(on));
+  }
+
+  showKeys(on) {
+    if (!this.keyList) return;
+    this.keyList.hidden = !on;
+    this.keysBtn.setAttribute("aria-pressed", String(Boolean(on)));
   }
 
   /**
@@ -580,29 +1056,45 @@ export class Viewer {
   key(e) {
     const k = e.key;
     const jump = e.shiftKey ? 10 : 1;
+    const stage = this.tier === "stage";
     const map = {
       " ": () => (this.playing ? this.pause() : this.play()),
       ArrowRight: () => this.step(jump),
       ArrowLeft: () => this.step(-jump),
       ArrowUp: () => this.step(10),
       ArrowDown: () => this.step(-10),
-      Home: () => this.seek(this.lo),
-      End: () => this.seek(this.hi),
-      "+": () => this.zoom(1.4),
-      "=": () => this.zoom(1.4),
-      "-": () => this.zoom(1 / 1.4),
-      0: () => {
-        this.renderer.fit();
-        this.paint();
-      },
-      e: () => this.setExplored(!this.explored),
-      E: () => this.setExplored(!this.explored),
+      Home: () => this.goto(this.lo),
+      End: () => this.goto(this.hi),
+      f: () => this.fullscreen(),
+      F: () => this.fullscreen(),
     };
+    if (stage) {
+      Object.assign(map, {
+        "+": () => this.zoom(1.4),
+        "=": () => this.zoom(1.4),
+        "-": () => this.zoom(1 / 1.4),
+        0: () => {
+          this.renderer.fit();
+          this.paint();
+        },
+        e: () => this.setExplored(!this.explored),
+        E: () => this.setExplored(!this.explored),
+        "?": () => this.showKeys(this.keyList.hidden),
+      });
+    }
+    // Escape closes the key list first, then leaves a window-filling fullscreen; the browser's
+    // own fullscreen takes Escape before a page ever sees it.
+    if (k === "Escape") {
+      if (this.keyList && !this.keyList.hidden) this.showKeys(false);
+      else if (this.el.dataset.tbFull) this.fullscreen(false);
+      return;
+    }
     const fn = map[k];
     if (!fn) return;
     e.preventDefault();
-    // The territory is worth watching grow, so turning it on is not a reason to stop.
-    if (k !== " " && k !== "e" && k !== "E") this.pause();
+    // The territory is worth watching grow, so turning it on is not a reason to stop, and neither
+    // is filling the screen or reading the key list.
+    if (!" eEfF?".includes(k)) this.pause();
     fn();
   }
 
@@ -623,6 +1115,8 @@ export class Viewer {
   }
 
   onWheel(e) {
+    // A player's board is looked at, and a wheel over it scrolls the page it sits in.
+    if (this.tier !== "stage") return;
     e.preventDefault();
     const r = this.canvas.getBoundingClientRect();
     this.renderer.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top);
@@ -630,6 +1124,7 @@ export class Viewer {
   }
 
   onDown(e) {
+    if (this.tier !== "stage") return;
     if (e.pointerType === "touch") this.peek();
     if (e.target !== this.canvas && e.target !== this.stage) return;
     this.stage.setPointerCapture(e.pointerId);
@@ -656,6 +1151,7 @@ export class Viewer {
   }
 
   zoom(f) {
+    if (this.tier !== "stage") return;
     const { w, h } = this.renderer.viewport();
     this.renderer.zoomAt(f, w / 2, h / 2);
     this.paint();
@@ -664,11 +1160,12 @@ export class Viewer {
   // ------------------------------------------------------------------ playback
 
   step(n) {
-    this.seek(this.i + n);
+    this.goto(this.i + n);
   }
 
-  seek(turn) {
-    const next = clamp(turn, this.lo, this.hi);
+  /** Show frame `i` of the frames held, clamped to the range. */
+  goto(i) {
+    const next = clamp(i, this.lo, this.hi);
     if (next === this.i) return;
     this.i = next;
     this.show();
@@ -688,50 +1185,64 @@ export class Viewer {
     if (this.explored) this.renderer.setTerritory(this.territoryAt(this.i).mask);
     this.paint();
 
-    const p = this.pct(this.i);
-    this.fill.style.width = `${p}%`;
-    this.thumb.style.left = `${p}%`;
-    this.track.setAttribute("aria-valuenow", String(f.turn));
-    this.track.setAttribute("aria-valuemin", String(this.frames[this.lo].turn));
-    this.track.setAttribute("aria-valuemax", String(this.frames[this.hi].turn));
-    this.turnLabel.textContent = `${f.turn} / ${this.frames[this.hi].turn}`;
+    if (this.track) {
+      const p = this.pct(this.i);
+      this.fill.style.width = `${p}%`;
+      this.thumb.style.left = `${p}%`;
+      this.track.setAttribute("aria-valuenow", String(f.turn));
+      this.track.setAttribute("aria-valuemin", String(this.frames[this.lo].turn));
+      this.track.setAttribute("aria-valuemax", String(this.frames[this.hi].turn));
+      this.turnLabel.textContent = `${f.turn} / ${this.frames[this.hi].turn}`;
 
-    this.prevBtn.disabled = this.i <= this.lo;
-    this.firstBtn.disabled = this.i <= this.lo;
-    this.nextBtn.disabled = this.i >= this.hi;
-    this.lastBtn.disabled = this.i >= this.hi;
+      this.prevBtn.disabled = this.i <= this.lo;
+      this.firstBtn.disabled = this.i <= this.lo;
+      this.nextBtn.disabled = this.i >= this.hi;
+      this.lastBtn.disabled = this.i >= this.hi;
+    }
 
-    this.writeSeats();
+    this.describe();
+    if (this.seatRows) this.writeSeats();
+    if (this.overlay) this.writeOverlay();
+    if (this.chips) this.writeChips();
 
+    for (const fn of this.listeners.turn) fn(f.turn, f);
     if (this.onTurn) this.onTurn(f);
   }
 
+  /** What the canvas says to a screen reader: the turn, each seat's ants and score, the threats. */
+  describe() {
+    const f = this.frames[this.i];
+    const ants = antsBySeat(f);
+    const threats = this.threatsAt(this.i).map(
+      (t) => `${this.names[t.owner]}'s hill has an enemy ${t.steps} move${t.steps === 1 ? "" : "s"} from it`
+    );
+    this.canvas.setAttribute(
+      "aria-label",
+      `Turn ${f.turn}. ${f.score
+        .map((s, i) =>
+          this.from === "board"
+            ? this.names[i]
+            : `${this.names[i]}: ${ants[i]} ant${ants[i] === 1 ? "" : "s"}, score ${s}`
+        )
+        .concat(threats)
+        .join(". ")}`
+    );
+  }
+
   /**
-   * The title bar's scores and counts, and the canvas's description, which read the same counts.
+   * The seat cards' scores and counts.
    *
-   * Apart from `show()` because the territory toggle changes what a chip says without changing the
+   * Apart from `show()` because the territory toggle changes what a card says without changing the
    * turn, and `show()` also tells the host that the turn changed.
    */
   writeSeats() {
     const f = this.frames[this.i];
-    // One pass for the counts the seats and the label both want, rather than one pass per seat.
-    const ants = new Array(f.score.length).fill(0);
-    for (const a of f.ants) ants[a[2]] = (ants[a[2]] ?? 0) + 1;
+    // One pass for the counts every card wants, rather than one pass per seat.
+    const ants = antsBySeat(f);
     const hills = new Array(f.score.length).fill(0);
     for (const h of f.hills) hills[h[2]] = (hills[h[2]] ?? 0) + 1;
     const seen = this.explored ? this.territoryAt(this.i).seen : null;
     const cells = this.renderer.rows * this.renderer.cols;
-    const threats = this.threatsAt(this.i).map(
-      (t) => `${this.names[t.owner]}'s hill has an enemy ${t.steps} move${t.steps === 1 ? "" : "s"} from it`
-    );
-
-    this.canvas.setAttribute(
-      "aria-label",
-      `Turn ${f.turn}. ${f.score
-        .map((s, i) => `${this.names[i]}: ${ants[i]} ant${ants[i] === 1 ? "" : "s"}, score ${s}`)
-        .concat(threats)
-        .join(". ")}`
-    );
 
     f.score.forEach((score, seat) => {
       const row = this.seatRows[seat];
@@ -740,20 +1251,51 @@ export class Viewer {
       row.row.dataset.out = String(ants[seat] === 0);
       row.score.textContent = String(score);
       row.ants.textContent = String(ants[seat]);
-      row.hills.textContent = String(hills[seat]);
+      row.squares.forEach((sq, k) => {
+        if (k < hills[seat]) sq.dataset.on = "";
+        else delete sq.dataset.on;
+      });
+      const razed = Math.max(0, row.squares.length - hills[seat]);
+      row.hills.setAttribute("aria-label", `hills: ${hills[seat]} standing, ${razed} razed`);
       row.seen.hidden = !seen;
       row.pct.textContent = `${pct}%`;
       // The words the shapes stand for, on hover.
       row.nums.title =
         `${ants[seat]} ant${ants[seat] === 1 ? "" : "s"} · ${hills[seat]} hill${hills[seat] === 1 ? "" : "s"}` +
+        (razed ? ` (${razed} razed)` : "") +
         (seen ? ` · ${pct}% explored` : "");
+    });
+  }
+
+  /** The tile's names, scores and turn, for the frame shown. */
+  writeOverlay() {
+    const f = this.frames[this.i];
+    const who = this.labels.length === 2 ? [0, 1] : leaders(f.score, 2);
+    this.tags.forEach((tag, k) => {
+      const seat = who[k];
+      tag.t.style.setProperty("--tb-seat", SEATS[seat % SEATS.length]);
+      tag.nm.textContent = this.names[seat];
+      tag.t.title = this.labels[seat].by ? `${this.names[seat]} ${this.labels[seat].by}` : this.names[seat];
+      // A board nobody has played on yet has no scores, only the points each seat starts with.
+      tag.sc.textContent = this.from === "board" ? "—" : String(f.score[seat]);
+    });
+    this.turnTag.hidden = this.from === "board";
+    this.turnTag.textContent = String(f.turn);
+  }
+
+  writeChips() {
+    const f = this.frames[this.i];
+    const who = this.labels.length === 2 ? [0, 1] : leaders(f.score, 2);
+    this.chipTags.forEach((c, k) => {
+      c.sw.style.setProperty("--tb-seat", SEATS[who[k] % SEATS.length]);
+      c.sc.textContent = String(f.score[who[k]]);
     });
   }
 
   /** Show or hide each seat's explored territory. */
   setExplored(on) {
-    this.explored = Boolean(on) && this.canExplore;
-    this.exploreBtn.setAttribute("aria-pressed", String(this.explored));
+    this.explored = Boolean(on) && this.canExplore && this.tier === "stage";
+    if (this.exploreBtn) this.exploreBtn.setAttribute("aria-pressed", String(this.explored));
     this.renderer.setTerritory(this.explored ? this.territoryAt(this.i).mask : null);
     this.paint();
     this.writeSeats();
@@ -762,17 +1304,18 @@ export class Viewer {
   /**
    * The hills an enemy ant is within `THREAT_STEPS` moves of at frame `i`, and how near the nearest
    * one is. Kept for the one frame, because `paint()` runs on every pan and zoom as well as every
-   * turn.
+   * turn. A tile and a thumb draw no rings: at their scale a ring is a smudge over the board.
    */
   threatsAt(i) {
-    if (this.threatCache?.i === i) return this.threatCache.threats;
-    const map = this.replay.map;
+    if (!FULL.has(this.tier)) return [];
+    if (this.threatCache?.i === i && this.threatCache.frames === this.frames) return this.threatCache.threats;
+    const map = this.map;
     if (!this.board && map) {
       const water = expandRle(map.water, map.rows * map.cols);
       this.board = { rows: map.rows, cols: map.cols, water, steps: new Map() };
     }
     const threats = this.board ? threatsIn(this.frames[i], this.board, THREAT_STEPS) : [];
-    this.threatCache = { i, threats };
+    this.threatCache = { i, frames: this.frames, threats };
     return threats;
   }
 
@@ -805,12 +1348,10 @@ export class Viewer {
   }
 
   play() {
-    if (this.playing || this.destroyed) return;
-    if (this.i >= this.hi) this.seek(this.lo);
+    if (this.playing || this.destroyed || !this.frames) return;
+    if (this.i >= this.hi) this.goto(this.lo);
     this.playing = true;
-    this.playBtn.innerHTML = ICON.pause;
-    this.playBtn.title = "Pause (space)";
-    this.playBtn.setAttribute("aria-label", "Pause (space)");
+    this.writePlay();
     let last = performance.now();
     let acc = 0;
     const tick = (now) => {
@@ -821,14 +1362,16 @@ export class Viewer {
       let moved = false;
       while (acc >= per) {
         acc -= per;
-        if (this.i >= this.hi) {
-          this.pause();
-          return;
-        }
+        if (this.i >= this.hi) break;
         this.i++;
         moved = true;
       }
       if (moved) this.show();
+      // A replay ends on its last frame and stays there. Nothing plays on into another match.
+      if (this.i >= this.hi) {
+        this.pause();
+        return;
+      }
       this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
@@ -837,25 +1380,116 @@ export class Viewer {
   pause() {
     if (!this.playing) return;
     this.playing = false;
-    this.playBtn.innerHTML = ICON.play;
-    this.playBtn.title = "Play (space)";
-    this.playBtn.setAttribute("aria-label", "Play (space)");
+    this.writePlay();
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = null;
   }
 
+  writePlay() {
+    if (!this.playBtn) return;
+    this.playBtn.innerHTML = this.playing ? ICON.pause : ICON.play;
+    const title = this.playing ? "Pause (space)" : "Play (space)";
+    this.playBtn.title = title;
+    this.playBtn.setAttribute("aria-label", title);
+  }
+
+  emit(type, ...args) {
+    for (const fn of this.listeners[type]) fn(...args);
+  }
+
   destroy() {
     this.destroyed = true;
+    this.previewToken++;
     this.pause();
     if (this.peekTimer) clearTimeout(this.peekTimer);
     if (this.ro) this.ro.disconnect();
+    if (this.onFullChange) this.el.ownerDocument.removeEventListener("fullscreenchange", this.onFullChange);
+    if (this.el.ownerDocument.fullscreenElement === this.el) this.el.ownerDocument.exitFullscreen?.();
+    this.listeners.turn.clear();
+    this.listeners.layout.clear();
     this.el.innerHTML = "";
-    this.el.classList.remove("tb-viz");
+    this.el.classList.remove("tb-viz", `tb-tier-${this.tier}`);
     delete this.el.dataset.tbPeek;
+    delete this.el.dataset.tbNarrow;
+    delete this.el.dataset.tbFull;
   }
 }
 
 // ---------------------------------------------------------------- helpers
+
+/**
+ * Where a viewer's frames come from, and the board they are drawn on.
+ *
+ *   replay   every frame, decoded in one pass: a stage's and a player's, and a tile's or a thumb's
+ *            given nothing lighter
+ *   frame    one stored frame, the last of a match: a tile's or a thumb's. It carries its own size
+ *            and water, so the board is the frame's and the component is never called
+ *   board    the board's turn zero, through the cartridge: a tile or a thumb for a match nobody has
+ *            played yet, or one Soma holds no frame for
+ *
+ * A tile or a thumb takes the lightest it is given, so a card holding both its last frame and its
+ * replay rests on the frame and keeps the replay for a preview.
+ */
+function sourceOf(tier, replay, opts) {
+  const small = !FULL.has(tier);
+  if (small && opts.frame) return { kind: "frame", frames: [opts.frame], map: boardOfFrame(opts.frame) };
+  if (small && opts.board && !replay) return { kind: "board", frames: [openingOf(opts.board)], map: opts.board };
+  if (replay) return { kind: "replay", frames: allFrames(replay), map: replay.map };
+  throw new Error("nothing to draw: give a replay, a frame or a board");
+}
+
+/**
+ * A frame as the board `Renderer.setBoard` reads: `{ rows, cols, water }`, the water a bare RLE.
+ *
+ * A frame says `size: [rows, cols]` and `water: { rle }` where a board file says `rows`, `cols`
+ * and `water`, and this is the whole of the difference. The frame's hills are the standing ones
+ * only, so a board made from a frame knows nothing of the razed: a tile or a thumb does not draw
+ * them, and does not need to.
+ */
+export function boardOfFrame(frame) {
+  const [rows, cols] = frame?.size ?? [0, 0];
+  const water = Array.isArray(frame?.water) ? frame.water : (frame?.water?.rle ?? []);
+  return { rows, cols, water };
+}
+
+/**
+ * How many hills each of `n` seats starts with on a board: a board lists its hills in orbits, so
+ * hill `i` is seat `i % players`'s.
+ */
+export function hillsPerSeat(map, n) {
+  const out = new Array(n).fill(0);
+  const hills = Array.isArray(map?.hills) ? map.hills : [];
+  const players = Number(map?.players) || n;
+  hills.forEach((_, i) => {
+    const seat = i % players;
+    if (seat < n) out[seat]++;
+  });
+  return out;
+}
+
+/**
+ * The turns a tile's preview decodes for a match of `turns` turns: the last forty, or all of a
+ * shorter one, and turn zero alone for a match that never started.
+ */
+export function previewRange(turns) {
+  const to = Math.max(0, Math.floor(Number(turns) || 0));
+  return [Math.max(0, to - PREVIEW_TURNS), to];
+}
+
+/** The `k` seats with the highest scores, the lower seat first on a tie. */
+function leaders(score, k) {
+  return score
+    .map((s, seat) => ({ s, seat }))
+    .sort((a, b) => b.s - a.s || a.seat - b.seat)
+    .slice(0, k)
+    .map((x) => x.seat);
+}
+
+function antsBySeat(f) {
+  const ants = new Array(f.score.length).fill(0);
+  for (const a of f.ants) ants[a[2]] = (ants[a[2]] ?? 0) + 1;
+  return ants;
+}
 
 /**
  * The turns worth jumping to.
@@ -871,9 +1505,9 @@ function findEvents(frames, lo, hi) {
     for (let seat = 0; seat < b.score.length; seat++) {
       const wasHills = a.hills.filter((h) => h[2] === seat).length;
       const nowHills = b.hills.filter((h) => h[2] === seat).length;
-      if (nowHills < wasHills) out.push({ i, seat, what: `hill razed` });
+      if (nowHills < wasHills) out.push({ i, turn: b.turn, seat, kind: "razed", what: "hill razed" });
       if (count(a.ants, seat) > 0 && count(b.ants, seat) === 0) {
-        out.push({ i, seat, what: `colony wiped out` });
+        out.push({ i, turn: b.turn, seat, kind: "wiped", what: "colony wiped out" });
       }
     }
   }
@@ -887,18 +1521,20 @@ function count(ants, seat) {
 }
 
 /**
- * How many columns the title bar lays `n` seats out in, in a bar `width` pixels wide: every seat on
- * one row if each gets `min` pixels there, else the fewest rows that give each seat that much --
- * which is also the most even split, so six seats in a 505-pixel frame are two rows of three rather
- * than a row of four over a row of two.
+ * How many columns the seat cards lay `n` seats out in, in a viewer `width` pixels wide: every
+ * seat on one row if each gets `min` pixels there and there are at most four, else the fewest rows
+ * that give each seat that much -- which is also the most even split, so six seats are two rows of
+ * three rather than a row of four over a row of two. Below `NARROW` it is two to a row, whatever
+ * the count.
  *
  * It reads the seat count and the width and nothing else. A layout that looked at the names or the
  * numbers could change its row count in the middle of a match, and the board under it would jump.
  */
 export function seatColumns(n, width, min = MIN_SEAT) {
+  if (width < NARROW) return Math.min(n, 2);
   for (let rows = 1; rows < n; rows++) {
     const cols = Math.ceil(n / rows);
-    if (cols * min <= width) return cols;
+    if (cols <= MAX_SEAT_COLS && cols * min <= width) return cols;
   }
   return 1;
 }

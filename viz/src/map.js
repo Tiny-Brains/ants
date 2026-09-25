@@ -16,7 +16,7 @@
 // It shares the viewer's one stylesheet (shell.js, scoped to `.tb-viz` and checked by check.mjs)
 // and its renderer, so a board here and the same board in a replay are the same pixels.
 
-import { frameAt } from "./engine.js";
+import { openingOf } from "./engine.js";
 import { Renderer } from "./render.js";
 import { injectCss } from "./shell.js";
 
@@ -80,8 +80,7 @@ export class MapView {
 
     try {
       // Turn zero, through the cartridge. No deltas, so nothing is re-simulated past the opening.
-      const opening = frameAt({ seed: 1, max_turns: 1, turns: 0, map: board, deltas: [] }, 0);
-      this.frame = { ...opening, ants: [] };
+      this.frame = openingOf(board);
     } catch (e) {
       const err = d.createElement("div");
       err.className = "tb-err";

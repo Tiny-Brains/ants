@@ -13,6 +13,8 @@ import { MapView } from "./map.js";
 /**
  * @param {object} props
  * @param {object} props.replay   the envelope -- it carries its own board
+ * @param {"stage"|"player"|"tile"|"thumb"} [props.tier]  what the viewer draws; "stage" when
+ *                                         omitted, as `mount` has it
  * @param {number} [props.turn]   the turn to open on
  * @param {number} [props.from]   narrow the timeline without renumbering it
  * @param {number} [props.to]
@@ -27,8 +29,8 @@ import { MapView } from "./map.js";
  * @param {(frame: object) => void} [props.onTurn]
  */
 export function AntsReplay({
-  replay, turn, from, to, autoplay, speed, theme, chrome, stageHeight, labels, explored, onTurn, style,
-  className,
+  replay, tier, turn, from, to, autoplay, speed, theme, chrome, stageHeight, labels, explored, onTurn,
+  style, className,
 }) {
   const host = useRef(null);
   const cb = useRef(onTurn);
@@ -41,12 +43,12 @@ export function AntsReplay({
     // The callback goes through a ref so a caller passing an inline arrow does not rebuild the
     // viewer -- and rebuilding it means decoding the whole match again.
     const v = new Viewer(host.current, replay, {
-      turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored,
+      tier, turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored,
       labels: said ? JSON.parse(said) : undefined,
       onTurn: (f) => cb.current && cb.current(f),
     });
     return () => v.destroy();
-  }, [replay, turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored, said]);
+  }, [replay, tier, turn, from, to, autoplay, speed, theme, chrome, stageHeight, explored, said]);
 
   // `createElement` rather than JSX, so this file is plain ES the browser and any bundler both
   // accept and the cartridge needs no JSX toolchain of its own.
