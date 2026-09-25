@@ -1,7 +1,7 @@
 //! The rules of one turn: moving, collisions, combat, hills, spawning, gathering and fog.
 
 use super::*;
-use crate::state::{Ant, Hill};
+use crate::state::Hill;
 use crate::turn::step;
 
 #[test]
@@ -29,8 +29,8 @@ fn an_order_into_water_is_ignored_and_that_ant_holds() {
     let mut m = bare(8, 8, 2);
     let start = at(&m, 4, 4);
     m.water.set(at(&m, 3, 4) as usize);
-    m.ants.push(Ant { pos: start, owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 0, 0), owner: 1 });
+    m.add_ant(start, 0);
+    m.add_ant(at(&m, 0, 0), 1);
     play(&mut m, &["N"], &["-"]);
     assert_eq!(m.ants_of(0).next().unwrap().pos, start, "it walked into water");
 }
@@ -40,8 +40,8 @@ fn an_ant_with_no_order_stays_where_it_is() {
     // *Bot Output*, and anything that is not a direction.
     let mut m = bare(8, 8, 2);
     let start = at(&m, 4, 4);
-    m.ants.push(Ant { pos: start, owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 0, 0), owner: 1 });
+    m.add_ant(start, 0);
+    m.add_ant(at(&m, 0, 0), 1);
     play(&mut m, &[], &["nonsense"]);
     assert_eq!(m.ants_of(0).next().unwrap().pos, start);
     assert_eq!(m.ants_of(1).next().unwrap().pos, at(&m, 0, 0));
@@ -55,8 +55,8 @@ fn food_blocks_movement_exactly_as_water_does() {
     let mut m = two_sided(20, 20);
     let start = at(&m, 5, 5);
     m.food.push(at(&m, 5, 6));
-    m.ants.push(Ant { pos: start, owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 15), owner: 1 });
+    m.add_ant(start, 0);
+    m.add_ant(at(&m, 15, 15), 1);
 
     // Target zero, so the board is not re-stocked and the one food can be watched to the end.
     step(&mut m, &[orders(&["E"]), orders(&["-"])]);
@@ -71,8 +71,8 @@ fn food_only_blocks_the_square_it_is_on() {
     // The other half, so the fix cannot be "ants stop moving near food".
     let mut m = two_sided(20, 20);
     m.food.push(at(&m, 5, 6));
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 15), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 15, 15), 1);
 
     play(&mut m, &["N"], &["-"]);
 
@@ -83,9 +83,9 @@ fn food_only_blocks_the_square_it_is_on() {
 fn two_ants_on_one_square_both_die_even_when_they_share_an_owner() {
     // *Collisions*. Your own two ants walking into each other both die.
     let mut m = bare(8, 8, 2);
-    m.ants.push(Ant { pos: at(&m, 4, 3), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 4, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 0, 0), owner: 1 });
+    m.add_ant(at(&m, 4, 3), 0);
+    m.add_ant(at(&m, 4, 5), 0);
+    m.add_ant(at(&m, 0, 0), 1);
     play(&mut m, &["E", "W"], &["-"]);
     assert_eq!(m.ants_of(0).count(), 0, "both of them walked onto (4,4)");
 }
@@ -94,9 +94,9 @@ fn two_ants_on_one_square_both_die_even_when_they_share_an_owner() {
 fn walking_onto_a_stationary_ant_kills_both() {
     // *Collisions*.
     let mut m = bare(8, 8, 2);
-    m.ants.push(Ant { pos: at(&m, 4, 4), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 4, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 0, 0), owner: 1 });
+    m.add_ant(at(&m, 4, 4), 0);
+    m.add_ant(at(&m, 4, 5), 0);
+    m.add_ant(at(&m, 0, 0), 1);
     play(&mut m, &["-", "W"], &["-"]);
     assert_eq!(m.ants_of(0).count(), 0);
 }
@@ -106,9 +106,9 @@ fn a_collision_kills_even_an_ant_that_would_have_won_its_fight() {
     // *Collisions*: collisions are resolved before any fighting.
     let mut m = bare(20, 20, 2);
     // Two of player 0 collide; player 1 is far away and unthreatened.
-    m.ants.push(Ant { pos: at(&m, 4, 3), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 4, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 15), owner: 1 });
+    m.add_ant(at(&m, 4, 3), 0);
+    m.add_ant(at(&m, 4, 5), 0);
+    m.add_ant(at(&m, 15, 15), 1);
     play(&mut m, &["E", "W"], &["-"]);
     assert_eq!(m.ants_of(0).count(), 0);
     assert_eq!(m.ants_of(1).count(), 1);
@@ -118,8 +118,8 @@ fn a_collision_kills_even_an_ant_that_would_have_won_its_fight() {
 fn one_against_one_is_mutual_destruction() {
     // *Focus Battle Resolution*: each has focus 1, and each faces an enemy whose focus is <= its own.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 6), 1);
     play(&mut m, &["-"], &["-"]);
     assert_eq!(m.ants.len(), 0, "mutual destruction is normal");
 }
@@ -130,9 +130,9 @@ fn two_against_one_kills_the_one_and_costs_nothing() {
     // pair has focus 1, and 1 <= 2, so the lone ant dies. Neither of the pair faces an enemy with
     // focus <= 1... except the lone ant, whose focus is 2. 2 <= 1 is false, so they live.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 4), 0);
+    m.add_ant(at(&m, 5, 6), 1);
     play(&mut m, &["-", "-"], &["-"]);
     assert_eq!(m.ants_of(0).count(), 2, "the supported pair survives");
     assert_eq!(m.ants_of(1).count(), 0, "the lone ant is outnumbered");
@@ -142,8 +142,8 @@ fn two_against_one_kills_the_one_and_costs_nothing() {
 fn ants_out_of_attack_range_do_not_fight() {
     // *Focus Battle Resolution*: attack radius squared is 5, so two straight out and no further.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 8), owner: 1 }); // dist2 = 9 > 5
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 8), 1); // dist2 = 9 > 5
     play(&mut m, &["-"], &["-"]);
     assert_eq!(m.ants.len(), 2, "three apart is out of range");
 }
@@ -156,10 +156,10 @@ fn a_dying_ant_still_counts_as_an_attacker() {
     // versa. If deaths cascaded, killing one side first would spare the other; judged
     // simultaneously, both sides lose ants.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 });
-    m.ants.push(Ant { pos: at(&m, 5, 7), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 4), 0);
+    m.add_ant(at(&m, 5, 6), 1);
+    m.add_ant(at(&m, 5, 7), 1);
     play(&mut m, &["-", "-"], &["-", "-"]);
     assert!(m.ants.len() < 4, "a symmetric engagement must cost both sides");
     assert_eq!(m.ants_of(0).count(), m.ants_of(1).count(), "and cost them equally");
@@ -171,7 +171,7 @@ fn a_hill_is_razed_by_an_enemy_that_survives_on_it() {
     let mut m = bare(20, 20, 2);
     let hill = at(&m, 5, 5);
     m.hills.push(Hill { pos: hill, owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 0 });
+    m.add_ant(at(&m, 5, 4), 0);
     play(&mut m, &["E"], &[]);
     assert!(m.hills[0].razed);
     assert_eq!(m.score[0], 2);
@@ -185,8 +185,8 @@ fn dying_on_a_hill_razes_nothing() {
     let mut m = bare(20, 20, 2);
     let hill = at(&m, 5, 5);
     m.hills.push(Hill { pos: hill, owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 0 }); // will step onto the hill
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 }); // and meet a defender: 1v1, both die
+    m.add_ant(at(&m, 5, 4), 0); // will step onto the hill
+    m.add_ant(at(&m, 5, 6), 1); // and meet a defender: 1v1, both die
     play(&mut m, &["E"], &["-"]);
     assert_eq!(m.ants.len(), 0, "one against one is mutual destruction");
     assert!(!m.hills[0].razed, "the attacker did not survive on it");
@@ -198,7 +198,7 @@ fn your_own_ant_cannot_raze_your_own_hill() {
     // *Hill Razing*.
     let mut m = bare(20, 20, 2);
     m.hills.push(Hill { pos: at(&m, 5, 5), owner: 0, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
+    m.add_ant(at(&m, 5, 5), 0);
     play(&mut m, &["-"], &[]);
     assert!(!m.hills[0].razed);
 }
@@ -208,7 +208,7 @@ fn a_razed_hill_is_charged_once_and_never_spawns_again() {
     // *Hill Razing* and *Scoring*.
     let mut m = bare(20, 20, 2);
     m.hills.push(Hill { pos: at(&m, 5, 5), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 0 });
+    m.add_ant(at(&m, 5, 4), 0);
     m.hive[1] = 3;
     play(&mut m, &["E"], &[]);
     let after = (m.score[0], m.score[1]);
@@ -252,8 +252,8 @@ fn an_ant_on_your_own_hill_blocks_it_from_spawning() {
     let b = at(&m, 15, 15);
     m.hills.push(Hill { pos: a, owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: b, owner: 0, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: a, owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 18, 2), owner: 1 }); // so the match does not end (*Cutoff Rules*)
+    m.add_ant(a, 0);
+    m.add_ant(at(&m, 18, 2), 1); // so the match does not end (*Cutoff Rules*)
     m.hive[0] = 1;
     step(&mut m, &[orders(&["-"]), orders(&["-"])]);
     assert!(m.ants.iter().any(|x| x.pos == b), "it must have spawned on the free hill");
@@ -272,7 +272,7 @@ fn several_free_hills_spawn_least_recently_used_first() {
     // stabilization (*Cutoff Rules*).
     m.hills.push(Hill { pos: at(&m, 10, 10), owner: 1, razed: false, last_touched: 0 });
     let far = at(&m, 18, 2);
-    m.ants.push(Ant { pos: far, owner: 1 });
+    m.add_ant(far, 1);
     m.hive[0] = 1;
     step(&mut m, &[orders(&[]), orders(&["-"])]);
     let first = m.ants_of(0).next().unwrap().pos;
@@ -322,10 +322,10 @@ fn standing_on_your_own_hill_touches_it_for_spawn_priority() {
     m.hills.push(Hill { pos: a, owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: b, owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: at(&m, 10, 10), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 18, 2), owner: 1 });
+    m.add_ant(at(&m, 18, 2), 1);
 
     // Turn one: an ant of player 0 sits on hill `a`. Nothing spawns; `a` is touched.
-    m.ants.push(Ant { pos: a, owner: 0 });
+    m.add_ant(a, 0);
     play(&mut m, &["-"], &["-"]);
     assert!(m.hills[0].last_touched > m.hills[1].last_touched, "a was touched, b was not");
 
@@ -342,7 +342,7 @@ fn food_in_range_of_exactly_one_player_is_collected() {
     // *Food Harvesting*. Spawn radius squared is 1: the food's own square or the four beside it.
     let mut m = bare(20, 20, 2);
     m.food.push(at(&m, 5, 5));
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 0 });
+    m.add_ant(at(&m, 5, 6), 0);
     step(&mut m, &[orders(&["-"]), orders(&[])]);
     assert_eq!(m.hive[0], 1);
     assert!(m.food.is_empty());
@@ -354,8 +354,8 @@ fn contested_food_is_destroyed() {
     // gathering step directly, because it cannot be reached through a whole turn -- see below.
     let mut m = bare(20, 20, 2);
     m.food.push(at(&m, 5, 5));
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 1 });
+    m.add_ant(at(&m, 5, 6), 0);
+    m.add_ant(at(&m, 5, 4), 1);
     crate::turn::gather(&mut m);
     assert_eq!(m.hive, vec![0, 0], "contested food is wasted food");
     assert!(m.food.is_empty(), "and it is destroyed rather than left");
@@ -389,9 +389,9 @@ fn contested_food_is_unreachable_at_the_standard_radii() {
     // the enemy's focus. (5,3) raises player 1's focus to 2 while player 0's stays at 1, so
     // player 0's ant lives and player 1's dies -- and (5,3) is dist² 4 from the food, out of
     // spawn range, so it does not itself become a claimant.
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 3), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 4), owner: 1 });
+    m.add_ant(at(&m, 5, 6), 0);
+    m.add_ant(at(&m, 5, 3), 0);
+    m.add_ant(at(&m, 5, 4), 1);
     step(&mut m, &[orders(&["-", "-"]), orders(&["-"])]);
     assert_eq!(m.ants_of(1).count(), 0, "the outnumbered ant dies");
     assert_eq!(m.ants_of(0).count(), 2, "the supported pair lives");
@@ -404,7 +404,7 @@ fn food_out_of_range_stays_where_it_is() {
     // *Food Harvesting*.
     let mut m = bare(20, 20, 2);
     m.food.push(at(&m, 5, 5));
-    m.ants.push(Ant { pos: at(&m, 9, 9), owner: 0 });
+    m.add_ant(at(&m, 9, 9), 0);
     step(&mut m, &[orders(&["-"]), orders(&[])]);
     assert_eq!(m.food.len(), 1);
     assert_eq!(m.hive[0], 0);
@@ -422,8 +422,8 @@ fn food_is_always_one_turn_behind() {
     // already decided.
     m.hills.push(Hill { pos: at(&m, 15, 15), owner: 1, razed: false, last_touched: 0 });
     m.food.push(at(&m, 8, 8));
-    m.ants.push(Ant { pos: at(&m, 8, 7), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 18, 18), owner: 1 });
+    m.add_ant(at(&m, 8, 7), 0);
+    m.add_ant(at(&m, 18, 18), 1);
     step(&mut m, &[orders(&["-"]), orders(&["-"])]);
     assert_eq!(m.hive[0], 1, "collected");
     assert_eq!(m.ants_of(0).count(), 1, "but not yet an ant");
@@ -436,8 +436,8 @@ fn food_is_always_one_turn_behind() {
 fn you_see_nothing_outside_your_vision() {
     // *Fog of War*. An enemy army may be one square outside your vision and you will not know.
     let mut m = bare(40, 40, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 25, 25), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 25, 25), 1);
     m.food.push(at(&m, 25, 26));
     m.reveal(0);
     let v = crate::observe::view(&m, 0);
@@ -450,8 +450,8 @@ fn you_see_nothing_outside_your_vision() {
 fn vision_shrinks_when_your_ants_die() {
     // *Fog of War*: lose ants and you go blind.
     let mut m = bare(40, 40, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 30, 30), owner: 0 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 30, 30), 0);
     let wide = m.visible(0).count();
     m.ants.pop();
     let narrow = m.visible(0).count();
@@ -464,8 +464,8 @@ fn the_view_carries_the_mask_it_filtered_through() {
     // and `hills` are filtered by, so nothing in those lists can sit on a cell the mask leaves at
     // zero, and the runs cover the board exactly the way `water`'s do.
     let mut m = bare(40, 40, 2);
-    m.ants.push(Ant { pos: at(&m, 10, 10), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 30, 30), owner: 1 });
+    m.add_ant(at(&m, 10, 10), 0);
+    m.add_ant(at(&m, 30, 30), 1);
     m.food.push(at(&m, 10, 12));
     m.food.push(at(&m, 30, 32));
     m.hills.push(Hill { pos: at(&m, 10, 11), owner: 0, razed: false, last_touched: 0 });
@@ -510,7 +510,7 @@ fn water_is_remembered_and_everything_else_is_not() {
     let far = at(&m, 5, 20);
     m.water.set(far as usize);
     m.food.push(at(&m, 5, 21));
-    m.ants.push(Ant { pos: at(&m, 5, 20 - 1), owner: 0 });
+    m.add_ant(at(&m, 5, 20 - 1), 0);
     m.reveal(0);
     let seen_before = crate::observe::view(&m, 0);
     let water_runs = |v: &Value| v["water"]["rle"].as_array().unwrap().clone();
@@ -537,8 +537,8 @@ fn a_view_is_observer_relative() {
     // second.
     let build = |a: u8, b: u8| {
         let mut m = bare(40, 40, 2);
-        m.ants.push(Ant { pos: at(&m, 5, 5), owner: a });
-        m.ants.push(Ant { pos: at(&m, 5, 7), owner: b });
+        m.add_ant(at(&m, 5, 5), a);
+        m.add_ant(at(&m, 5, 7), b);
         m.hills.push(Hill { pos: at(&m, 5, 4), owner: a, razed: false, last_touched: 0 });
         m.hills.push(Hill { pos: at(&m, 5, 8), owner: b, razed: false, last_touched: 0 });
         m.reveal(0);

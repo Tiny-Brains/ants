@@ -1,11 +1,14 @@
 //! The replay: the action stream, not frames.
 //!
 //! Game state is integer-only, so a replay stores what everyone *did* and the viewer re-simulates
-//! the match rather than being shipped a hundred times the bytes. The platform never decodes a
-//! delta; `replay-decode` does, in the browser, against the same digest that produced it.
+//! the match rather than being shipped a hundred times the bytes. Only `replay-decode` reads a
+//! delta, always through the same digest that produced it: in the browser for the viewer, and on
+//! the runner for a finished match's last frame. Nothing else re-implements the walk.
 //!
 //! A turn's delta is one string per seat, one character per ant, in `mine`'s order — the same
-//! ordering the actions arrived in, so a delta and an action array are the same shape.
+//! ordering the actions arrived in, so a delta and an action array are the same shape. Ant ids are
+//! not recorded: re-simulation gives every ant the id it had, and a frame carries none, because the
+//! viewer draws ants rather than names them.
 //!
 //! The envelope carries its own board. `decode` rebuilds from `map`, which `finish` emits, so a
 //! replay stays viewable whatever became of the season or the file its board came from.

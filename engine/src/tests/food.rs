@@ -1,7 +1,6 @@
 //! Food spawning at the match's hidden rate — `food::spawn`.
 
 use super::*;
-use crate::state::Ant;
 
 #[test]
 fn food_accrues_at_the_hidden_rate() {
@@ -123,7 +122,7 @@ fn food_owed_to_an_occupied_square_is_placed_when_it_frees() {
     let rep = crate::food::shuffled(&sets, m.seed, 0)[0];
     m.ants.clear();
     for (k, p) in m.sym.orbit(&m.g, rep).into_iter().enumerate() {
-        m.ants.push(Ant { pos: p, owner: k as u8 });
+        m.add_ant(p, k as u8);
     }
 
     // Run until that first set comes due; the ants are standing on it, so it cannot be placed.
@@ -135,8 +134,8 @@ fn food_owed_to_an_occupied_square_is_placed_when_it_frees() {
 
     // Move them off and it lands.
     m.ants.clear();
-    m.ants.push(Ant { pos: m.g.at(1, 1), owner: 0 });
-    m.ants.push(Ant { pos: m.g.at(11, 11), owner: 1 });
+    m.add_ant(m.g.at(1, 1), 0);
+    m.add_ant(m.g.at(11, 11), 1);
     play(&mut m, &["-"], &["-"]);
     assert!(m.food.contains(&rep), "the queued food was placed as soon as the square freed");
 }

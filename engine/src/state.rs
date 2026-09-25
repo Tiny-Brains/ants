@@ -20,6 +20,12 @@ pub struct Hill {
 pub struct Ant {
     pub pos: u16,
     pub owner: u8,
+    /// Which of its owner's ants this is, for its whole life: counted per seat from 0, the starting
+    /// ants first in hill-list order, then in spawn order, and never given to another ant. Per seat
+    /// rather than per match, so seat `k`'s ids are seat 0's under the shift and the seats stay
+    /// symmetric. A model with memory keys what it remembers about an ant by this; `mine`'s order
+    /// cannot carry that, because it is re-sorted every turn.
+    pub id: u32,
 }
 
 #[derive(Clone)]
@@ -40,6 +46,10 @@ pub struct Match {
     pub known: Vec<Bits>,
 
     pub ants: Vec<Ant>,
+    /// The id each seat's next ant takes. Only ever counts up, which is what keeps an id from
+    /// being given to a second ant. A seat spawns at most one ant per hill per turn, so it stays far
+    /// below 2^24 and survives an adapter casting it to a 32-bit float.
+    pub next_id: Vec<u32>,
     pub food: Vec<u16>,
     pub hills: Vec<Hill>,
     /// Food collected and not yet spawned: a private store, not a place on the map.
@@ -125,6 +135,7 @@ impl Match {
             water,
             known: (0..players).map(|_| Bits::zeros(g.cells())).collect(),
             ants: Vec::new(),
+            next_id: vec![0; players as usize],
             food: Vec::new(),
             hills: Vec::new(),
             hive: vec![0; players as usize],
@@ -146,13 +157,14 @@ impl Match {
     ///
     /// Hill `i` belongs to seat `i % players`, which is the order a map file lists them in: each
     /// orbit is seat 0's hill followed by its images. Each hill begins with one ant standing on it,
-    /// and each seat with one point per hill owned — the last so that a player who loses their
+    /// so a seat's starting ants take ids in the order its hills are listed, which the shift keeps;
+    /// and each seat begins with one point per hill owned — the last so that a player who loses their
     /// hills and razes nothing sits on zero rather than below it (`ants.py:152`).
     pub(crate) fn open_on(&mut self, hills: &[u16]) {
         for (i, &pos) in hills.iter().enumerate() {
             let owner = (i % self.players as usize) as u8;
             self.hills.push(Hill { pos, owner, razed: false, last_touched: 0 });
-            self.ants.push(Ant { pos, owner });
+            self.add_ant(pos, owner);
             self.score[owner as usize] += 1;
         }
         for pl in 0..self.players {
@@ -176,11 +188,30 @@ impl Match {
         (0..self.players).filter(|&p| self.alive(p)).collect()
     }
 
-    /// My ants, row-major. Deterministic, not stable: an ant does not keep its slot across turns,
-    /// but the sort is committed, so a determinism audit reproduces without the ordering ever
-    /// becoming an identity channel.
+    /// A new ant for `owner` on `pos`, taking that seat's next id. The one way an ant enters a
+    /// match: the starting ants, a spawn, and a rule test's hand-placed ant all come through here,
+    /// so no id is ever given twice.
+    pub fn add_ant(&mut self, pos: u16, owner: u8) {
+        let id = self.next_id[owner as usize];
+        self.next_id[owner as usize] += 1;
+        self.ants.push(Ant { pos, owner, id });
+    }
+
+    /// My ants, row-major. The order an action array and the view's `mine` are aligned with.
+    ///
+    /// Deterministic, and still not an identity: an ant does not keep its slot across turns,
+    /// because the sort is redone every turn and one ant stepping past another reorders them. Which
+    /// ant is which is `mine_ids`, and the view's `ids`; the order stays row-major because every
+    /// admitted adapter and policy head is aligned with it.
     pub fn mine(&self, owner: u8) -> Vec<u16> {
-        let mut m: Vec<u16> = self.ants_of(owner).map(|a| a.pos).collect();
+        self.mine_ids(owner).into_iter().map(|(pos, _)| pos).collect()
+    }
+
+    /// My ants in `mine`'s order, each with its id. Two ants never share a square between turns (a
+    /// collision kills both, and a hill spawns only when nobody stands on it), so the id only
+    /// breaks a tie a hand-built test can make and a match cannot.
+    pub fn mine_ids(&self, owner: u8) -> Vec<(u16, u32)> {
+        let mut m: Vec<(u16, u32)> = self.ants_of(owner).map(|a| (a.pos, a.id)).collect();
         m.sort_unstable();
         m
     }

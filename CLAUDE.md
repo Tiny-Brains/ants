@@ -74,10 +74,10 @@ A *wave* is many matches advanced together in one call.
 | `src/lib.rs` | Plugin dispatch and JSON shapes. No rules |
 | `src/grid.rs` | Wrapping geometry, distances, symmetry, directions, the view/attack/spawn radii, `Bits`, `Rng` |
 | `src/maps.rs` | The board as a file: parsing, validation (the board's own shift, whole hill orbits, one walkable body of land), and resolving what a caller sent: a board object, and nothing else |
-| `src/state.rs` | One match while it is played; the cutoff counter's constants |
+| `src/state.rs` | One match while it is played, ant ids and each seat's `next_id` included; the cutoff counter's constants |
 | `src/turn.rs` | Turn resolution in a fixed order: move → attack → raze → spawn → gather → spawn food; ending; ranks |
 | `src/food.rs` | Food at the hidden rate: the rate, the symmetric sets, their shuffled rotation, the pending queue |
-| `src/observe.rs` | One seat's view: fog, known water, `vis`, observer-relative owners |
+| `src/observe.rs` | One seat's view: fog, known water, `vis`, `ids`, observer-relative owners |
 | `src/codec.rs` | The packed, base64 `wave_state`. Opaque outside this file; no version field |
 | `src/replay.rs` | Action-stream recording and re-simulation into frames |
 | `src/authoring.rs` | Host-only: the reference observations. Unreachable from a plugin call, so the linker drops it from the component |
@@ -92,9 +92,16 @@ A *wave* is many matches advanced together in one call.
 2. **Seeds, actions and the board determine the match.** No ambient randomness, no time. The
    caller chooses the board; on the ladder that is Soma's pair clock, which also assigns the seed,
    so a competitor cannot train against a board they chose.
-3. **Exploring is remembered.** A model is a pure function of one observation with no state
-   channel, so `turn.rs` folds each seat's vision into `known` every turn and observations carry
-   *known water*. The per-player seen-masks are most of `wave_state`; that cost is the point.
+3. **Exploring is remembered.** A model sees one observation and, when its class allows memory,
+   what it wrote last turn. A class may allow none, so `turn.rs` folds each seat's vision into
+   `known` every turn and observations carry *known water*. The per-player seen-masks are most of
+   `wave_state`; that cost is the point. **Which ant is which is the view's `ids`**, not `mine`'s
+   order: `mine` stays row-major (every adapter and policy head is aligned with it) and is
+   re-sorted every turn, while an id is per seat, counted from 0 in hill-list then spawn order,
+   kept through every move, blocked ones included, and never given twice. Per seat is what keeps
+   the seats symmetric. Only your own ants carry ids: a foe's would leak its spawn count. The
+   runner hands a model's memory back beside the view under `memory` and `ant_memory`, so a view
+   never carries either key.
 4. **Boards are files, and the component carries none.** Five basic boards live under `maps/`
    (content, not source: `mapgen/` renders them and `dist/maps/` ships them). **They are the
    envelope**: `limits.boards` is what they span, the reference set is drawn on them, and a season's
@@ -119,7 +126,9 @@ A *wave* is many matches advanced together in one call.
 - **The protocol is published in the competitor guide, not here.** A change to a view's fields, an
   action's alphabet, or an ABI input is a change to `web/docs` in the same batch.
   `a_view_carries_exactly_the_fields_a_model_is_promised` pins the view's shape against engine
-  output, so an accidental field fails a test rather than an adapter.
+  output, so an accidental field fails a test rather than an adapter, and
+  `a_view_never_carries_the_keys_the_runner_writes_memory_into` keeps `memory` and `ant_memory`
+  the runner's.
 - **An observation change is a baselines change.** `planes.py` encodes what `engine/src/observe.rs`
   sends and the conformance test runs over `dist/reference/observations.json`, so a change to either
   lands with the encoding and its regenerated manifest in the same commit.

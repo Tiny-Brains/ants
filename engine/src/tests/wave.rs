@@ -117,7 +117,11 @@ fn a_view_carries_exactly_the_fields_a_model_is_promised() {
         assert!(!views.is_empty());
         for v in views {
             let keys: Vec<&String> = v.as_object().unwrap().keys().collect();
-            assert_eq!(keys, ["foes", "food", "hills", "mine", "size", "vis", "water"], "{board}");
+            assert_eq!(
+                keys,
+                ["foes", "food", "hills", "ids", "mine", "size", "vis", "water"],
+                "{board}"
+            );
             let (rows, cols) = (v["size"][0].as_u64().unwrap(), v["size"][1].as_u64().unwrap());
             assert_eq!(v["size"].as_array().unwrap().len(), 2);
             let mine: Vec<(u64, u64)> = v["mine"]
@@ -130,6 +134,13 @@ fn a_view_carries_exactly_the_fields_a_model_is_promised() {
                 })
                 .collect();
             assert!(mine.is_sorted(), "`mine` is row-major: deterministic, so an audit reproduces");
+            let mut ids: Vec<u64> =
+                v["ids"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).collect();
+            assert_eq!(ids.len(), mine.len(), "one id per ant, in `mine`'s order");
+            assert!(ids.iter().all(|&id| id < 1 << 24), "an id stays exact as f32");
+            ids.sort_unstable();
+            ids.dedup();
+            assert_eq!(ids.len(), mine.len(), "no two of a seat's ants share an id");
             for f in v["foes"].as_array().unwrap() {
                 assert!(cell(f, rows, cols, true).unwrap() >= 1, "a foe is never you");
             }
@@ -141,6 +152,39 @@ fn a_view_carries_exactly_the_fields_a_model_is_promised() {
             }
             mask(&v["water"], rows * cols);
             mask(&v["vis"], rows * cols);
+        }
+    }
+}
+
+#[test]
+fn a_view_never_carries_the_keys_the_runner_writes_memory_into() {
+    // A model's memory is handed back to it beside the view, under `memory` and `ant_memory`. A
+    // view field of either name would collide with what the runner writes there: one of the two
+    // would be lost, and the model would read the engine's field as its own memory or the reverse.
+    let reserved = ["memory", "ant_memory"];
+    let mut views: Vec<Value> = Vec::new();
+    for (board, turn) in [(boards::DUEL, 0), ("basic-medium-4p", 150), ("basic-xlarge-8p", 300)] {
+        let doc = reference_observations(&boards::json(board), 20260925, turn).unwrap();
+        views.extend(doc["observations"].as_array().unwrap().iter().cloned());
+    }
+    let w = invoke("tb.ants.worldgen", json!({"seeds": [4, 5], "map": boards::json(boards::DUEL)}))
+        .unwrap();
+    let mut state = w["wave_state"].as_str().unwrap().to_string();
+    let mut rng = Rng(6);
+    for _ in 0..50 {
+        let out = invoke("tb.ants.observe", json!({"wave_state": &state})).unwrap();
+        views.extend(out["views"].as_array().unwrap().iter().map(|v| v["view"].clone()));
+        let acts = random_actions(&out, &mut rng);
+        state = invoke("tb.ants.step", json!({"wave_state": &state, "actions": acts})).unwrap()
+            ["wave_state"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    }
+    assert!(views.len() > 100);
+    for v in &views {
+        for key in reserved {
+            assert!(v.get(key).is_none(), "a view carries `{key}`, which is the runner's");
         }
     }
 }
@@ -164,8 +208,8 @@ fn observe_says_nothing_about_a_finished_match() {
     // There is no terminal message. A model receives states while its match runs and nothing
     // afterwards -- it is never told that it lost.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 6), 1);
     play(&mut m, &["-"], &["-"]);
     assert!(m.done);
     let state = pack(&Wave { matches: vec![m] });

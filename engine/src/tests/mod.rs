@@ -7,6 +7,7 @@ mod boards;
 mod ending;
 mod equivalence;
 mod food;
+mod ids;
 mod maps;
 mod replay;
 mod rules;
@@ -14,7 +15,7 @@ mod spec;
 mod wave;
 
 use crate::grid::{Bits, Geom, Rng, Symmetry};
-use crate::state::{Ant, Hill, Match};
+use crate::state::{Hill, Match};
 use crate::turn::step;
 use crate::*;
 use serde_json::{Value, json};
@@ -60,7 +61,7 @@ fn fight(rows: u8, cols: u8, players: u8, ants: &[(i32, i32, u8)]) -> Match {
     let mut m = bare(rows, cols, players);
     for &(r, c, owner) in ants {
         let pos = m.g.at(r, c);
-        m.ants.push(Ant { pos, owner });
+        m.add_ant(pos, owner);
     }
     let no: Vec<Vec<String>> = (0..players).map(|_| Vec::new()).collect();
     step(&mut m, &no);
@@ -85,8 +86,8 @@ fn fed(rows: u8, cols: u8, rate: u16, per: u16) -> Match {
     let mut m = two_sided(rows, cols);
     m.food_rate = rate;
     m.food_turn = per;
-    m.ants.push(Ant { pos: m.g.at(3, 3), owner: 0 });
-    m.ants.push(Ant { pos: m.g.at(rows as i32 - 3, cols as i32 - 3), owner: 1 });
+    m.add_ant(m.g.at(3, 3), 0);
+    m.add_ant(m.g.at(rows as i32 - 3, cols as i32 - 3), 1);
     m
 }
 

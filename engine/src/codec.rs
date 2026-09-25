@@ -24,7 +24,8 @@
 //!         u16 n_food0, then n_food0 x u16 pos     (the board's turn-zero food)
 //!         bitmap water            ceil(rows*cols/8) bytes
 //!         bitmap known[player]    the same, once per player
-//!         u16 n_ants,  then n_ants x (u16 pos, u8 owner)
+//!         u16 n_ants,  then n_ants x (u16 pos, u8 owner, u32 id)
+//!         per player: u32 next_id
 //!         u16 n_food,  then n_food x u16 pos
 //!         u8  n_hills, then n_hills x (u16 pos, u8 owner, u8 razed, u16 last_touched)
 //!         per player: u16 hive, i16 score
@@ -105,6 +106,10 @@ pub fn pack(w: &Wave) -> String {
         for a in &m.ants {
             o.u16(a.pos);
             o.u8(a.owner);
+            o.u32(a.id);
+        }
+        for &n in &m.next_id {
+            o.u32(n);
         }
         o.positions(&m.food);
         o.u8(m.hills.len() as u8);
@@ -193,7 +198,11 @@ pub fn unpack(s: &str) -> Option<Wave> {
         let na = r.u16()?;
         let mut ants = Vec::with_capacity(na as usize);
         for _ in 0..na {
-            ants.push(Ant { pos: r.u16()?, owner: r.u8()? });
+            ants.push(Ant { pos: r.u16()?, owner: r.u8()?, id: r.u32()? });
+        }
+        let mut next_id = Vec::with_capacity(players as usize);
+        for _ in 0..players {
+            next_id.push(r.u32()?);
         }
         let food = r.positions()?;
         let nh = r.u8()?;
@@ -225,6 +234,7 @@ pub fn unpack(s: &str) -> Option<Wave> {
             water,
             known,
             ants,
+            next_id,
             food,
             hills,
             hive,

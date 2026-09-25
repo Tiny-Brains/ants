@@ -1,7 +1,7 @@
 //! How a match ends: the four end conditions, and the one cutoff counter behind two of them.
 
 use super::*;
-use crate::state::{Ant, Hill};
+use crate::state::Hill;
 use crate::turn::{ranks, step};
 
 #[test]
@@ -9,7 +9,7 @@ fn the_lone_survivor_takes_every_standing_enemy_hill() {
     // *Scoring*.
     let mut m = bare(20, 20, 2);
     m.hills.push(Hill { pos: at(&m, 15, 15), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
+    m.add_ant(at(&m, 5, 5), 0);
     play(&mut m, &["-"], &[]);
     assert!(m.done);
     assert_eq!(state::END_REASONS[m.reason as usize], "lone_survivor");
@@ -32,8 +32,8 @@ fn losing_every_hill_does_not_eliminate_you() {
     let mut m = bare(20, 20, 2);
     m.hills.push(Hill { pos: at(&m, 5, 5), owner: 0, razed: true, last_touched: 0 });
     m.hills.push(Hill { pos: at(&m, 15, 15), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 14), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 15, 14), 1);
     play(&mut m, &["-"], &["-"]);
     assert!(m.alive(0), "still alive with every hill razed");
     assert_eq!(m.ants_of(0).count(), 1, "and the ant is still on the board");
@@ -51,8 +51,8 @@ fn losing_your_only_hill_leaves_you_on_zero() {
     let mut m = two_sided(20, 20);
     // `bare` builds its hills after construction, so mirror what worldgen does for itself.
     m.score = vec![1, 1];
-    m.ants.push(Ant { pos: at(&m, 15, 15), owner: 0 }); // far away, and never attacks
-    m.ants.push(Ant { pos: at(&m, 0, 1), owner: 1 });
+    m.add_ant(at(&m, 15, 15), 0); // far away, and never attacks
+    m.add_ant(at(&m, 0, 1), 1);
 
     play(&mut m, &["-"], &["W"]);
 
@@ -65,8 +65,8 @@ fn losing_your_only_hill_leaves_you_on_zero() {
 fn extermination_ends_it() {
     // *Endbot Conditions*.
     let mut m = bare(20, 20, 2);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 5, 6), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 5, 6), 1);
     play(&mut m, &["-"], &["-"]); // mutual destruction
     assert!(m.done);
     assert_eq!(state::END_REASONS[m.reason as usize], "extermination");
@@ -83,8 +83,8 @@ fn the_turn_limit_ends_it_with_the_scores_as_they_stand() {
     // the reference engine.
     m.hills.push(Hill { pos: at(&m, 2, 3), owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: at(&m, 17, 16), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 2, 2), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 17, 17), owner: 1 });
+    m.add_ant(at(&m, 2, 2), 0);
+    m.add_ant(at(&m, 17, 17), 1);
     for _ in 0..3 {
         play(&mut m, &["-"], &["-"]);
     }
@@ -99,9 +99,9 @@ fn hive_food_counts_toward_the_dominant_share() {
     // hill standing**, plus every food on the map. Counting ants alone — which this engine used to
     // do — misses a player whose lead is sitting in the hive waiting to be spawned.
     let mut m = two_sided(20, 20);
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
+    m.add_ant(at(&m, 5, 5), 0);
     for c in 0..3 {
-        m.ants.push(Ant { pos: at(&m, 15, 10 + c), owner: 1 });
+        m.add_ant(at(&m, 15, 10 + c), 1);
     }
     // One ant against three is not domination; one ant and twenty in the hive is.
     m.hive[0] = 20;
@@ -120,9 +120,9 @@ fn a_death_on_a_contested_hill_stalls_the_cutoff() {
     let mut m = two_sided(30, 30);
     let target = m.hills[1].pos; // player 1's hill, at (15, 15)
     for c in 0..20 {
-        m.ants.push(Ant { pos: at(&m, 2, c), owner: 0 });
+        m.add_ant(at(&m, 2, c), 0);
     }
-    m.ants.push(Ant { pos: at(&m, 25, 25), owner: 1 });
+    m.add_ant(at(&m, 25, 25), 1);
 
     // A quiet turn first, so the counter has a holder to advance.
     play(&mut m, &[], &[]);
@@ -130,8 +130,8 @@ fn a_death_on_a_contested_hill_stalls_the_cutoff() {
     assert_eq!(m.cutoff_turns, 1);
 
     // Now two of player 0's ants walk onto player 1's hill together and kill each other there.
-    m.ants.push(Ant { pos: at(&m, 15, 14), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 16), owner: 0 });
+    m.add_ant(at(&m, 15, 14), 0);
+    m.add_ant(at(&m, 15, 16), 0);
     let mine = m.mine(0);
     let ord: Vec<String> = mine
         .iter()
@@ -163,9 +163,9 @@ fn razing_a_hill_resets_the_cutoff_counter() {
     let mut m = two_sided(30, 30);
     let target = m.hills[1].pos; // player 1's hill, at (15, 15)
     for c in 0..20 {
-        m.ants.push(Ant { pos: at(&m, 2, c), owner: 0 });
+        m.add_ant(at(&m, 2, c), 0);
     }
-    m.ants.push(Ant { pos: at(&m, 25, 25), owner: 1 });
+    m.add_ant(at(&m, 25, 25), 1);
 
     for _ in 0..3 {
         play(&mut m, &[], &[]);
@@ -174,7 +174,7 @@ fn razing_a_hill_resets_the_cutoff_counter() {
     assert_eq!(m.cutoff_turns, 3);
 
     // One ant, alone, steps onto the hill and survives there.
-    m.ants.push(Ant { pos: at(&m, 15, 14), owner: 0 });
+    m.add_ant(at(&m, 15, 14), 0);
     let mine = m.mine(0);
     let ord: Vec<String> =
         mine.iter().map(|&p| if p == at(&m, 15, 14) { "E".into() } else { "-".into() }).collect();
@@ -196,8 +196,8 @@ fn a_colony_that_is_eating_is_never_cut_off_as_idle() {
     m.hills.push(Hill { pos: at(&m, 15, 15), owner: 1, razed: false, last_touched: 0 });
     // Beside the hill, not on it: an ant standing on its own hill blocks it (*Ant Spawning*), and a
     // colony that cannot spawn is a different test. Both seats eat, so neither dominates either.
-    m.ants.push(Ant { pos: at(&m, 5, 8), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 18), owner: 1 });
+    m.add_ant(at(&m, 5, 8), 0);
+    m.add_ant(at(&m, 15, 18), 1);
 
     // One food beside each ant, replaced as it is eaten. Nothing here is ever idle.
     for _ in 0..200 {
@@ -221,8 +221,8 @@ fn food_nobody_touches_does_cut_the_match_off() {
     let mut m = bare(30, 30, 2);
     m.hills.push(Hill { pos: at(&m, 0, 0), owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: at(&m, 25, 25), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 2, 2), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 20, 20), owner: 1 });
+    m.add_ant(at(&m, 2, 2), 0);
+    m.add_ant(at(&m, 20, 20), 1);
     for c in 5..25 {
         m.food.push(at(&m, 10, c)); // far from both ants, and nobody moves
     }
@@ -242,8 +242,8 @@ fn two_ants_and_one_food_is_not_a_food_stalemate() {
     let mut m = bare(30, 30, 2);
     m.hills.push(Hill { pos: at(&m, 0, 0), owner: 0, razed: false, last_touched: 0 });
     m.hills.push(Hill { pos: at(&m, 25, 25), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 2, 2), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 20, 20), owner: 1 });
+    m.add_ant(at(&m, 2, 2), 0);
+    m.add_ant(at(&m, 20, 20), 1);
     m.food.push(at(&m, 10, 10));
     for _ in 0..state::STALEMATE_TURNS + 10 {
         step(&mut m, &[orders(&["-"]), orders(&["-"])]);
@@ -262,8 +262,8 @@ fn a_player_without_hills_is_not_given_the_chance_to_overtake() {
     // never gets the turn, and that is the rule rather than a bug.
     let mut m = bare(20, 20, 2);
     m.hills.push(Hill { pos: at(&m, 10, 10), owner: 1, razed: false, last_touched: 0 });
-    m.ants.push(Ant { pos: at(&m, 10, 9), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 2, 2), owner: 1 });
+    m.add_ant(at(&m, 10, 9), 0);
+    m.add_ant(at(&m, 2, 2), 1);
 
     play(&mut m, &["-"], &["-"]);
 
@@ -280,8 +280,8 @@ fn an_opponent_is_assumed_to_lose_every_hill_it_still_holds() {
     // still live. Compare the opponent at face value instead and the game ends here, wrongly.
     let mut m = two_sided(20, 20);
     m.score = vec![0, 3];
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 16), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 15, 16), 1);
 
     play(&mut m, &["-"], &["-"]);
 
@@ -295,8 +295,8 @@ fn a_lead_no_hill_can_close_ends_the_match() {
     // order.
     let mut m = two_sided(20, 20);
     m.score = vec![0, 4];
-    m.ants.push(Ant { pos: at(&m, 5, 5), owner: 0 });
-    m.ants.push(Ant { pos: at(&m, 15, 16), owner: 1 });
+    m.add_ant(at(&m, 5, 5), 0);
+    m.add_ant(at(&m, 15, 16), 1);
 
     play(&mut m, &["-"], &["-"]);
 

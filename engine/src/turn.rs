@@ -31,8 +31,8 @@ pub fn step(m: &mut Match, moves: &[Vec<String>]) {
     gather(m);
     food::spawn(m);
 
-    // What everyone can now see, folded into what they know. A model is a pure function of one
-    // observation, so the engine remembers on its behalf or scouting buys nothing — `observe.rs`.
+    // What everyone can now see, folded into what they know. A model may have no memory of its
+    // own, so the engine remembers on its behalf or scouting buys nothing — `observe.rs`.
     // After `spawn`, so a new ant sees from its hill; after `battle`, so an ant that died this turn
     // reveals nothing.
     for pl in 0..m.players {
@@ -53,6 +53,10 @@ pub fn step(m: &mut Match, moves: &[Vec<String>]) {
 /// that lets an ant walk onto food puts that ant one square from where every real Ants bot expects
 /// it, every turn it happens.
 ///
+/// Each ant takes its id to wherever it ends up, a blocked or held ant included: the ant is rebuilt
+/// from `mine_ids`, not from `mine`, whose squares alone would lose which ant stood on each. Two
+/// that collide die with their ids, and the ids are never handed out again.
+///
 /// Returns the squares ants died on, which is what `step` needs for the hill-kill stall.
 fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
     // Built once per turn rather than scanned per ant: `m.food` is a list, and this is a hot loop.
@@ -64,7 +68,7 @@ fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
     let mut next: Vec<Ant> = Vec::with_capacity(m.ants.len());
     for seat in 0..m.players {
         let orders = moves.get(seat as usize);
-        for (i, &pos) in m.mine(seat).iter().enumerate() {
+        for (i, &(pos, id)) in m.mine_ids(seat).iter().enumerate() {
             // A seat that sent nothing holds every ant, which is also what a crashed or timed-out
             // bot looks like from in here. The reference docks a disqualified player a point per
             // un-razed hill (`ants.py:1404`); that is deliberately absent, because a cartridge has
@@ -82,7 +86,7 @@ fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
                 }
                 None => pos,
             };
-            next.push(Ant { pos: dest, owner: seat });
+            next.push(Ant { pos: dest, owner: seat, id });
         }
     }
 
@@ -162,7 +166,8 @@ fn raze(m: &mut Match) {
     }
 }
 
-/// Each food in the hive becomes one new ant on one of that player's hills.
+/// Each food in the hive becomes one new ant on one of that player's hills, taking that seat's
+/// next id.
 ///
 /// A hill can only spawn if no ant is standing on it — parking an ant on your own hill is how you
 /// choose which hill your ants come out of. When several are free the least recently *touched* goes
@@ -190,7 +195,7 @@ fn spawn(m: &mut Match) {
                 .min_by_key(|&(i, h)| (h.last_touched, i))
                 .map(|(i, _)| i);
             let Some(hi) = pick else { break }; // nothing free: the food waits in the hive
-            m.ants.push(Ant { pos: m.hills[hi].pos, owner: seat });
+            m.add_ant(m.hills[hi].pos, seat);
             m.hills[hi].last_touched = m.turn + 1;
             m.hive[seat as usize] -= 1;
         }

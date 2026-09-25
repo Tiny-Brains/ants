@@ -7,12 +7,24 @@
 //! ```json
 //! { "size":  [64, 96],
 //!   "mine":  [[12,30], [13,30], [41,77]],
+//!   "ids":   [0, 7, 3],
 //!   "foes":  [[12,33,1], [11,34,1]],
 //!   "food":  [[11,31], [40,80]],
 //!   "hills": [[20,20,0], [44,76,1]],
 //!   "water": { "rle": [0,812, 1,6, 0,4110, 1,12, 0,1204] },
 //!   "vis":   { "rle": [0,240, 1,17, 0,79, 1,21, 0,5766] } }
 //! ```
+//!
+//! `ids` names the ants in `mine`: `ids[i]` is the id of the ant at `mine[i]`, counted per seat
+//! from 0, kept for the ant's whole life and never given to another (`state::Ant::id`). `mine`
+//! stays row-major, so an action array and every policy head stay aligned with it as before; `ids`
+//! is how a model that remembers finds last turn's note on an ant after the sort has moved it. Only
+//! your own ants carry one: a foe's id would say how many ants that seat has ever had, and so how
+//! much food it has gathered, which is what fog is there to hide.
+//!
+//! A view never carries `memory` or `ant_memory`. The caller hands a model back what it wrote last
+//! turn under those two keys, beside the view's own, so a field of that name here would be
+//! overwritten or would overwrite it.
 //!
 //! `vis` is **this turn's visibility**: the union of the view-radius disks around `mine`, wrapping,
 //! which is the same bitmap `view` already filters `foes`, `food` and `hills` through. It is sent
@@ -25,12 +37,12 @@
 //! it builds this view, so sending it costs one run-length encode and removes the kernel.
 //!
 //! `water` carries **known water** — `water AND seen`, per player. Water never changes, so anything
-//! already seen stays true. The alternatives were rejected for one reason: a model here is a pure
-//! function of one observation with no channel for state between turns, so sending only what is
-//! visible now would make exploration pointless, and sending the whole map would break fog for the
-//! one thing worth scouting for. Known water is the only option in which scouting buys anything at
-//! all — the engine remembers on the model's behalf, which is what a stateless contract requires of
-//! it.
+//! already seen stays true. The alternatives were rejected for one reason: a model may carry no
+//! state between turns (a memory is the caller's to carry, and it may allow none), so sending only
+//! what is visible now would make exploration pointless for such a model, and sending the whole map
+//! would break fog for the one thing worth scouting for. Known water is the only option in which
+//! scouting buys something whatever a model can remember — the engine remembers on its behalf, and
+//! a model with memory spends none of it on the map's walls.
 //!
 //! It is the expensive choice: the per-player seen-masks are about 60% of `wave_state`, and because
 //! a partially explored map is more fragmented than either an empty or a full one, the run-length
@@ -80,6 +92,7 @@ fn relative(owner: u8, seat: u8, players: u8) -> u8 {
 /// One seat's view.
 pub fn view(m: &Match, seat: u8) -> Value {
     let vis = m.visible(seat);
+    let mine = m.mine_ids(seat);
     let known = &m.known[seat as usize];
 
     // `water AND known`, a byte at a time: both bitmaps are the board's length, and `rle` reads
@@ -92,7 +105,9 @@ pub fn view(m: &Match, seat: u8) -> Value {
     json!({
         "size":  [m.g.rows, m.g.cols],
         // Your own ants, all of them, whether or not another of yours can see them.
-        "mine":  m.mine(seat).into_iter().map(|p| rc(&m.g, p)).collect::<Vec<_>>(),
+        "mine":  mine.iter().map(|&(p, _)| rc(&m.g, p)).collect::<Vec<_>>(),
+        // Which ant each of those is, in the same order. See the module docs.
+        "ids":   mine.iter().map(|&(_, id)| id).collect::<Vec<_>>(),
         // On visible squares you see everything; on every other square, nothing.
         "foes":  m.ants.iter().filter(|a| a.owner != seat && vis.get(a.pos as usize))
                    .map(|a| rc_owned(&m.g, a.pos, relative(a.owner, seat, m.players)))

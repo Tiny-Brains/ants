@@ -81,11 +81,11 @@ fn vision_stamped_by_rows_sees_the_disk_it_replaces() {
         let (lr, lc) = (rows as i32 - 1, cols as i32 - 1);
         for (r, c) in [(0, 0), (0, lc), (lr, 0), (lr, lc)] {
             let pos = m.g.at(r, c);
-            m.ants.push(Ant { pos, owner: 0 });
+            m.add_ant(pos, 0);
         }
         for _ in 0..40 {
             let pos = rng.below(m.cells() as u32) as u16;
-            m.ants.push(Ant { pos, owner: rng.below(2) as u8 });
+            m.add_ant(pos, rng.below(2) as u8);
         }
         for owner in 0..2u8 {
             let want = visible_by_definition(&m, owner);

@@ -232,8 +232,13 @@ dist/                      build output, gitignored; exactly what a release arch
 - **Any edit under `engine/src/` outside `tests/` and `bin/`, or to `engine/plugin.toml`, is a new
   engine digest**, comment-only edits included, because panic locations carry line numbers. A new
   digest is a release and a ladder event.
-- **Exploring is remembered.** A model is a pure function of one observation, so the engine folds
-  each seat's vision into what it knows and a view carries known water.
+- **Exploring is remembered.** A model sees one observation and, when its class allows memory, what
+  it wrote last turn, so the engine folds each seat's vision into what it knows and a view carries
+  known water.
+- **An ant keeps its id.** A view's `ids` names each ant in `mine`, per seat from 0, for the ant's
+  whole life, and no id is given twice. `mine` stays row-major and is no identity. Ids per seat
+  keep the seats symmetric, and `sweep` compares them. A view never carries `memory` or
+  `ant_memory`, the keys the runner hands a model's memory back under.
 - **A view is observer-relative.** Relabel every seat and ask the same player again, and the bytes
   are identical (`a_view_is_observer_relative`).
 - **Every board is fair and whole, whoever sends it.** `engine/src/maps.rs` checks that a board is

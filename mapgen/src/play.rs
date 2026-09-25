@@ -138,6 +138,9 @@ pub struct Congruent {
 #[derive(Debug, PartialEq, Eq)]
 struct Frame {
     mine: Vec<(i32, i32)>,
+    /// Each ant's square with its id: on a fair board seat `k`'s ant on the image of a square is
+    /// the same ant, by id, as seat 0's on that square.
+    ids: Vec<((i32, i32), i64)>,
     foes: Vec<(i32, i32, i64)>,
     food: Vec<(i32, i32)>,
     hills: Vec<(i32, i32, i64)>,
@@ -190,6 +193,12 @@ impl Board {
         let list = |k: &str| view[k].as_array().cloned().unwrap_or_default();
         let mut mine: Vec<_> =
             list("mine").iter().map(|a| self.home(s, at(a, 0), at(a, 1))).collect();
+        let mut ids: Vec<_> = list("mine")
+            .iter()
+            .zip(list("ids"))
+            .map(|(a, id)| (self.home(s, at(a, 0), at(a, 1)), id.as_i64().unwrap_or(-1)))
+            .collect();
+        ids.sort_unstable();
         let mut food: Vec<_> =
             list("food").iter().map(|a| self.home(s, at(a, 0), at(a, 1))).collect();
         let owned = |k: &str| {
@@ -223,6 +232,7 @@ impl Board {
         };
         Frame {
             mine,
+            ids,
             foes: owned("foes"),
             food,
             hills: owned("hills"),
@@ -326,6 +336,7 @@ pub fn congruent_with(
             if *f != frames[0] {
                 let what = [
                     ("mine", f.mine != frames[0].mine),
+                    ("ids", f.ids != frames[0].ids),
                     ("foes", f.foes != frames[0].foes),
                     ("food", f.food != frames[0].food),
                     ("hills", f.hills != frames[0].hills),
