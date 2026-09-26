@@ -120,13 +120,14 @@ jobs:
       # (baselines/games.toml points at ../dist). An observation change that the encoding did not
       # follow fails here, before a release carries it. TB_CONFORMANCE_ONNX is the graph the manifest
       # is loaded against -- the starter's micro-bc -- and naming it turns a missing file into a
-      # failure rather than the skip a checkout without the starter beside it gets.
+      # failure rather than the skip a checkout without the starter beside it gets. `onnx` builds the
+      # four-port graph the memory adapter test loads; that test needs a CLI with the memory carry.
       - name: Baselines conformance
         working-directory: baselines
         env:
           TB_CONFORMANCE_ONNX: ${{ runner.temp }}/starter/models/micro-bc/model.onnx
         run: |
-          python -m pip install --quiet numpy pytest
+          python -m pip install --quiet numpy onnx pytest
           python -m pytest tests/ -q
 
       # What a competitor's first hour asks of a cartridge, asked of this one: admission's checks

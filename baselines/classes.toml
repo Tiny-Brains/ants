@@ -24,6 +24,9 @@ fp32_bytes_per_param = 3.78
 fp16_bytes_per_param = 2.22
 ## The manifest is the second term now, whole and uncompressed.
 ## `python -m tb_baselines.adapters | wc -c`. Regenerate when the plane set changes.
+## With `--memory` the manifest declares a second input and output and measures 1,194 bytes
+## (`python -m tb_baselines.adapters --memory | wc -c`). `export.py` budgets with the line below, so a
+## memory model lands those 263 bytes, and two input channels of weights, above its class's target.
 manifest_bytes = 931
 
 [target]

@@ -25,11 +25,14 @@ Needs the cartridge built (`games.toml` resolves `../dist`) and a current `tinyb
 pip install -e '.[dev]'                            # torch, numpy, onnx, pytest
 pytest tests/ -q                                   # THE test; needs `tinybrains` on PATH or TINYBRAINS set
 python -m tb_baselines.adapters > /tmp/a.json      # the generated adapter
+python -m tb_baselines.adapters --memory > /tmp/m.json   # the same, with the memory ports
 ```
 
 The conformance test loads a trained graph: `$TB_CONFORMANCE_ONNX`, else
 `../../ants-starter/models/micro-bc/model.onnx`. CI clones the starter and names it, so a missing
-file there is a failure rather than a skip.
+file there is a failure rather than a skip. The memory adapter test builds its own four-port graph
+with `onnx` and needs a `tinybrains` that carries memory (cli after 0.3.0); the released 0.3.0
+fails it with a message that says so.
 
 ## Rules
 
@@ -49,6 +52,13 @@ for an adapter over budget. Never report a result from the env as a result.
   `tests/test_adapter_conformance.py` runs the real evaluator (`tinybrains adapt`, which is
   **datalogic**, the evaluator an Orion node runs the manifest on) over the cartridge's reference
   observations and asserts they agree element for element. **It is the most important test here.**
+- **`planes.MEMORY` is rendered three ways, and the same test holds them.** The pass-through
+  adapter (`memory_adapter`), the graph's `Max` (`nets.WithMemory`) and the trainer's union
+  (`remember`, `encode_memory`). The memory is `i8` like the board, 2 bytes a cell. A dataset row
+  carries the state its seat remembered under `m` (`collect.py`), so a change to `MEMORY` is a new
+  dataset, and `train/bc.py --memory` refuses one whose header names other planes. The teacher
+  reads no memory: what a memory model learns from it is nothing, and what the run proves is the
+  path.
 - **`manifest.json` is generated and never hand-edited.** Editing one rendering of the encoding
   without the other is exactly the bug the conformance test exists to catch.
 - **An observation change lands here in the same commit.** `planes.py` encodes what
@@ -77,6 +87,12 @@ for an adapter over budget. Never report a result from the env as a result.
 - **An old `tinybrains` fails the env tests.** `tests/test_env.py` needs a binary whose `env`
   understands `--maps`; an older one exits and every env test errors with "the environment exited".
   Point `TINYBRAINS` at a current build (`../../cli/target/release/tinybrains`) or the latest release.
+- **An old `tinybrains` fails the memory adapter test too.** `adapt --obs` on a view carrying
+  `memory` needs the carry; 0.3.0 refuses the nested arrays and the test names the cause. Ants' CI
+  builds the CLI from cli's `main`, so this test passes there only once the carry is on `main`.
+- **CI installs `numpy`, `onnx` and `pytest`, not torch.** The graph-side memory test
+  (`test_the_graphs_memory_update_matches_the_encoder`) skips without torch and runs on a dev
+  install; its numpy twin is what CI runs.
 - **Receptive field is the binding constraint, not capacity.** A model with too small a window
   trains, exports, passes admission and loses quietly. README §Design rules has the rules.
 - **fp16 initializers are free capacity.** A `Cast` back to float32 at each use is constant-folded

@@ -28,6 +28,12 @@ They do not cross because compute does not scale with bytes. Above `mini` the tu
 long before the byte cap does, and no dense architecture reaches `large`'s cap.
 [`classes.toml`](classes.toml) carries every number and the measurement behind it.
 
+**A memory variant** sits beside the ladder. `--memory` gives a class's network the two planes of
+`planes.MEMORY`, food seen and enemy hills seen, kept for the match with `Max` inside the graph and
+handed back by the runner each turn (the book's *Memory* page). The teacher reads no memory, so a
+memory model distils the same forager; what it proves is the whole path a model with memory takes,
+from the manifest's second input through admission's round trip to the carry and `conform`.
+
 ## Run it
 
 ```sh
@@ -40,6 +46,8 @@ pytest tests/ -q                                    # the conformance gate; see 
 python -m tb_baselines.collect --seat-turns 250000  # the teacher dataset, about 9 minutes and 90 MB
 python -m tb_baselines.train.bc --class micro --epochs 6
 python -m tb_baselines.train.bc --class micro --arch percell --channels 112 --blocks 2   # the control
+python -m tb_baselines.train.bc --class nano --memory --epochs 5      # the memory variant; the dataset carries the state
+python -m tb_baselines.export --class nano --weights runs/nano-bc-memory/best.pt --out models/nano-bc-memory
 python -m tb_baselines.train.ppo --class micro --iters 200                              # self-play
 python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
 python -m tb_baselines.eval models/micro-bc ../../ants-starter/models/nano-bc --boards 3
@@ -66,6 +74,13 @@ The test loads a trained graph to check the manifest against: `$TB_CONFORMANCE_O
 `ants-starter/models/micro-bc/model.onnx` in a checkout beside `ants`. Without either it skips;
 with the variable set and the file missing it fails, which is how CI runs it.
 
+The memory is held to the same standard. Its adapter passes last turn's memory through and builds
+zeros on turn 0, and the test runs it through `tinybrains adapt --obs` over views with and without
+a memory, against a four-port graph it builds with `onnx`. The trainer's update, `remember`, is
+checked against the `Max` the graph takes on the reference observations, and, where torch is
+installed, against the graph itself. A CLI without the memory carry fails the adapter test with a
+message that says so.
+
 ## Design rules
 
 - **Spend a small class on reach, not width.** Aim for a receptive field of at least ~15 cells each
@@ -76,6 +91,9 @@ with the variable set and the file missing it fails, which is how CI runs it.
 - **Ship fp16 initializers.** A `Cast` back to float32 at each use, which the runtime constant-folds,
   halves the file the size metric reads: 2.03x the parameters for the same class, with identical play.
 - **`Resize` is the upsampler.** `ConvTranspose` is not on the operator allowlist.
+- **A memory is a fixed function until a learner needs more.** The two planes of `planes.MEMORY`
+  are the 1s of two board planes, kept with `Max`: nothing to train, nothing for numpy and the graph
+  to disagree on, and 2 bytes a cell as `i8`. A learned memory is a different trainer (Known gaps).
 
 ## Artifacts
 
@@ -96,11 +114,11 @@ disabled until an admin enables them, on a local stack as in production.
 classes.toml                    the class table: every number, and its measurement
 games.toml                      resolves the cartridge at ../dist
 src/tb_baselines/
-  planes.py                     THE encoding, rendered twice
-  adapters.py                   generates manifest.json from planes.py
+  planes.py                     THE encoding, and the memory, each rendered for numpy and for the manifest
+  adapters.py                   generates manifest.json from planes.py, with the memory ports on request
   env.py                        client for `tinybrains env`
   teacher.py                    the scripted bot the class ladder is distilled from
-  collect.py                    teacher rollouts to a dataset
+  collect.py                    teacher rollouts to a dataset, each row carrying what the seat remembered
   nets.py                       one architecture per class
   train/bc.py                   behaviour cloning
   train/ppo.py                  PPO self-play
@@ -125,6 +143,10 @@ data/ runs/ models/ replays/    gitignored output
   cannot be reproduced.
 - **The directory name and the `tb_baselines` package name are a contract** with every ants-starter
   clone.
+- **The memory is one definition, `planes.MEMORY`, rendered three ways**: the manifest's
+  pass-through adapter, the graph's `Max` and the trainer's `remember`. A dataset row carries the
+  state its seat remembered under `m`, so a change to `MEMORY` is a new dataset, and
+  `train/bc.py --memory` refuses one collected under another definition.
 
 ## Known gaps
 
@@ -132,6 +154,16 @@ data/ runs/ models/ replays/    gitignored output
 - `small` has no trained artifact, and `large` has no architecture: nothing dense reaches its cap
   inside a seat's deadline share.
 - The teacher forages and rarely razes, so what the class ladder distils is a forager.
+- The memory baseline learns nothing from its memory: the teacher reads none, so no label depends on
+  it. It proves the path, not the idea; a teacher that remembers, or a learned memory, would prove
+  the idea.
+- PPO self-play carries no memory. `ActorCritic` reads the board alone; `--memory` is behaviour
+  cloning's.
+- No class table here names memory numbers. A season sets `memory_flat_bytes` and
+  `memory_cell_bytes`, 0 and 0 by default; the memory baseline needs 2 bytes a cell, and `export`
+  reports the price without a verdict.
+- A memory nano sits at 84% of its cap, above the 70% the class aims at: two more input channels of
+  weights and a manifest 263 bytes longer.
 
 ## License
 

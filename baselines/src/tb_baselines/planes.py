@@ -25,6 +25,19 @@ unrolled kernel or nothing. The radius is a rule of the game, so the cartridge c
 Owners are relative to the observer — you are always 0 — which is what makes `hills` splittable at
 all. That was fixed in engine `sha256:f17b51b6c92b`; under an older engine these two planes are
 swapped for seat 1 of every match.
+
+## The memory
+
+A seat may carry a memory from one turn to the next (the book's *Memory* page): an output the graph
+writes, which the runner hands back on the seat's next view under the same key. The one here is
+basic: two planes the view forgets between turns, kept with `Max`, so a cell reads 1 once food, or
+an enemy hill, has been seen on it. It is a fixed function of what the seat has seen, so nothing in
+it is learned; the policy that reads it is. `MEMORY` declares it, rendered three ways, and
+`tests/test_adapter_conformance.py` holds them together:
+
+- the adapter (`memory_adapter`): last turn's memory passes through, zeros on turn 0
+- the graph (`nets.WithMemory`): `memory = Max(memory_in, board[sources])`
+- numpy (`remember`, `encode_memory`): the union of the cells seen so far, as planes
 """
 
 from __future__ import annotations
@@ -238,3 +251,80 @@ def encode_batch(observations: list[dict]) -> np.ndarray:
     """A wave's worth. Every match of a wave is played on one board and so one size — the env
     hands `worldgen` one board a wave — so these always stack."""
     return np.concatenate([encode(o) for o in observations], axis=0)
+
+
+# ---- the memory -------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MemoryPlane:
+    """One plane of the memory tensor: the 1s of a board plane, kept for the rest of the match."""
+
+    name: str
+    why: str
+    source: str
+
+
+MEMORY: tuple[MemoryPlane, ...] = (
+    MemoryPlane(
+        "food_seen",
+        "every cell food has been seen on: the map feeds a colony from fixed places",
+        "food",
+    ),
+    MemoryPlane(
+        "hill_foe_seen",
+        "every enemy hill ever seen, which the view forgets the turn no ant is near it",
+        "hill_foe",
+    ),
+)
+N_MEMORY = len(MEMORY)
+# Channel indices into `PLANES`, which is what the graph gathers to update the memory.
+MEMORY_SOURCES: tuple[int, ...] = tuple(
+    next(i for i, p in enumerate(PLANES) if p.name == m.source) for m in MEMORY
+)
+
+
+def memory_adapter(size) -> dict:
+    """The `memory_in` adapter: the memory the graph wrote last turn, or zeros on turn 0.
+
+    `{"tensor": [{"var": "memory"}]}` passes the carried tensor through with the dtype and shape the
+    output declared, on a node and in `tinybrains` alike; the adapter never looks inside it.
+    """
+    return {
+        "if": [
+            var("memory"),
+            {"tensor": [var("memory")]},
+            {"zeros": [{"merge": [[1, N_MEMORY], size]}, DTYPE]},
+        ]
+    }
+
+
+def remember(state: dict | None, obs: dict) -> dict:
+    """What a seat has seen once this observation is counted: `state`, plus this turn's cells.
+
+    `state` is `{name: [[r, c], ...]}`, sorted and without repeats -- the shape `collect.py` writes
+    into a dataset row -- and None on turn 0. A union of 0/1 planes is their `Max`, which is the
+    update the graph makes; the conformance test asserts the two agree.
+    """
+    rows, cols = obs["size"]
+    b = Board(rows, cols)
+    out = {}
+    for m, k in zip(MEMORY, MEMORY_SOURCES):
+        seen = {tuple(p) for p in (state or {}).get(m.name, [])}
+        seen |= {(int(r), int(c)) for r, c in np.argwhere(PLANES[k].numpy(obs, b) != 0)}
+        out[m.name] = [list(p) for p in sorted(seen)]
+    return out
+
+
+def encode_memory(state: dict | None, size) -> np.ndarray:
+    """A remembered state to `[1, N_MEMORY, rows, cols]`: the graph's `memory_in`."""
+    rows, cols = size
+    b = Board(rows, cols)
+    planes = np.stack([b.scatter((state or {}).get(m.name, [])) for m in MEMORY], axis=0)
+    return planes.reshape(1, N_MEMORY, rows, cols)
+
+
+def memory_in_view(obs: dict) -> np.ndarray:
+    """The numpy rendering of `memory_adapter`: the memory a view carries, or zeros without one."""
+    if obs.get("memory") is None:
+        return encode_memory(None, obs["size"])
+    return np.asarray(obs["memory"], dtype=NP_DTYPE).reshape(1, N_MEMORY, *obs["size"])

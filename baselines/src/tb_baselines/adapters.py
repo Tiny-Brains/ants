@@ -23,6 +23,10 @@ manifest's `result` expression is evaluated against the output tensors alone, so
 observation and cannot gather at the ants' cells. `kalam-match` does the gather, and this manifest
 declares the head shape it will find — `[1, moves, H, W]`, per cell.
 
+With `memory=True` the manifest declares a second input, `memory_in`, whose adapter passes last
+turn's memory through (zeros on turn 0), and a second output, `memory`, which the runner hands back
+on the next view (`planes.MEMORY`, and the book's *Memory* page).
+
 ## Why the shapes are named
 
 `H` and `W` are variable axes (Orion 1.8.1). A season runs several board sizes and a name binds to
@@ -37,7 +41,7 @@ from __future__ import annotations
 import json
 import sys
 
-from .planes import DTYPE, N_MOVES, N_PLANES, PLANES
+from .planes import DTYPE, N_MEMORY, N_MOVES, N_PLANES, PLANES, memory_adapter
 
 ABI = "orion:model@1.0.0"
 
@@ -55,36 +59,48 @@ def board_adapter() -> dict:
     return {"reshape": [stacked, {"merge": [[1, N_PLANES], size]}]}
 
 
-def manifest(name: str = "tb.baseline", version: str = "1") -> dict:
+def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False) -> dict:
+    inputs = [
+        {
+            "name": "board",
+            "dtype": DTYPE,
+            "shape": [1, N_PLANES, "H", "W"],
+            "adapter": board_adapter(),
+        }
+    ]
+    # The head the platform gathers from. `f32` because a policy is scores, not classes, and the
+    # channel order is the game's (`planes.MOVES`).
+    outputs = [{"name": "policy", "dtype": "f32", "shape": [1, N_MOVES, "H", "W"]}]
+    description = "A TinyBrains Ants entry: seven planes in, a per-cell policy out."
+    if memory:
+        # The memory is `i8` like the board: two 0/1 planes, priced at 2 bytes a cell.
+        shape = [1, N_MEMORY, "H", "W"]
+        inputs.append({"name": "memory_in", "dtype": DTYPE, "shape": shape,
+                       "adapter": memory_adapter({"var": "size"})})
+        outputs.append({"name": "memory", "dtype": DTYPE, "shape": shape})
+        description = ("A TinyBrains Ants entry: seven planes and a two-plane memory in, "
+                       "a per-cell policy and the memory out.")
     return {
         "abi": ABI,
         "name": name,
         "version": version,
         "format": "onnx",
-        "description": "A TinyBrains Ants entry: seven planes in, a per-cell policy out.",
-        "inputs": [
-            {
-                "name": "board",
-                "dtype": DTYPE,
-                "shape": [1, N_PLANES, "H", "W"],
-                "adapter": board_adapter(),
-            }
-        ],
-        # The head the platform gathers from. `f32` because a policy is scores, not classes, and
-        # the channel order is the game's (`planes.MOVES`).
-        "outputs": [{"name": "policy", "dtype": "f32", "shape": [1, N_MOVES, "H", "W"]}],
+        "description": description,
+        "inputs": inputs,
+        "outputs": outputs,
         "probe_dims": PROBE_DIMS,
     }
 
 
-def dumps(name: str = "tb.baseline", version: str = "1") -> str:
+def dumps(name: str = "tb.baseline", version: str = "1", memory: bool = False) -> str:
     """The exact bytes. Sorted and compact, so the same spec always hashes the same."""
-    return json.dumps(manifest(name, version), separators=(",", ":"), sort_keys=True)
+    return json.dumps(manifest(name, version, memory), separators=(",", ":"), sort_keys=True)
 
 
 def main() -> None:
-    name = sys.argv[1] if len(sys.argv) > 1 else "tb.baseline"
-    sys.stdout.write(dumps(name))
+    """`python -m tb_baselines.adapters [NAME] [--memory]`"""
+    args = [a for a in sys.argv[1:] if a != "--memory"]
+    sys.stdout.write(dumps(args[0] if args else "tb.baseline", memory="--memory" in sys.argv))
 
 
 if __name__ == "__main__":

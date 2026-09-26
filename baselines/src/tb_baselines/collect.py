@@ -9,12 +9,16 @@ the comparison is between two things at once.
 
 ## What a row is
 
-One seat on one turn: the observation exactly as the engine emitted it, and one character an ant in
-`mine`'s order, exactly as a replay delta writes a turn. Observations rather than tensors, for two
-reasons. Tensors are fifty times larger — a 7x128x128 int8 board is 114 KiB against about 2 KiB of
-JSON — so 200,000 of them is 23 GiB against 400 MiB. And an encoding stored in the dataset is an
-encoding frozen at collection time: `planes.py` should be free to gain a plane without every dataset
-becoming stale.
+One seat on one turn: the observation exactly as the engine emitted it, one character an ant in
+`mine`'s order, exactly as a replay delta writes a turn, and under `m` what the seat remembered
+going into the turn (`planes.MEMORY`: the cells food and enemy hills have been seen on, as sorted
+`[r, c]` lists). Observations rather than tensors, for two reasons. Tensors are fifty times larger
+— a 7x128x128 int8 board is 114 KiB against about 2 KiB of JSON — so 200,000 of them is 23 GiB
+against 400 MiB. And an encoding stored in the dataset is an encoding frozen at collection time:
+`planes.py` should be free to gain a plane without every dataset becoming stale. The remembered
+state is the one exception, because it is a function of the turns before the row and the rows are
+otherwise independent: a change to `MEMORY` is a new dataset, and the header names the planes so
+`train/bc.py` can refuse a stale one.
 
 ## What it is not
 
@@ -31,6 +35,7 @@ import time
 from pathlib import Path
 
 from .env import Env, orders_from_indices
+from .planes import MEMORY, remember
 from .teacher import Teacher
 
 
@@ -70,8 +75,13 @@ def collect(
             # The teacher is a pure function of the observation, so the env seed is the whole
             # provenance: this dataset is reproducible from that number and the engine digest.
             "teacher": "deterministic potential field",
+            # The remembered state each row carries under `m`, by plane name.
+            "memory": [m.name for m in MEMORY],
         }) + "\n")
 
+        # What each live seat has seen so far, keyed by episode and seat: `ep` is the one stable
+        # key, since a wave's `(w, m)` is reused after a refill. The teacher reads none of it.
+        remembered: dict[tuple[int, int], dict] = {}
         step = env.reset()
         while written < seat_turns:
             actions = []
@@ -80,16 +90,22 @@ def collect(
                 moves = teacher.orders(s.obs, water, seen)
                 order = orders_from_indices(moves, [len(s.obs["mine"])])[0]
                 actions.append(order)
+                key = (s.ep, s.seat)
+                state = remembered.get(key)
                 if written < seat_turns and s.obs["mine"]:
-                    f.write(json.dumps({"o": s.obs, "a": order}, separators=(",", ":")) + "\n")
+                    f.write(json.dumps({"o": s.obs, "a": order, "m": state or {}},
+                                       separators=(",", ":")) + "\n")
                     written += 1
                     ants += len(order)
+                remembered[key] = remember(state, s.obs)
 
             step = env.step(actions)
             for e in step.ended:
                 episodes += 1
                 reasons[e.reason] = reasons.get(e.reason, 0) + 1
                 scores.append(max(e.scores))
+                for seat in range(e.seat_count):
+                    remembered.pop((e.ep, seat), None)
             if not step.seats:
                 break
 

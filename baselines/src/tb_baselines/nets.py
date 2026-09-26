@@ -50,7 +50,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .planes import N_MOVES, N_PLANES
+from .planes import MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES
 
 
 def wrap(x: torch.Tensor, k: int) -> torch.Tensor:
@@ -214,16 +214,46 @@ class PerCell(nn.Module):
         return self.head(self.features(board.float()))
 
 
+class WithMemory(nn.Module):
+    """A trunk that reads the board and the seat's memory, and writes the memory back.
+
+    The memory is `planes.MEMORY`: two 0/1 planes the view forgets between turns, kept with `Max`.
+    It is a fixed function of what the seat has seen, so nothing here is learned but the policy
+    that reads it. The trunk is built with `N_PLANES + N_MEMORY` input channels and sees the board
+    and the memory stacked. The update runs in float and casts back, so the graph carries `Max`
+    over floats (the variant every runtime executes) and hands back `i8`, the dtype the manifest
+    declares and the board already uses. `export.to_onnx` names the ports `board`, `memory_in`,
+    `policy` and `memory`, which is what the generated manifest declares.
+    """
+
+    def __init__(self, trunk: nn.Module):
+        super().__init__()
+        self.trunk = trunk
+        self.channels = trunk.channels
+        self.register_buffer("sources", torch.tensor(MEMORY_SOURCES, dtype=torch.long))
+
+    def forward(self, board: torch.Tensor, memory_in: torch.Tensor):
+        x = torch.cat([board, memory_in], dim=1).float()
+        policy = self.trunk.head(self.trunk.features(x))
+        seen = board.index_select(1, self.sources).float()
+        memory = torch.maximum(memory_in.float(), seen).to(torch.int8)
+        return policy, memory
+
+
 ARCHS = {"trunk": Trunk, "encdec": EncDec, "percell": PerCell}
 
 
-def build(spec: dict) -> nn.Module:
-    """One class's entry from `classes.toml` to a module."""
+def build(spec: dict, memory: bool = False) -> nn.Module:
+    """One class's entry from `classes.toml` to a module; with `memory`, one that carries
+    `planes.MEMORY` and reads it beside the board."""
     arch = spec["arch"]
     if arch not in ARCHS:
         raise ValueError(f"no architecture '{arch}' (have: {', '.join(sorted(ARCHS))})")
     kwargs = {k: spec[k] for k in ("channels", "stride", "blocks", "dilate") if k in spec}
-    return ARCHS[arch](**kwargs)
+    if memory:
+        kwargs["planes"] = N_PLANES + N_MEMORY
+    net = ARCHS[arch](**kwargs)
+    return WithMemory(net) if memory else net
 
 
 class ActorCritic(nn.Module):
@@ -257,5 +287,5 @@ class ActorCritic(nn.Module):
 
 def policy_params(model: nn.Module) -> int:
     """What the class is measured on: the exported half only."""
-    trunk = model.trunk if isinstance(model, ActorCritic) else model
+    trunk = getattr(model, "trunk", model)
     return sum(p.numel() for p in trunk.parameters())

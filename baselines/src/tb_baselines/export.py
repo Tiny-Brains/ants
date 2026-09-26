@@ -32,7 +32,7 @@ import torch
 from onnx import numpy_helper
 
 from . import adapters, nets
-from .planes import N_PLANES
+from .planes import MEMORY, N_MEMORY, N_PLANES
 
 ROOT = Path(__file__).resolve().parents[2]
 OPSET = 17  # inside the deployment's 13-19, and what the reference fixtures use
@@ -85,16 +85,21 @@ def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
     graph costs nothing and keeps the artifact usable in a trainer that does.
     """
     trunk.eval()
-    example = torch.zeros(1, planes, 128, 128, dtype=torch.int8)
+    example = (torch.zeros(1, planes, 128, 128, dtype=torch.int8),)
+    inputs, outputs = ["board"], ["policy"]
+    # A memory model has two ports each way, named as the generated manifest declares them. The
+    # memory is `i8` like the board.
+    if isinstance(trunk, nets.WithMemory):
+        example += (torch.zeros(1, N_MEMORY, 128, 128, dtype=torch.int8),)
+        inputs, outputs = inputs + ["memory_in"], outputs + ["memory"]
     # The TorchScript exporter is deprecated in favour of dynamo, which does not yet produce the
     # dynamic H/W axes this graph needs on every board size. Pinned deliberately; revisit when it
     # does.
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="torch.onnx")
     torch.onnx.export(
-        trunk, (example,), str(path),
-        input_names=["board"], output_names=["policy"],
-        dynamic_axes={"board": {0: "B", 2: "H", 3: "W"},
-                      "policy": {0: "B", 2: "H", 3: "W"}},
+        trunk, example, str(path),
+        input_names=inputs, output_names=outputs,
+        dynamic_axes={name: {0: "B", 2: "H", 3: "W"} for name in inputs + outputs},
         opset_version=OPSET, dynamo=False,
     )
 
@@ -191,6 +196,19 @@ def certify(name: str, said: dict) -> list[str]:
             f"worst reference board, over the {b['max_share']:.0%} this repository allows. The class "
             f"has bytes left; the turn does not."
         )
+    # A memory is priced from the manifest and judged against a season's class, which this
+    # repository does not know, so `check` reports the price without a verdict. What it does judge
+    # is the round trip: fed its own memory, the graph has to answer.
+    mem = said.get("memory")
+    if mem:
+        if mem.get("verdict"):
+            problems.append(f"the memory is refused: {mem['verdict']} -- {mem.get('reason')}")
+        rt = mem.get("round_trip") or {}
+        if rt.get("failed"):
+            problems.append(
+                f"fed its own memory, the graph failed {rt['failed']} of {rt['checked']} chained "
+                f"calls (case {rt.get('failing_case')}: {rt.get('reason')})"
+            )
     return problems
 
 
@@ -221,6 +239,9 @@ def report(name: str, said: dict) -> dict:
         "engine_digest": said["engine_digest"],
         "weights_hash": said["weights_hash"],
         "manifest_hash": said["manifest_hash"],
+        # What the memory costs, from the manifest alone, when the model declares one: fixed bytes,
+        # bytes a cell, and the total at the smallest and the largest board of the envelope.
+        "memory": said.get("memory"),
     }
 
 
@@ -240,7 +261,7 @@ CARD = """# {name}
 | Engine | `{engine}` |
 | Model hash | `{whash}` |
 | Manifest hash | `{ahash}` |
-
+{memory}
 {notes}
 
 Reproduce with `{repro}`.
@@ -254,7 +275,15 @@ each with its own deadline.
 
 def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
                notes: str, repro: str) -> None:
+    mem = metrics.get("memory")
+    memory_row = "" if not mem else (
+        f"| Memory | `{N_MEMORY}` planes of `i8` ({', '.join(m.name for m in MEMORY)}), "
+        f"{mem['cell_bytes']} bytes a cell: {mem['bytes_at_max']:,} bytes on the largest board. "
+        f"The season's class has to allow it; `check` judged the round trip over "
+        f"{mem['round_trip']['checked']} chained observations |\n"
+    )
     (out / "card.md").write_text(CARD.format(
+        memory=memory_row,
         name=name, summary=summary, cls=metrics["class"],
         size=metrics["size_metric_bytes"], cap=metrics["class_max_bytes"],
         fill=metrics["fill_of_cap"], params=metrics["params"],
@@ -281,8 +310,9 @@ def shape_of(trunk: torch.nn.Module) -> dict:
     what makes that visible at a glance rather than by counting parameters.
     """
     stages = [m for m in trunk.modules() if type(m).__name__ == "Stage"]
+    inner = getattr(trunk, "trunk", trunk)
     return {
-        "arch": type(trunk).__name__,
+        "arch": type(inner).__name__ + (" + memory" if inner is not trunk else ""),
         "reach_cells": max((st.reach for st in stages), default=0),
         "dilations": [st.dilations for st in stages] or None,
     }
@@ -293,7 +323,7 @@ def export(trunk: torch.nn.Module, name: str, out: Path, method: str,
     """The whole pipeline. Raises if the artifact misses its class."""
     out.mkdir(parents=True, exist_ok=True)
     model_path, manifest_path = out / "model.onnx", out / "manifest.json"
-    manifest_path.write_text(adapters.dumps(f"tb.{out.name}"))
+    manifest_path.write_text(adapters.dumps(f"tb.{out.name}", memory=isinstance(trunk, nets.WithMemory)))
     to_onnx(trunk, model_path)
     if classes()["_"]["dtype"]["default"] == "fp16":
         halve(model_path)
@@ -322,15 +352,18 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--channels", type=int, default=None)
     ap.add_argument("--blocks", type=int, default=None)
     ap.add_argument("--weights", type=Path, help="a .pt state dict; omitted means random init")
+    ap.add_argument("--memory", action="store_true",
+                    help="a model that carries planes.MEMORY; read off the weights when they say so")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--method", default="untrained")
     a = ap.parse_args(argv)
 
     from .train.bc import override
     spec = override(classes()[a.cls], a)
-    trunk = nets.build(spec)
+    state = torch.load(a.weights, map_location="cpu") if a.weights else {}
+    memory = a.memory or bool(state.get("memory"))
+    trunk = nets.build(spec, memory=memory)
     if a.weights:
-        state = torch.load(a.weights, map_location="cpu")
         trunk.load_state_dict(state.get("trunk", state))
 
     b = budget(a.cls)
@@ -341,6 +374,11 @@ def main(argv: list[str] | None = None) -> None:
           f"(aiming at {m['target_fraction']:.0%})")
     print(f"  adapter {m['adapter_ops_max']:,} ops, inference {m['infer_us_max'] / 1000:.2f} ms "
           f"= {m['share_used']:.0%} of a seat share")
+    if m.get("memory"):
+        mem = m["memory"]
+        print(f"  memory {mem['cell_bytes']} bytes a cell, {mem['bytes_at_max']:,} bytes on the "
+              f"largest board; round trip {mem['round_trip']['failed']} of "
+              f"{mem['round_trip']['checked']} chained calls failed")
     print(f"  -> {a.out}")
 
 

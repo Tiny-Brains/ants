@@ -12,6 +12,10 @@ anything. If this passes, `planes.encode` and `manifest.json` are the same funct
 the platform actually validates against.
 
     pytest tests/ -q                    # needs `tinybrains` on PATH, or TINYBRAINS set
+
+The memory (`planes.MEMORY`) is held to the same standard, in three parts: the `memory_in` adapter
+against `planes.memory_in_view` through `tinybrains adapt --obs` (a CLI that carries memory), the
+numpy `remember` against the `Max` the graph takes, and, where torch is installed, the graph itself.
 """
 
 from __future__ import annotations
@@ -194,3 +198,150 @@ def test_the_engines_mask_is_the_disk_it_claims_to_be(dumped):
             f"case {i}: the engine's `vis` is not the radius-{planes.VIEW_RADIUS2} disk union of "
             f"`mine` -- {int((sent != derived).sum())} cells differ"
         )
+
+
+# ---- the memory -------------------------------------------------------------------------
+
+def cases_of(dumped) -> list[dict]:
+    index, out = dumped
+    return [json.loads((out / f"case-{c['case']}" / "observation.json").read_text())
+            for c in index["cases"]]
+
+
+def chained(observations: list[dict], per_size: int = 12):
+    """`(state before, observation)` pairs, chained per board size the way a match chains them: a
+    memory is a board's, so a seat's state never crosses a size."""
+    by_size: dict[tuple[int, int], list[dict]] = {}
+    for o in observations:
+        by_size.setdefault(tuple(o["size"]), []).append(o)
+    for group in by_size.values():
+        state = None
+        for o in group[:per_size]:
+            yield state, o
+            state = planes.remember(state, o)
+
+
+def test_the_memory_manifest_declares_the_two_ports_beside_the_board():
+    """`memory_in` is the second input and `memory` the second output, both `i8` at
+    `[1, N_MEMORY, H, W]`; the board-only manifest is untouched by the option."""
+    doc = json.loads(adapters.dumps(memory=True))
+    assert [i["name"] for i in doc["inputs"]] == ["board", "memory_in"]
+    assert [o["name"] for o in doc["outputs"]] == ["policy", "memory"]
+    for port in (doc["inputs"][1], doc["outputs"][1]):
+        assert port["dtype"] == planes.DTYPE
+        assert port["shape"] == [1, planes.N_MEMORY, "H", "W"]
+    text = json.dumps(doc["inputs"][1]["adapter"])
+    assert '{"tensor": [{"var": "memory"}]}' in text, "the memory passes through as the tensor it is"
+    assert '"zeros"' in text, "turn 0 has no memory, so the adapter builds zeros"
+    assert adapters.dumps() == adapters.dumps(memory=False)
+    assert json.loads(adapters.dumps())["inputs"][0] == doc["inputs"][0], "the board adapter is the same"
+
+
+def test_remember_is_the_max_the_graph_takes(dumped):
+    """The trainer's update (`remember`, a union of cells) and the graph's (`Max` over the memory
+    and the source planes) must be one function. On 0/1 planes they are, and this says so on the
+    reference observations, chained per board size; turn 0 is all zeros."""
+    for state, obs in chained(cases_of(dumped)):
+        size = obs["size"]
+        before = planes.encode_memory(state, size)
+        if state is None:
+            assert before.sum() == 0 and before.dtype == planes.NP_DTYPE
+        after = planes.encode_memory(planes.remember(state, obs), size)
+        sources = planes.encode(obs)[:, list(planes.MEMORY_SOURCES)]
+        assert after.shape == (1, planes.N_MEMORY, *size) and after.dtype == planes.NP_DTYPE
+        assert np.array_equal(after, np.maximum(before, sources)), f"remember is not Max at {size}"
+
+
+@pytest.fixture(scope="session")
+def memory_graph(tmp_path_factory) -> Path:
+    """A graph with the memory manifest's four ports, for `adapt` to load the manifest against.
+
+    `adapt` runs nothing through the graph, but it type-checks the manifest's declared shapes
+    against it, so the ports have to exist. No trained memory model is committed anywhere, so this
+    is a fourteen-line `onnx.helper` graph: the policy is five planes of the board, cast; the
+    memory is its input, unchanged. What the test measures is the adapter, not the graph."""
+    onnx = pytest.importorskip("onnx", reason="the memory adapter test builds its graph with onnx")
+    from onnx import TensorProto as T, helper as h, numpy_helper as nh
+    b, m = planes.N_PLANES, planes.N_MEMORY
+    g = h.make_graph(
+        [h.make_node("Cast", ["board"], ["bf"], to=T.FLOAT),
+         h.make_node("Slice", ["bf", "s0", "e5", "ax1"], ["policy"]),
+         h.make_node("Identity", ["memory_in"], ["memory"])],
+        "memory-ports",
+        [h.make_tensor_value_info("board", T.INT8, [1, b, "H", "W"]),
+         h.make_tensor_value_info("memory_in", T.INT8, [1, m, "H", "W"])],
+        [h.make_tensor_value_info("policy", T.FLOAT, [1, planes.N_MOVES, "H", "W"]),
+         h.make_tensor_value_info("memory", T.INT8, [1, m, "H", "W"])],
+        [nh.from_array(np.array([0], dtype=np.int64), "s0"),
+         nh.from_array(np.array([planes.N_MOVES], dtype=np.int64), "e5"),
+         nh.from_array(np.array([1], dtype=np.int64), "ax1")],
+    )
+    model = h.make_model(g, opset_imports=[h.make_opsetid("", 17)], ir_version=8)
+    onnx.checker.check_model(model)
+    path = tmp_path_factory.mktemp("graph") / "memory-ports.onnx"
+    onnx.save(model, str(path))
+    return path
+
+
+def test_the_memory_adapter_hands_back_the_memory_it_is_given_and_zeros_without(dumped, memory_graph, tmp_path):
+    """The ladder's own answer for `memory_in`: through datalogic, a view carrying a memory yields
+    that memory as the tensor the graph will read, and a view without one yields zeros, and the
+    board adapter is unchanged beside it. The observation file carries the memory as nested arrays,
+    which `adapt` decodes into the dtype the manifest declares for `memory`, as the book's *Memory*
+    page says."""
+    views = []
+    for i, (state, obs) in enumerate(chained(cases_of(dumped), per_size=3)):
+        view = dict(obs)
+        if i % 2:
+            view["memory"] = planes.encode_memory(state or planes.remember(None, obs), obs["size"]).tolist()
+        views.append(view)
+    assert any("memory" in v for v in views) and any("memory" not in v for v in views)
+
+    out = tmp_path / "tensors"
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(adapters.dumps(memory=True))
+    (tmp_path / "views.json").write_text(json.dumps({"observations": views}))
+    r = subprocess.run(
+        [CLI, "adapt", str(memory_graph), str(manifest), "--obs", str(tmp_path / "views.json"),
+         "--out", str(out)],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (
+        "tinybrains adapt failed on a view carrying `memory`; a CLI without the memory carry "
+        f"(before 0.3.0's successor) cannot run this test:\n{r.stdout}\n{r.stderr}"
+    )
+    index = json.loads((out / "index.json").read_text())
+    assert len(index["cases"]) == len(views)
+    for case in index["cases"]:
+        i = case["case"]
+        view = json.loads((out / f"case-{i}" / "observation.json").read_text())
+        theirs = np.load(out / f"case-{i}" / "memory_in.npy")
+        ours = planes.memory_in_view(view)
+        assert theirs.shape == ours.shape and theirs.dtype == ours.dtype, (
+            f"case {i}: the adapter builds {theirs.shape} {theirs.dtype}, the trainer {ours.shape} {ours.dtype}"
+        )
+        assert np.array_equal(theirs, ours), (
+            f"case {i} ({'with' if 'memory' in view else 'without'} a memory): memory_in differs in "
+            f"{int((theirs != ours).sum())} cells"
+        )
+        assert np.array_equal(np.load(out / f"case-{i}" / "board.npy"), planes.encode(view)), (
+            f"case {i}: the board adapter changed beside the memory input"
+        )
+
+
+def test_the_graphs_memory_update_matches_the_encoder(dumped):
+    """`nets.WithMemory` writes `Max(memory_in, board[sources])` as `i8`; the trainer's `remember`
+    must produce the same planes for the next turn. Torch is a dev dependency and CI installs
+    none, so CI relies on `test_remember_is_the_max_the_graph_takes`; run this before an export."""
+    torch = pytest.importorskip("torch")
+    from tb_baselines import nets
+    net = nets.build({"arch": "trunk", "channels": 4, "blocks": 1}, memory=True).eval()
+    for state, obs in chained(cases_of(dumped), per_size=6):
+        size = obs["size"]
+        mem_in = planes.encode_memory(state, size)
+        with torch.no_grad():
+            policy, mem_out = net(torch.from_numpy(planes.encode(obs)), torch.from_numpy(mem_in))
+        assert policy.shape == (1, planes.N_MOVES, *size)
+        assert mem_out.dtype == torch.int8
+        want = planes.encode_memory(planes.remember(state, obs), size)
+        assert np.array_equal(mem_out.numpy(), want), f"the graph and the encoder disagree at {size}"

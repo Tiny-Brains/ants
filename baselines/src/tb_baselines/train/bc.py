@@ -35,6 +35,15 @@ now; see `teacher.py`.
 Accuracy is the quantity being minimised and not the quantity that matters. A network can agree with
 the teacher four times in five and play far worse, because the fifth compounds over three hundred
 turns. Play it.
+
+## `--memory`
+
+With `--memory` the network is `nets.WithMemory`: it reads the seat's memory (`planes.MEMORY`, two
+planes kept with `Max`) beside the board and writes it back. The memory is a fixed function of the
+turns before a row, so the loop is unchanged: `collect.py` writes what the seat remembered under
+each row's `m`, and `tensors` renders it with `planes.encode_memory`. The teacher reads no memory,
+so the labels do not depend on it, and a memory model distils the same forager; what the run proves
+is the path a model with memory takes through admission, the carry and `conform`.
 """
 
 from __future__ import annotations
@@ -53,7 +62,7 @@ import torch.nn.functional as F
 
 from .. import nets
 from ..export import budget, classes
-from ..planes import MOVES, encode
+from ..planes import MEMORY, MOVES, encode, encode_memory
 
 MOVE_INDEX = {m: i for i, m in enumerate(MOVES)}
 
@@ -120,10 +129,15 @@ def batches(rows: Rows, indices: list[int], size: int, rng: random.Random, shuff
     return chunks
 
 
-def tensors(rows: Rows, batch: list[int], dev: torch.device):
-    """A batch to `(boards, sample, row, col, label)`, flat over every ant in it."""
+def tensors(rows: Rows, batch: list[int], dev: torch.device, memory: bool = False):
+    """A batch to `(boards, memory, sample, row, col, label)`, flat over every ant in it. `memory`
+    is None unless asked for: the state each row's seat remembered, as the graph's `memory_in`."""
     parsed = [rows.parse(i) for i in batch]
     boards = np.concatenate([encode(r["o"]) for r in parsed], axis=0)
+    mem = None
+    if memory:
+        mem = torch.from_numpy(np.concatenate(
+            [encode_memory(r.get("m"), r["o"]["size"]) for r in parsed], axis=0)).to(dev)
     b_idx, rr, cc, yy = [], [], [], []
     for i, r in enumerate(parsed):
         for (row, col), ch in zip(r["o"]["mine"], r["a"]):
@@ -133,6 +147,7 @@ def tensors(rows: Rows, batch: list[int], dev: torch.device):
             yy.append(MOVE_INDEX.get(ch, MOVE_INDEX["-"]))
     return (
         torch.from_numpy(boards).to(dev),
+        mem,
         torch.tensor(b_idx, dtype=torch.long, device=dev),
         torch.tensor(rr, dtype=torch.long, device=dev),
         torch.tensor(cc, dtype=torch.long, device=dev),
@@ -149,16 +164,18 @@ def ant_logits(policy: torch.Tensor, b, r, c) -> torch.Tensor:
     return policy[b, :, r, c]
 
 
-def run_epoch(model, rows, chunks, dev, opt=None) -> tuple[float, float, int]:
+def run_epoch(model, rows, chunks, dev, opt=None, memory: bool = False) -> tuple[float, float, int]:
     train = opt is not None
     model.train(train)
     total_loss = correct = seen = 0
     for batch in chunks:
-        boards, b, r, c, y = tensors(rows, batch, dev)
+        boards, mem, b, r, c, y = tensors(rows, batch, dev, memory)
         if y.numel() == 0:
             continue
         with torch.set_grad_enabled(train):
-            logits = ant_logits(model(boards), b, r, c)
+            # A memory model answers (policy, memory); the memory is a fixed function and unlearned.
+            policy = model(boards, mem)[0] if memory else model(boards)
+            logits = ant_logits(policy, b, r, c)
             loss = F.cross_entropy(logits, y)
             if train:
                 opt.zero_grad(set_to_none=True)
@@ -195,6 +212,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--arch", default=None, help="override the class's architecture")
     ap.add_argument("--channels", type=int, default=None)
     ap.add_argument("--blocks", type=int, default=None)
+    ap.add_argument("--memory", action="store_true",
+                    help="carry planes.MEMORY beside the board (the dataset must carry it too)")
     ap.add_argument("--data", type=Path, default=Path("data/teacher.jsonl.gz"))
     ap.add_argument("--epochs", type=int, default=6)
     ap.add_argument("--batch", type=int, default=32)
@@ -210,13 +229,18 @@ def main(argv: list[str] | None = None) -> None:
 
     rows = Rows(a.data)
     header = rows.header
+    if a.memory and header.get("memory") != [m.name for m in MEMORY]:
+        raise SystemExit(
+            f"{a.data} carries {header.get('memory') or 'no'} remembered state and --memory needs "
+            f"{[m.name for m in MEMORY]}: collect it again (`python -m tb_baselines.collect`)"
+        )
     order = list(range(len(rows)))
     rng.shuffle(order)
     cut = int(len(order) * (1 - a.holdout))
     train_idx, val_idx = order[:cut], order[cut:]
 
     spec = override(classes()[a.cls], a)
-    model = nets.build(spec).to(dev)
+    model = nets.build(spec, memory=a.memory).to(dev)
     b = budget(a.cls)
     print(f"{a.cls}: {nets.policy_params(model):,} parameters "
           f"(budget about {b['params_at_target']:,}), {dev.type}")
@@ -227,15 +251,15 @@ def main(argv: list[str] | None = None) -> None:
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(a.epochs, 1))
     val_chunks = batches(rows, val_idx, a.batch, rng, shuffle=False)
 
-    out = a.out or Path("runs") / f"{a.cls}-bc"
+    out = a.out or Path("runs") / (f"{a.cls}-bc-memory" if a.memory else f"{a.cls}-bc")
     out.mkdir(parents=True, exist_ok=True)
     best = float("inf")
     history = []
     for epoch in range(1, a.epochs + 1):
         t0 = time.time()
         chunks = batches(rows, train_idx, a.batch, rng)
-        tl, ta, n = run_epoch(model, rows, chunks, dev, opt)
-        vl, va, _ = run_epoch(model, rows, val_chunks, dev)
+        tl, ta, n = run_epoch(model, rows, chunks, dev, opt, a.memory)
+        vl, va, _ = run_epoch(model, rows, val_chunks, dev, memory=a.memory)
         sched.step()
         took = time.time() - t0
         print(f"  epoch {epoch}/{a.epochs}  train {tl:.4f} / {ta:.1%}   "
@@ -244,11 +268,11 @@ def main(argv: list[str] | None = None) -> None:
                         "val_loss": vl, "val_acc": va, "seconds": round(took, 1)})
         if vl < best:
             best = vl
-            torch.save({"trunk": model.state_dict(), "class": a.cls,
+            torch.save({"trunk": model.state_dict(), "class": a.cls, "memory": a.memory,
                         "engine_digest": header["engine_digest"]}, out / "best.pt")
 
     (out / "history.json").write_text(json.dumps(
-        {"class": a.cls, "method": "bc", "arch": spec["arch"], "spec": spec,
+        {"class": a.cls, "method": "bc", "arch": spec["arch"], "spec": spec, "memory": a.memory,
          "data": str(a.data), "epochs": history,
          "engine_digest": header["engine_digest"], "device": dev.type}, indent=2) + "\n")
     print(f"  -> {out / 'best.pt'}  (best held-out loss {best:.4f})")
