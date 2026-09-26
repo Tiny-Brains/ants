@@ -16,6 +16,14 @@ so a gradient reaches back `bptt` turns while the memory itself reaches back to 
 turn. Seats end at different turns; one past its last row is dropped from the batch, and a batch
 is seats of similar length so little is dropped early.
 
+**`bptt` sets the number of optimiser steps, and that number is what decides the run.** One
+step per `bptt` turns of `batch` seats is `250,000 / (batch x bptt)` steps an epoch against
+bc.py's `250,000 / 32`: at 16 seats and 32 turns that was a ninth of them, and the first epoch
+ended at 45.6% agreement where bc.py's ends near 78%. At 8 turns, with the learning rate doubled
+for the larger effective batch, the first epoch ends at 68% and the run climbs from there. Eight
+turns is enough for this memory, because what it has to learn is one turn deep: write what you
+see, and keep what you wrote.
+
 The memory carried between turns is the rounded `i8` the runner will carry: in training through a
 straight-through estimator (`nets.LearnedMemory`), in the held-out pass as the integer itself, so
 the number reported here is the number the ladder will see.
@@ -205,8 +213,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--data", type=Path, default=Path("data/teacher-memory.jsonl.gz"))
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch", type=int, default=16, help="seats stepped together")
-    ap.add_argument("--bptt", type=int, default=32, help="turns a gradient reaches back")
-    ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--bptt", type=int, default=8,
+                    help="turns a gradient reaches back, and so how often the optimiser steps")
+    ap.add_argument("--lr", type=float, default=4e-3)
     ap.add_argument("--holdout", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path, default=None)
