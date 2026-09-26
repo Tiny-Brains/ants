@@ -120,6 +120,10 @@ for an adapter over budget. Never report a result from the env as a result.
   shifts were 180 nodes and 60 KB of graph; as one wrap of eleven cells and ten padded 3x3 cross
   convolutions it is 30, and fits nano beside the trunk. Do the same for any other fixed update:
   a shift a side is twelve nodes, a kernel is one.
+- **`tinybrains check` passing is not the allowlist passing, until cli `b7e1625`.** A graph with a
+  `GreaterOrEqual` ran through `check` and was `OP_NOT_ALLOWED` at admission; the runtime executes
+  more than the deployment allows. Write comparisons as `Greater` on half-integer thresholds, and
+  read `metrics.json`'s `operators` against the book's *Format* page before an upload.
 - **A memory per ant does not fit nano.** Its graph (the gather, the id column, the two gates)
   and its 2,674-byte manifest pass the cap before a weight is counted; `micro` is its smallest
   class, and a season's class has to allow its price (3 bytes a cell alone, 5 with the board
