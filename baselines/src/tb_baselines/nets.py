@@ -349,9 +349,11 @@ class XathisMemory(nn.Module):
         m = memory_in.float()
         explore = m[:, 0:1] / 255.0
         stay = m[:, 1:2]
-        has = (stay >= 128).float()
+        # Strict comparisons on half-integers: `GreaterOrEqual` is not on the operator allowlist,
+        # `Greater` is, and the planes hold integers.
+        has = (stay > 127.5).float()
         count = torch.floor((stay - 128.0) / 16.0) * has
-        return torch.cat([explore, count / XATHIS_STAY_CAP, (count >= 5).float()], dim=1)
+        return torch.cat([explore, count / XATHIS_STAY_CAP, (count > 4.5).float()], dim=1)
 
     def write(self, f: torch.Tensor, board: torch.Tensor, memory_in: torch.Tensor) -> torch.Tensor:
         b = board.float()
@@ -376,7 +378,7 @@ class XathisMemory(nn.Module):
 
         foes = b[:, PLANE["foes"]:PLANE["foes"] + 1]
         mask = F.conv2d(wrap(foes, 1), self.mask_kernel)
-        has_prev = (stay >= 128.0).float()
+        has_prev = (stay > 127.5).float()
         count_prev = torch.floor((stay - 128.0) / 16.0) * has_prev
         mask_prev = (stay - 128.0 - 16.0 * count_prev) * has_prev
         same = has_prev * torch.eq(mask, mask_prev).float()
