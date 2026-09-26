@@ -71,6 +71,15 @@ a third of nano back for every model here.
 | the fixed memory | forgetting | 82.8% | 45% | 3.24 / 3.69 |
 | the board alone (the starter's `nano-bc`) | forgetting | 81.9% | 37% | 2.75 / 4.12 |
 
+And at micro, the same round robin with the memory per ant:
+
+| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
+|---|---|---|---|---|
+| the board alone (the starter's `micro-bc`) | forgetting | 82% | 81% | 5.15 / 1.70 |
+| the fixed memory, at nano | remembering | 81.8% | 56% | 3.81 / 2.98 |
+| the learned memory and a memory per ant | remembering | 88.6% | 46% | 3.37 / 3.37 |
+| no receptive field (the starter's `micro-percell`) | forgetting | | 17% | 1.07 / 5.35 |
+
 Three things to read off it. **A memory is worth a great deal once the labels use it**: the same
 class, data and method with and without the two planes is 72% against 49%, eleven wins to two
 head to head, and the difference is points, a remembered hill razed. **Agreement does not say
@@ -78,7 +87,11 @@ so**: the same two models are 0.8 points apart on the held-out set, and the fixe
 forgetting teacher's labels agrees best of all and plays worst but one. **The learned memory does
 not reach the fixed one in five epochs**: it plays like the board alone, four points of agreement
 below it, which is where the trainer's step count leaves it (`train/seq.py`); the fixed memory is
-the baseline until a longer run says otherwise.
+the baseline until a longer run says otherwise. **And capacity beats memory across a class**: the
+starter's plain micro, eight times the parameters trained flat, beats the fixed-memory nano
+12-2-4 and the per-ant micro 13-4-1, whose 88.6% agreement with its teacher is the highest here
+and whose play is the weaker for having been trained on a tenth of the optimiser steps. A memory
+per ant proves its path; its worth waits on a trainer that steps as often as bc.py does.
 
 ## Run it
 
