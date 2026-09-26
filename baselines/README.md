@@ -45,6 +45,27 @@ it. On that dataset three models are trained the same way and differ only in wha
 
 The class ladder's own dataset is still collected without a memory, so its teacher is unchanged.
 
+**What the column measured**, all at nano, five epochs each, then a round robin through
+`tinybrains <match>` over the nine two-seat boards of a season, both seats of every pairing,
+1000 turns (`eval.py`; the model cards carry each artifact's own numbers):
+
+| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
+|---|---|---|---|---|
+| the fixed memory | remembering | 81.8% | 72% | 4.44 / 2.32 |
+| the board alone | remembering | 81.0% | 49% | 3.46 / 3.38 |
+| the learned memory | remembering | 77.0% | 47% | 3.15 / 3.53 |
+| the fixed memory | forgetting | 82.8% | 45% | 3.24 / 3.69 |
+| the board alone (the starter's `nano-bc`) | forgetting | 81.9% | 37% | 2.75 / 4.12 |
+
+Three things to read off it. **A memory is worth a great deal once the labels use it**: the same
+class, data and method with and without the two planes is 72% against 49%, eleven wins to two
+head to head, and the difference is points, a remembered hill razed. **Agreement does not say
+so**: the same two models are 0.8 points apart on the held-out set, and the fixed memory on the
+forgetting teacher's labels agrees best of all and plays worst but one. **The learned memory does
+not reach the fixed one in five epochs**: it plays like the board alone, four points of agreement
+below it, which is where the trainer's step count leaves it (`train/seq.py`); the fixed memory is
+the baseline until a longer run says otherwise.
+
 ## Run it
 
 ```sh
