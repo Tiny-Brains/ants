@@ -32,7 +32,7 @@ import torch
 from onnx import numpy_helper
 
 from . import adapters, nets
-from .planes import ANT_MEMORY, MEMORY, N_MEMORY, N_PLANES
+from .planes import ANT_MEMORY, MEMORY, MISSION, N_MEMORY, N_PLANES, XATHIS_MEMORY
 
 ROOT = Path(__file__).resolve().parents[2]
 OPSET = 17  # inside the deployment's 13-19, and what the reference fixtures use
@@ -96,9 +96,12 @@ def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
         axes |= {"memory_in": {0: "B", 2: "H", 3: "W"}, "memory": {0: "B", 2: "H", 3: "W"}}
     # A memory per ant adds the adapter's three inputs and one row an ant out; the ant axis is
     # dynamic, since a colony is any size.
+    if getattr(trunk, "memory_ports", False) and getattr(trunk, "memory_kind", None) in ("xathis", "xathis-sight"):
+        example = example[:1] + (torch.zeros(1, XATHIS_MEMORY, 128, 128, dtype=torch.uint8),) + example[2:]
     if getattr(trunk, "ant_ports", False):
         n = 8
-        example += (torch.zeros(1, ANT_MEMORY, 128, 128, dtype=torch.uint8),
+        k = MISSION if getattr(trunk, "ant_kind", None) == "mission" else ANT_MEMORY
+        example += (torch.zeros(1, k, 128, 128, dtype=torch.uint8),
                     torch.arange(n, dtype=torch.int64).reshape(1, n),
                     torch.arange(n, dtype=torch.int64).reshape(1, n) * 129)
         inputs, outputs = inputs + ["ant_planes", "ids", "cells"], outputs + ["ant_memory"]
@@ -151,6 +154,55 @@ def halve(path: Path) -> None:
     rest = list(g.node)
     del g.node[:]
     g.node.extend(casts + rest)
+    onnx.checker.check_model(model)
+    onnx.save(model, str(path))
+
+
+def shorten(path: Path) -> None:
+    """Drop every node's name and rename every intermediate tensor to a short id.
+
+    A name is bytes the size metric weighs and the runtime never reads: the exporter writes
+    `/trunk/stage/convs.0/Conv_output_0` for a tensor that could be `t7`, and a node's name is
+    optional altogether. The graph's inputs and outputs keep their names, since the manifest
+    declares them; an initializer keeps its own, since the `Cast` `halve` added reads it. On a
+    graph of a few hundred nodes this is tens of kilobytes, which at nano is most of a class.
+    """
+    model = onnx.load(str(path))
+    g = model.graph
+    fixed = {i.name for i in g.input} | {o.name for o in g.output} | {t.name for t in g.initializer}
+    names: dict[str, str] = {}
+
+    def short(name: str) -> str:
+        if not name or name in fixed:
+            return name
+        if name not in names:
+            names[name] = f"t{len(names)}"
+        return names[name]
+
+    # One `Constant` node per distinct value: the exporter writes a fresh one for every slice's
+    # starts, ends, axes and steps, and a graph of a few hundred nodes carries hundreds of copies
+    # of `[0]`, `[1]` and `[-1]`.
+    seen: dict[bytes, str] = {}
+    alias: dict[str, str] = {}
+    kept = []
+    for node in g.node:
+        if node.op_type == "Constant" and len(node.output) == 1:
+            key = node.attribute[0].SerializeToString()
+            if key in seen:
+                alias[node.output[0]] = seen[key]
+                continue
+            seen[key] = node.output[0]
+        kept.append(node)
+    del g.node[:]
+    g.node.extend(kept)
+    for node in g.node:
+        node.name = ""
+        for i, name in enumerate(node.input):
+            node.input[i] = short(alias.get(name, name))
+        for i, name in enumerate(node.output):
+            node.output[i] = short(name)
+    for vi in list(g.value_info):
+        vi.name = short(vi.name)
     onnx.checker.check_model(model)
     onnx.save(model, str(path))
 
@@ -288,8 +340,10 @@ each with its own deadline.
 def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
                notes: str, repro: str) -> None:
     mem = metrics.get("memory")
-    what = (f"the graph's own, learned" if metrics.get("memory_kind") == "learned"
-            else ", ".join(m.name for m in MEMORY))
+    what = {"learned": "the graph's own, learned",
+            "xathis": "the 2011 winner's: turns since within reach, and an enemy's stillness",
+            "xathis-sight": "the 2011 winner's, reset by sight"}.get(
+        metrics.get("memory_kind"), ", ".join(m.name for m in MEMORY))
     memory_row = "" if not mem else (
         f"| Memory | `{N_MEMORY}` planes of `i8` ({what}), "
         f"{mem['cell_bytes']} bytes a cell: {mem['bytes_at_max']:,} bytes on the largest board. "
@@ -326,10 +380,10 @@ def shape_of(trunk: torch.nn.Module) -> dict:
     stages = [m for m in trunk.modules() if type(m).__name__ == "Stage"]
     inner = getattr(trunk, "trunk", trunk)
     kind = getattr(trunk, "memory_kind", None)
-    ants = getattr(trunk, "ant_ports", False)
+    ants = getattr(trunk, "ant_kind", None) if getattr(trunk, "ant_ports", False) else None
     return {
         "arch": type(inner).__name__ + (f" + {kind} memory" if kind else "")
-                + (" + a memory per ant" if ants else ""),
+                + ({"mission": " + a mission per ant", "learned": " + a memory per ant"}.get(ants, "")),
         "memory_kind": kind,
         "ant_memory": ants,
         "reach_cells": max((st.reach for st in stages), default=0),
@@ -342,11 +396,14 @@ def export(trunk: torch.nn.Module, name: str, out: Path, method: str,
     """The whole pipeline. Raises if the artifact misses its class."""
     out.mkdir(parents=True, exist_ok=True)
     model_path, manifest_path = out / "model.onnx", out / "manifest.json"
-    manifest_path.write_text(adapters.dumps(f"tb.{out.name}", memory=getattr(trunk, "memory_ports", False),
-                                            ants=getattr(trunk, "ant_ports", False)))
+    manifest_path.write_text(adapters.dumps(
+        f"tb.{out.name}",
+        memory=getattr(trunk, "memory_kind", None) or getattr(trunk, "memory_ports", False),
+        ants=getattr(trunk, "ant_kind", None) or getattr(trunk, "ant_ports", False)))
     to_onnx(trunk, model_path)
     if classes()["_"]["dtype"]["default"] == "fp16":
         halve(model_path)
+    shorten(model_path)
 
     said = verdict(model_path, manifest_path)
     problems = certify(name, said)
@@ -373,10 +430,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--blocks", type=int, default=None)
     ap.add_argument("--weights", type=Path, help="a .pt state dict; omitted means random init")
     ap.add_argument("--memory", nargs="?", const="max", default=False,
-                    help="a model that carries a memory: `max` (planes.MEMORY) or `learned`; read "
-                         "off the weights when they say so")
-    ap.add_argument("--ants", action="store_true",
-                    help="a model that carries a memory per ant too; read off the weights likewise")
+                    help="a model that carries a memory: `max` (planes.MEMORY), `learned`, `xathis` "
+                         "or `xathis-sight`; read off the weights when they say so")
+    ap.add_argument("--ants", nargs="?", const="learned", default=False,
+                    help="a model that carries a row per ant too: `learned` or `mission`; read off "
+                         "the weights likewise")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--method", default="untrained")
     a = ap.parse_args(argv)
@@ -385,7 +443,7 @@ def main(argv: list[str] | None = None) -> None:
     spec = override(classes()[a.cls], a)
     state = torch.load(a.weights, map_location="cpu") if a.weights else {}
     memory = a.memory or state.get("memory", False)
-    ants = a.ants or bool(state.get("ants"))
+    ants = a.ants or state.get("ants", False)
     trunk = nets.build(spec, memory=memory, ants=ants)
     if a.weights:
         trunk.load_state_dict(state.get("trunk", state))

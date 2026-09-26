@@ -40,6 +40,7 @@ from pathlib import Path
 from .env import Env, orders_from_indices
 from .planes import MEMORY, remember
 from .teacher import Teacher
+from .xathis import Xathis
 
 
 def collect(
@@ -51,13 +52,21 @@ def collect(
     seed: int = 1,
     maps: str | None = None,
     remembers: bool = False,
+    xathis: bool = False,
 ) -> dict:
     """Play until `seat_turns` rows are written, and report what was collected.
 
     With `remembers` the teacher reads each seat's memory (`teacher.py`, *A teacher that
     remembers*), so the labels depend on the state each row carries under `m` and a memory model
-    has something to learn from it. The class ladder's dataset is collected without."""
+    has something to learn from it. The class ladder's dataset is collected without.
+
+    With `xathis` the teacher is the 2011 winner (`xathis.py`), one instance a seat holding the
+    bot's own state, and each row carries under `x` the mission each ant leaves the turn with
+    (`[has, target_row, target_col]`, in `mine`'s order), which a model with a memory per ant is
+    taught to write. The bot's other two memories are functions of the turns before, which
+    `planes.XATHIS` renders for the graph and the trainer, so a row carries no `m` for them."""
     teacher = Teacher()
+    bots: dict[tuple[int, int], Xathis] = {}
     out.parent.mkdir(parents=True, exist_ok=True)
 
     written = 0
@@ -83,10 +92,12 @@ def collect(
             # The teacher is a pure function of the observation (and, remembering, of the turns
             # before it, which the env seed also fixes), so the env seed is the whole provenance:
             # this dataset is reproducible from that number and the engine digest.
-            "teacher": "deterministic potential field" + (", remembering" if remembers else ""),
+            "teacher": ("xathis 2011, ported" if xathis
+                        else "deterministic potential field" + (", remembering" if remembers else "")),
             "teacher_remembers": remembers,
+            "teacher_xathis": xathis,
             # The remembered state each row carries under `m`, by plane name.
-            "memory": [m.name for m in MEMORY],
+            "memory": [] if xathis else [m.name for m in MEMORY],
         }) + "\n")
 
         # What each live seat has seen so far, keyed by episode and seat: `ep` is the one stable
@@ -100,18 +111,25 @@ def collect(
                 water, seen = _known(s.obs)
                 key = (s.ep, s.seat)
                 state = remembered.get(key)
-                moves = teacher.orders(s.obs, water, seen, state if remembers else None)
+                row = {"o": s.obs, "k": [s.ep, s.seat, s.turn]}
+                if xathis:
+                    bot = bots.setdefault(key, Xathis())
+                    moves = bot.orders(s.obs)
+                    row["x"] = bot.missions_by_ant()
+                else:
+                    moves = teacher.orders(s.obs, water, seen, state if remembers else None)
+                    row["m"] = state or {}
                 order = orders_from_indices(moves, [len(s.obs["mine"])])[0]
                 actions.append(order)
+                row["a"] = order
                 if written < seat_turns and s.obs["mine"]:
                     # `k` is the row's place in its match, (episode, seat, turn): what lets a
-                    # trainer put a seat's rows back in order, for a memory the graph learns.
-                    f.write(json.dumps({"o": s.obs, "a": order, "m": state or {},
-                                        "k": [s.ep, s.seat, s.turn]},
-                                       separators=(",", ":")) + "\n")
+                    # trainer put a seat's rows back in order, for a memory the graph computes.
+                    f.write(json.dumps(row, separators=(",", ":")) + "\n")
                     written += 1
                     ants += len(order)
-                remembered[key] = remember(state, s.obs)
+                if not xathis:
+                    remembered[key] = remember(state, s.obs)
 
             step = env.step(actions)
             for e in step.ended:
@@ -120,6 +138,7 @@ def collect(
                 scores.append(max(e.scores))
                 for seat in range(e.seat_count):
                     remembered.pop((e.ep, seat), None)
+                    bots.pop((e.ep, seat), None)
             if not step.seats:
                 break
 
@@ -153,11 +172,13 @@ def main(argv: list[str] | None = None) -> None:
                     help="board ids, paths, or a directory of boards; default the release's basic ones")
     ap.add_argument("--remember", action="store_true",
                     help="the teacher reads each seat's memory, so the labels depend on it")
+    ap.add_argument("--xathis", action="store_true",
+                    help="the teacher is the 2011 winner's bot (xathis.py), one a seat")
     a = ap.parse_args(argv)
 
     stats = collect(
         a.out, a.seat_turns, waves=a.waves, matches_per_wave=a.matches_per_wave,
-        max_turns=a.max_turns, seed=a.seed, maps=a.maps, remembers=a.remember,
+        max_turns=a.max_turns, seed=a.seed, maps=a.maps, remembers=a.remember, xathis=a.xathis,
     )
     (a.out.with_suffix("").with_suffix(".stats.json")).write_text(json.dumps(stats, indent=2) + "\n")
     print(json.dumps(stats, indent=2))

@@ -458,3 +458,124 @@ def test_the_per_ant_adapter_joins_by_id_as_the_trainer_does(dumped, ant_graph, 
         joined += int(planes.ant_planes_in_view(view).any())
         assert np.array_equal(np.load(out / f"case-{i}" / "board.npy"), planes.encode(view))
     assert joined, "at least one view read a row back through the join"
+
+
+# ---- the 2011 winner's memory -------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def xathis_graph(tmp_path_factory) -> Path:
+    """A graph with the xathis manifest's ports: `memory_in` and `memory` are `u8`, and with the
+    mission ports beside them (`ant_planes` of three, `ant_memory` rows of four)."""
+    onnx = pytest.importorskip("onnx", reason="the xathis adapter tests build their graph with onnx")
+    from onnx import TensorProto as T, helper as h, numpy_helper as nh
+    b, m, k = planes.N_PLANES, planes.XATHIS_MEMORY, planes.MISSION
+    g = h.make_graph(
+        [h.make_node("Cast", ["board"], ["bf"], to=T.FLOAT),
+         h.make_node("Slice", ["bf", "s0", "e5", "ax1"], ["policy"]),
+         h.make_node("Identity", ["memory_in"], ["memory"]),
+         h.make_node("Cast", ["ids"], ["idu"], to=T.UINT8),
+         h.make_node("Cast", ["cells"], ["cu"], to=T.UINT8),
+         h.make_node("Unsqueeze", ["idu", "ax2"], ["id3"]),
+         h.make_node("Unsqueeze", ["cu", "ax2"], ["c3"]),
+         h.make_node("Concat", ["id3", "c3", "c3", "c3"], ["ant_memory"], axis=2)],
+        "xathis-ports",
+        [h.make_tensor_value_info("board", T.INT8, [1, b, "H", "W"]),
+         h.make_tensor_value_info("memory_in", T.UINT8, [1, m, "H", "W"]),
+         h.make_tensor_value_info("ant_planes", T.UINT8, [1, k, "H", "W"]),
+         h.make_tensor_value_info("ids", T.INT64, [1, "N"]),
+         h.make_tensor_value_info("cells", T.INT64, [1, "N"])],
+        [h.make_tensor_value_info("policy", T.FLOAT, [1, planes.N_MOVES, "H", "W"]),
+         h.make_tensor_value_info("memory", T.UINT8, [1, m, "H", "W"]),
+         h.make_tensor_value_info("ant_memory", T.UINT8, [1, "N", k + 1])],
+        [nh.from_array(np.array([0], dtype=np.int64), "s0"),
+         nh.from_array(np.array([planes.N_MOVES], dtype=np.int64), "e5"),
+         nh.from_array(np.array([1], dtype=np.int64), "ax1"),
+         nh.from_array(np.array([2], dtype=np.int64), "ax2")],
+    )
+    model = h.make_model(g, opset_imports=[h.make_opsetid("", 17)], ir_version=8)
+    onnx.checker.check_model(model)
+    path = tmp_path_factory.mktemp("graph") / "xathis-ports.onnx"
+    onnx.save(model, str(path))
+    return path
+
+
+def test_the_xathis_manifest_declares_u8_memory_and_the_mission_rows():
+    doc = json.loads(adapters.dumps(memory="xathis", ants="mission"))
+    assert [i["name"] for i in doc["inputs"]] == ["board", "memory_in", "ant_planes", "ids", "cells"]
+    assert [o["name"] for o in doc["outputs"]] == ["policy", "memory", "ant_memory"]
+    assert doc["inputs"][1]["dtype"] == "u8" and doc["outputs"][1]["dtype"] == "u8"
+    assert doc["inputs"][1]["shape"] == [1, planes.XATHIS_MEMORY, "H", "W"]
+    assert doc["outputs"][2]["shape"] == [1, "N", planes.MISSION + 1]
+    assert '"full"' in json.dumps(doc["inputs"][1]["adapter"]), "turn 0 starts explore at 100"
+    assert adapters.dumps() == adapters.dumps(memory=False, ants=False)
+
+
+def test_the_xathis_update_is_the_same_in_numpy_and_in_the_graph(dumped):
+    """`planes.xathis_remember` against `nets.XathisMemory.write`, chained per board size over the
+    reference observations, both reaches. Torch only; numpy's rendering is what CI checks the
+    adapter against."""
+    torch = pytest.importorskip("torch")
+    from tb_baselines import nets
+    from tb_baselines.export import classes
+    by_size: dict[tuple[int, int], list[dict]] = {}
+    for o in cases_of(dumped):
+        by_size.setdefault(tuple(o["size"]), []).append(o)
+    for reach in ("walk", "sight"):
+        net = nets.build(classes()["nano"], memory="xathis" if reach == "walk" else "xathis-sight")
+        net.eval()
+        for group in by_size.values():
+            state = None
+            for obs in group[:4]:
+                before = planes.xathis_memory_in_view({"size": obs["size"]}) if state is None else state
+                with torch.no_grad():
+                    _, after = net(torch.from_numpy(planes.encode(obs)), torch.from_numpy(before))
+                if reach == "walk":
+                    assert np.array_equal(after.numpy(), planes.xathis_remember(state, obs)), f"{reach} at {obs['size']}"
+                assert after.dtype == torch.uint8 and after.shape == (1, planes.XATHIS_MEMORY, *obs["size"])
+                state = after.numpy()
+
+
+def test_the_xathis_adapters_start_the_bot_and_pass_its_memory_through(dumped, xathis_graph, tmp_path):
+    """Through datalogic: a view without a memory yields explore 100 and stay 0, one carrying a
+    memory yields it unchanged as `u8`, and the mission planes are the trainer's, with rows for
+    the previous view's ants on the same board size."""
+    views = []
+    prev: dict[tuple[int, int], dict] = {}
+    for i, obs in enumerate(cases_of(dumped)):
+        view = dict(obs)
+        key = tuple(obs["size"])
+        if key in prev:
+            view["memory"] = planes.xathis_remember(None, prev[key]).tolist()
+            view["ant_memory"] = [[[j % planes.ANT_TABLE, 1, (j * 3) % obs["size"][0], (j * 5) % obs["size"][1]]
+                                   for j in prev[key]["ids"]] + [[250, 1, 1, 1]]]
+        views.append(view)
+        prev[key] = obs
+    assert any("memory" in v for v in views) and any("memory" not in v for v in views)
+
+    out = tmp_path / "tensors"
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(adapters.dumps(memory="xathis", ants="mission"))
+    (tmp_path / "views.json").write_text(json.dumps({"observations": views}))
+    r = subprocess.run(
+        [CLI, "adapt", str(xathis_graph), str(manifest), "--obs", str(tmp_path / "views.json"),
+         "--out", str(out)],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, f"tinybrains adapt failed on the xathis manifest:\n{r.stdout}\n{r.stderr}"
+    index = json.loads((out / "index.json").read_text())
+    joined = 0
+    for case in index["cases"]:
+        i = case["case"]
+        view = json.loads((out / f"case-{i}" / "observation.json").read_text())
+        for name, ours in (("memory_in", planes.xathis_memory_in_view(view)),
+                           ("ant_planes", planes.mission_planes_in_view(view)),
+                           ("ids", planes.ant_ids_in_view(view)),
+                           ("cells", planes.ant_cells_in_view(view))):
+            theirs = np.load(out / f"case-{i}" / f"{name}.npy")
+            assert theirs.shape == ours.shape and theirs.dtype == ours.dtype, (
+                f"case {i} {name}: the adapter builds {theirs.shape} {theirs.dtype}, the trainer {ours.shape} {ours.dtype}")
+            assert np.array_equal(theirs, ours), f"case {i} {name}: {int((theirs != ours).sum())} elements differ"
+        if "memory" not in view:
+            assert int(np.load(out / f"case-{i}" / "memory_in.npy")[0, 0].min()) == planes.XATHIS_START
+        joined += int(planes.mission_planes_in_view(view)[0, 0].any())
+    assert joined, "at least one view read a mission back through the join"

@@ -41,8 +41,10 @@ from __future__ import annotations
 import json
 import sys
 
-from .planes import (ANT_DTYPE, ANT_MEMORY, DTYPE, N_MEMORY, N_MOVES, N_PLANES, PLANES,
-                     ant_cells_adapter, ant_ids_adapter, ant_planes_adapter, memory_adapter)
+from .planes import (ANT_DTYPE, ANT_MEMORY, DTYPE, MISSION, N_MEMORY, N_MOVES, N_PLANES, PLANES,
+                     XATHIS_DTYPE, XATHIS_MEMORY, ant_cells_adapter, ant_ids_adapter,
+                     ant_planes_adapter, memory_adapter, mission_planes_adapter,
+                     xathis_memory_adapter)
 
 ABI = "orion:model@1.0.0"
 
@@ -60,8 +62,14 @@ def board_adapter() -> dict:
     return {"reshape": [stacked, {"merge": [[1, N_PLANES], size]}]}
 
 
-def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False,
-             ants: bool = False) -> dict:
+def manifest(name: str = "tb.baseline", version: str = "1", memory: bool | str = False,
+             ants: bool | str = False) -> dict:
+    """`memory` is False, True or `"max"` (`planes.MEMORY`, `i8`), `"learned"` (the same ports)
+    or `"xathis"` (the 2011 winner's two `u8` planes, with the bot's start values on turn 0);
+    `ants` is False, True or `"learned"` (`planes.ANT_MEMORY` values an ant) or `"mission"`
+    (the bot's mission an ant, handed to the graph as the offset to its target)."""
+    mkind = ("max" if memory is True else memory) if memory else None
+    akind = ("learned" if ants is True else ants) if ants else None
     inputs = [
         {
             "name": "board",
@@ -74,7 +82,7 @@ def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False
     # channel order is the game's (`planes.MOVES`).
     outputs = [{"name": "policy", "dtype": "f32", "shape": [1, N_MOVES, "H", "W"]}]
     description = "A TinyBrains Ants entry: seven planes in, a per-cell policy out."
-    if memory:
+    if mkind in ("max", "learned"):
         # The memory is `i8` like the board: two 0/1 planes, priced at 2 bytes a cell.
         shape = [1, N_MEMORY, "H", "W"]
         inputs.append({"name": "memory_in", "dtype": DTYPE, "shape": shape,
@@ -82,18 +90,31 @@ def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False
         outputs.append({"name": "memory", "dtype": DTYPE, "shape": shape})
         description = ("A TinyBrains Ants entry: seven planes and a two-plane memory in, "
                        "a per-cell policy and the memory out.")
-    if ants:
-        # A memory per ant (`planes.ANT_MEMORY`): the graph reads each ant's remembered values at
-        # its cell and writes one row an ant, its id first, which the runner hands back.
+    elif mkind in ("xathis", "xathis-sight"):
+        # The 2011 winner's two planes, `u8`: how long since a tile was within reach, and the
+        # stillness of an enemy on it. 2 bytes a cell as well.
+        shape = [1, XATHIS_MEMORY, "H", "W"]
+        inputs.append({"name": "memory_in", "dtype": XATHIS_DTYPE, "shape": shape,
+                       "adapter": xathis_memory_adapter({"var": "size"})})
+        outputs.append({"name": "memory", "dtype": XATHIS_DTYPE, "shape": shape})
+        # Short: every byte of this document is weighed, and at nano this line is weights.
+        description = "The 2011 winner's memory."
+    elif mkind:
+        raise ValueError(f"no memory '{mkind}'")
+    if akind:
+        # A memory per ant: the graph reads each ant's remembered values at its cell and writes
+        # one row an ant, its id first, which the runner hands back.
         size = {"var": "size"}
+        k = MISSION if akind == "mission" else ANT_MEMORY
+        planes_adapter = mission_planes_adapter(size) if akind == "mission" else ant_planes_adapter(size)
         inputs += [
-            {"name": "ant_planes", "dtype": ANT_DTYPE, "shape": [1, ANT_MEMORY, "H", "W"],
-             "adapter": ant_planes_adapter(size)},
+            {"name": "ant_planes", "dtype": ANT_DTYPE, "shape": [1, k, "H", "W"], "adapter": planes_adapter},
             {"name": "ids", "dtype": "i64", "shape": [1, "N"], "adapter": ant_ids_adapter()},
             {"name": "cells", "dtype": "i64", "shape": [1, "N"], "adapter": ant_cells_adapter()},
         ]
-        outputs.append({"name": "ant_memory", "dtype": ANT_DTYPE, "shape": [1, "N", ANT_MEMORY + 1]})
-        description += " Each ant carries a row of its own."
+        outputs.append({"name": "ant_memory", "dtype": ANT_DTYPE, "shape": [1, "N", k + 1]})
+        description += (" And its missions." if akind == "mission"
+                        else " Each ant carries a row of its own.")
     return {
         "abi": ABI,
         "name": name,
@@ -103,21 +124,29 @@ def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False
         "inputs": inputs,
         "outputs": outputs,
         # A memory per ant names an ant axis, and the probe has to bind it to something.
-        "probe_dims": PROBE_DIMS | ({"N": 8} if ants else {}),
+        "probe_dims": PROBE_DIMS | ({"N": 8} if akind else {}),
     }
 
 
-def dumps(name: str = "tb.baseline", version: str = "1", memory: bool = False,
-          ants: bool = False) -> str:
+def dumps(name: str = "tb.baseline", version: str = "1", memory: bool | str = False,
+          ants: bool | str = False) -> str:
     """The exact bytes. Sorted and compact, so the same spec always hashes the same."""
     return json.dumps(manifest(name, version, memory, ants), separators=(",", ":"), sort_keys=True)
 
 
 def main() -> None:
-    """`python -m tb_baselines.adapters [NAME] [--memory] [--ants]`"""
-    args = [a for a in sys.argv[1:] if a not in ("--memory", "--ants")]
-    sys.stdout.write(dumps(args[0] if args else "tb.baseline", memory="--memory" in sys.argv,
-                           ants="--ants" in sys.argv))
+    """`python -m tb_baselines.adapters [NAME] [--memory[=KIND]] [--ants[=KIND]]`"""
+    memory: bool | str = False
+    ants: bool | str = False
+    args = []
+    for a in sys.argv[1:]:
+        if a.startswith("--memory"):
+            memory = a.split("=", 1)[1] if "=" in a else True
+        elif a.startswith("--ants"):
+            ants = a.split("=", 1)[1] if "=" in a else True
+        else:
+            args.append(a)
+    sys.stdout.write(dumps(args[0] if args else "tb.baseline", memory=memory, ants=ants))
 
 
 if __name__ == "__main__":

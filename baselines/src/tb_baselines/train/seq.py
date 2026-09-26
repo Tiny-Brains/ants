@@ -53,7 +53,8 @@ import torch.nn.functional as F
 
 from .. import nets
 from ..export import budget, classes
-from ..planes import ANT_MEMORY, ANT_TABLE, N_MEMORY
+from ..planes import (ANT_MEMORY, ANT_TABLE, MISSION, N_MEMORY, XATHIS_MEMORY, XATHIS_START,
+                      mission_planes_in_view, wrapped_delta)
 from .bc import Rows, ant_logits, device, override, tensors
 
 KEY_RE = re.compile(rb'"k":\[(\d+),(\d+),(\d+)\]')
@@ -97,19 +98,39 @@ def batches(rows: Rows, seqs: list[list[int]], size: int, rng: random.Random, sh
     return out
 
 
+def initial_memory(kind, n: int, size, dev) -> torch.Tensor:
+    """Turn 0's memory for `n` seats: zeros, or the 2011 winner's start values."""
+    if kind in ("xathis", "xathis-sight"):
+        m = torch.zeros((n, XATHIS_MEMORY, *size), device=dev)
+        m[:, 0] = XATHIS_START
+        return m
+    return torch.zeros((n, N_MEMORY, *size), device=dev)
+
+
 class AntCarry:
     """One seat's `ant_memory` between turns, joined by id in torch so a gradient reaches back
     through it: the adapter's table (`planes._ant_rows_logic`) and scatter (`ant_planes_adapter`),
-    written with `index_put` and `index_select` instead, and the same answer."""
+    written with `index_put` and `index_select` instead, and the same answer.
 
-    def __init__(self, dev):
+    With `kind="mission"` the rows are `[id, has, tr, tc]` and carry no gradient (the mission head
+    is supervised directly), so the planes are numpy's `mission_planes_in_view`; with teacher
+    forcing the rows are the teacher's own from the row before (`x`), so what the net reads is
+    what the bot would have carried."""
+
+    def __init__(self, dev, kind: str = "learned"):
         self.dev = dev
+        self.kind = kind
         self.rows: torch.Tensor | None = None       # [P, K+1], as the graph wrote them
 
     def planes(self, obs: dict) -> torch.Tensor:
         """`[K, rows, cols]`: last turn's values at this turn's ants, zeros for a new ant or on
         turn 0, in the u8 scale the graph reads."""
         size = obs["size"]
+        if self.kind == "mission":
+            view = dict(obs)
+            if self.rows is not None:
+                view["ant_memory"] = [self.rows.detach().cpu().round().long().tolist()]
+            return torch.from_numpy(mission_planes_in_view(view)[0].astype("float32")).to(self.dev)
         out = torch.zeros((ANT_MEMORY, *size), device=self.dev)
         ids = obs.get("ids") or []
         if self.rows is None or not ids:
@@ -140,31 +161,59 @@ class AntCarry:
         return ids.to(dev), cells.to(dev)
 
 
-def run_epoch(model, rows, chunks, dev, opt=None, bptt: int = 32) -> tuple[float, float, int]:
+def mission_loss(model, parsed: list[dict], dev) -> torch.Tensor:
+    """The mission head against the teacher's missions (`x`): has it one, and the wrapped offset
+    to its target where it has. Summed over the ants, like the policy's."""
+    aux = model.aux
+    has_t, dr_t, dc_t, mask = [], [], [], []
+    n = aux["has"].shape[1]
+    for row in parsed:
+        o, x = row["o"], row.get("x") or []
+        rows_n, cols_n = o["size"]
+        h, dr, dc, m = [0.0] * n, [0.0] * n, [0.0] * n, [0.0] * n
+        for i, ((r, c), (has, tr, tc)) in enumerate(zip(o["mine"], x)):
+            h[i] = float(has)
+            m[i] = 1.0
+            if has:
+                dr[i] = wrapped_delta(tr, r, rows_n) / 64.0
+                dc[i] = wrapped_delta(tc, c, cols_n) / 64.0
+        has_t.append(h); dr_t.append(dr); dc_t.append(dc); mask.append(m)
+    t = lambda v: torch.tensor(v, dtype=torch.float32, device=dev)
+    has_t, dr_t, dc_t, mask = t(has_t), t(dr_t), t(dc_t), t(mask)
+    bce = F.binary_cross_entropy_with_logits(aux["has"], has_t, reduction="none") * mask
+    offs = (torch.abs(aux["dr"] / 64.0 - dr_t) + torch.abs(aux["dc"] / 64.0 - dc_t)) * has_t * mask
+    return bce.sum() + offs.sum()
+
+
+def run_epoch(model, rows, chunks, dev, opt=None, bptt: int = 32, mission_weight: float = 0.0,
+              teacher_forcing: bool = True) -> tuple[float, float, int]:
     train = opt is not None
     model.train(train)
     board_memory = getattr(model, "memory_ports", False)
+    memory_kind = getattr(model, "memory_kind", None)
     per_ant = getattr(model, "ant_ports", False)
+    ant_kind = getattr(model, "ant_kind", "learned") if per_ant else None
     total_loss = correct = seen = 0
     for seqs in chunks:
         # Longest first, so the live seats at any turn are a prefix of the batch.
         seqs = sorted(seqs, key=len, reverse=True)
         h = None
-        carries = [AntCarry(dev) for _ in seqs]
+        carries = [AntCarry(dev, ant_kind or "learned") for _ in seqs]
         loss_sum, ants = 0.0, 0
         with torch.set_grad_enabled(train):
             for t in range(len(seqs[0])):
                 live = [s[t] for s in seqs if t < len(s)]
                 boards, _, b, r, c, y = tensors(rows, live, dev)
+                parsed = [rows.parse(i) for i in live] if per_ant else None
                 args = [boards]
                 if board_memory:
                     if h is None:
-                        h = torch.zeros((len(live), N_MEMORY, *boards.shape[2:]), device=dev)
+                        h = initial_memory(memory_kind, len(live), boards.shape[2:], dev)
                     else:
                         h = h[: len(live)]
                     args.append(h)
                 if per_ant:
-                    observations = [rows.parse(i)["o"] for i in live]
+                    observations = [p["o"] for p in parsed]
                     args.append(torch.stack([carries[k].planes(o) for k, o in enumerate(observations)]))
                     args += list(AntCarry.inputs(observations, dev))
                 outputs = model(*args)
@@ -175,11 +224,19 @@ def run_epoch(model, rows, chunks, dev, opt=None, bptt: int = 32) -> tuple[float
                     h = outputs.pop(0)
                 if per_ant:
                     ant_rows = outputs.pop(0)                       # [live, N, K+1]
-                    for k, o in enumerate(observations):
-                        carries[k].rows = ant_rows[k, : len(o["mine"])]
+                    for k, p in enumerate(parsed):
+                        o = p["o"]
+                        if ant_kind == "mission" and teacher_forcing and p.get("x") is not None:
+                            # The bot's own missions, keyed by this turn's ids, for the next turn.
+                            carries[k].rows = torch.tensor(
+                                [[i % ANT_TABLE, *x] for i, x in zip(o["ids"], p["x"])], dtype=torch.float32)
+                        else:
+                            carries[k].rows = ant_rows[k, : len(o["mine"])]
                 if y.numel():
                     logits = ant_logits(policy, b, r, c)
                     loss_sum = loss_sum + F.cross_entropy(logits, y, reduction="sum")
+                    if ant_kind == "mission" and mission_weight and train and getattr(model, "aux", None):
+                        loss_sum = loss_sum + mission_weight * mission_loss(model, parsed, dev)
                     ants += y.numel()
                     correct += int((logits.argmax(1) == y).sum())
                 last = t + 1 == len(seqs[0])
@@ -207,9 +264,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--arch", default=None, help="override the class's architecture")
     ap.add_argument("--channels", type=int, default=None)
     ap.add_argument("--blocks", type=int, default=None)
-    ap.add_argument("--memory", default="learned", choices=["learned", "max", "none"],
+    ap.add_argument("--memory", default="learned",
+                    choices=["learned", "max", "xathis", "xathis-sight", "none"],
                     help="the board memory the graph carries; `none` for a memory per ant alone")
-    ap.add_argument("--ants", action="store_true", help="carry a memory per ant too (nets.PerAnt)")
+    ap.add_argument("--ants", nargs="?", const="learned", default=False, choices=["learned", "mission"],
+                    help="carry a row per ant too (nets.PerAnt): values the graph learns, or the "
+                         "2011 winner's mission, supervised from the dataset's `x`")
+    ap.add_argument("--mission-weight", type=float, default=0.1,
+                    help="the mission loss's weight beside the policy's, for `--ants mission`")
+    ap.add_argument("--no-teacher-forcing", action="store_true",
+                    help="carry the net's own missions between turns rather than the teacher's")
     ap.add_argument("--data", type=Path, default=Path("data/teacher-memory.jsonl.gz"))
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch", type=int, default=16, help="seats stepped together")
@@ -234,11 +298,12 @@ def main(argv: list[str] | None = None) -> None:
 
     memory = False if a.memory == "none" else a.memory
     if not memory and not a.ants:
-        raise SystemExit("nothing to carry: give a board memory (`--memory learned|max`) or `--ants`")
+        raise SystemExit("nothing to carry: give a board memory (`--memory learned|max|xathis`) or `--ants`")
     spec = override(classes()[a.cls], a)
     model = nets.build(spec, memory=memory, ants=a.ants).to(dev)
     b = budget(a.cls)
-    what = " + ".join(([f"{memory} memory"] if memory else []) + (["a memory per ant"] if a.ants else []))
+    what = " + ".join(([f"{memory} memory"] if memory else [])
+                      + ([f"a {a.ants} per ant" if a.ants == "mission" else "a memory per ant"] if a.ants else []))
     print(f"{a.cls} + {what}: {nets.policy_params(model):,} parameters "
           f"(budget about {b['params_at_target']:,}), {dev.type}")
     print(f"data: {len(train_seqs):,} sequences train / {len(val_seqs):,} held out over "
@@ -248,15 +313,15 @@ def main(argv: list[str] | None = None) -> None:
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(a.epochs, 1))
     val_chunks = batches(rows, val_seqs, a.batch, rng, shuffle=False)
 
-    out = a.out or Path("runs") / f"{a.cls}-bc-{a.memory if memory else 'no'}-memory{'-ants' if a.ants else ''}"
+    out = a.out or Path("runs") / f"{a.cls}-bc-{a.memory if memory else 'no'}-memory{'-' + a.ants if a.ants else ''}"
     out.mkdir(parents=True, exist_ok=True)
     best = float("inf")
     history = []
     for epoch in range(1, a.epochs + 1):
         t0 = time.time()
         chunks = batches(rows, train_seqs, a.batch, rng)
-        tl, ta, n = run_epoch(model, rows, chunks, dev, opt, a.bptt)
-        vl, va, _ = run_epoch(model, rows, val_chunks, dev, bptt=a.bptt)
+        tl, ta, n = run_epoch(model, rows, chunks, dev, opt, a.bptt, a.mission_weight, not a.no_teacher_forcing)
+        vl, va, _ = run_epoch(model, rows, val_chunks, dev, bptt=a.bptt, teacher_forcing=not a.no_teacher_forcing)
         sched.step()
         took = time.time() - t0
         print(f"  epoch {epoch}/{a.epochs}  train {tl:.4f} / {ta:.1%}   "
