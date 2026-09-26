@@ -90,6 +90,16 @@ And the 2011 winner's column at nano, in the same round robin:
 | the board alone | remembering | 81.0% | 35% | 2.57 / 4.19 |
 | the board alone (the starter's `nano-bc`) | forgetting | 81.9% | 28% | 2.24 / 4.49 |
 
+And the column's micro, with the missions, in the same round robin:
+
+| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
+|---|---|---|---|---|
+| the bot's two planes and a mission an ant, micro at 43 channels | the 2011 winner's | 67.3% | 77% | 5.06 / 1.68 |
+| the board alone (the starter's `micro-bc`) | forgetting | 82% | 62% | 4.19 / 2.53 |
+| the bot's two planes, nano at 10 channels | the 2011 winner's | 59.6% | 51% | 2.99 / 3.57 |
+| the learned memory and a memory per ant | remembering | 88.6% | 47% | 3.54 / 3.17 |
+| no receptive field (the starter's `micro-percell`) | forgetting | | 12% | 0.86 / 5.69 |
+
 Three things to read off it. **A memory is worth a great deal once the labels use it**: the same
 class, data and method with and without the two planes is 72% against 49%, eleven wins to two
 head to head, and the difference is points, a remembered hill razed. **Agreement does not say
@@ -104,7 +114,9 @@ and whose play is the weaker for having been trained on a tenth of the optimiser
 per ant proves its path; its worth waits on a trainer that steps as often as bc.py does. **And
 the teacher is worth more than the agreement**: the 2011 winner's nano agrees with its bot on
 six moves in ten and beats every other nano here, 9-4-5 over the fixed memory and 11-4-3 over the
-board alone, because the moves it does get right are the ones a stronger player makes.
+board alone, because the moves it does get right are the ones a stronger player makes. Its micro,
+with the bot's missions carried per ant, is the strongest model here: 10-1-7 over the starter's
+plain micro, 14-2-2 over the per-ant micro and 11-6-1 over its own nano.
 
 ## Run it
 
