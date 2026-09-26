@@ -80,6 +80,16 @@ And at micro, the same round robin with the memory per ant:
 | the learned memory and a memory per ant | remembering | 88.6% | 46% | 3.37 / 3.37 |
 | no receptive field (the starter's `micro-percell`) | forgetting | | 17% | 1.07 / 5.35 |
 
+And the 2011 winner's column at nano, in the same round robin:
+
+| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
+|---|---|---|---|---|
+| the board alone (the starter's `micro-bc`) | forgetting | 82% | 76% | 5.11 / 1.78 |
+| the bot's two planes, nano at 10 channels | the 2011 winner's | 59.6% | 60% | 3.54 / 3.08 |
+| the fixed memory | remembering | 81.8% | 51% | 3.44 / 3.36 |
+| the board alone | remembering | 81.0% | 35% | 2.57 / 4.19 |
+| the board alone (the starter's `nano-bc`) | forgetting | 81.9% | 28% | 2.24 / 4.49 |
+
 Three things to read off it. **A memory is worth a great deal once the labels use it**: the same
 class, data and method with and without the two planes is 72% against 49%, eleven wins to two
 head to head, and the difference is points, a remembered hill razed. **Agreement does not say
@@ -91,7 +101,10 @@ the baseline until a longer run says otherwise. **And capacity beats memory acro
 starter's plain micro, eight times the parameters trained flat, beats the fixed-memory nano
 12-2-4 and the per-ant micro 13-4-1, whose 88.6% agreement with its teacher is the highest here
 and whose play is the weaker for having been trained on a tenth of the optimiser steps. A memory
-per ant proves its path; its worth waits on a trainer that steps as often as bc.py does.
+per ant proves its path; its worth waits on a trainer that steps as often as bc.py does. **And
+the teacher is worth more than the agreement**: the 2011 winner's nano agrees with its bot on
+six moves in ten and beats every other nano here, 9-4-5 over the fixed memory and 11-4-3 over the
+board alone, because the moves it does get right are the ones a stronger player makes.
 
 ## Run it
 
