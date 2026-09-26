@@ -345,3 +345,116 @@ def test_the_graphs_memory_update_matches_the_encoder(dumped):
         assert mem_out.dtype == torch.int8
         want = planes.encode_memory(planes.remember(state, obs), size)
         assert np.array_equal(mem_out.numpy(), want), f"the graph and the encoder disagree at {size}"
+
+
+# ---- a memory per ant -------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def ant_graph(tmp_path_factory) -> Path:
+    """A graph with the per-ant manifest's ports (`board`, `ant_planes`, `ids`, `cells` in;
+    `policy`, `ant_memory` out), for `adapt` to type-check the manifest against. The row it
+    writes is the id and two copies of the cell, which is enough for the ports; what the test
+    measures is the adapter's join, not the graph."""
+    onnx = pytest.importorskip("onnx", reason="the per-ant adapter test builds its graph with onnx")
+    from onnx import TensorProto as T, helper as h, numpy_helper as nh
+    b, k = planes.N_PLANES, planes.ANT_MEMORY
+    g = h.make_graph(
+        [h.make_node("Cast", ["board"], ["bf"], to=T.FLOAT),
+         h.make_node("Slice", ["bf", "s0", "e5", "ax1"], ["policy"]),
+         h.make_node("Cast", ["ids"], ["idu"], to=T.UINT8),
+         h.make_node("Cast", ["cells"], ["cu"], to=T.UINT8),
+         h.make_node("Unsqueeze", ["idu", "ax2"], ["id3"]),
+         h.make_node("Unsqueeze", ["cu", "ax2"], ["c3"]),
+         h.make_node("Concat", ["id3", "c3", "c3"], ["ant_memory"], axis=2)],
+        "ant-ports",
+        [h.make_tensor_value_info("board", T.INT8, [1, b, "H", "W"]),
+         h.make_tensor_value_info("ant_planes", T.UINT8, [1, k, "H", "W"]),
+         h.make_tensor_value_info("ids", T.INT64, [1, "N"]),
+         h.make_tensor_value_info("cells", T.INT64, [1, "N"])],
+        [h.make_tensor_value_info("policy", T.FLOAT, [1, planes.N_MOVES, "H", "W"]),
+         h.make_tensor_value_info("ant_memory", T.UINT8, [1, "N", k + 1])],
+        [nh.from_array(np.array([0], dtype=np.int64), "s0"),
+         nh.from_array(np.array([planes.N_MOVES], dtype=np.int64), "e5"),
+         nh.from_array(np.array([1], dtype=np.int64), "ax1"),
+         nh.from_array(np.array([2], dtype=np.int64), "ax2")],
+    )
+    model = h.make_model(g, opset_imports=[h.make_opsetid("", 17)], ir_version=8)
+    onnx.checker.check_model(model)
+    path = tmp_path_factory.mktemp("graph") / "ant-ports.onnx"
+    onnx.save(model, str(path))
+    return path
+
+
+def test_the_per_ant_manifest_declares_the_three_inputs_and_one_row_an_ant():
+    doc = json.loads(adapters.dumps(ants=True))
+    assert [i["name"] for i in doc["inputs"]] == ["board", "ant_planes", "ids", "cells"]
+    assert [o["name"] for o in doc["outputs"]] == ["policy", "ant_memory"]
+    assert doc["outputs"][1] == {"name": "ant_memory", "dtype": planes.ANT_DTYPE,
+                                 "shape": [1, "N", planes.ANT_MEMORY + 1]}
+    assert doc["probe_dims"]["N"], "the probe binds the ant axis"
+    assert adapters.dumps() == adapters.dumps(ants=False), "the plain manifest is untouched"
+    text = json.dumps(doc["inputs"][1]["adapter"])
+    assert '"gather"' in text and '"scatter"' in text, "rows re-keyed by id, then written at cells"
+
+
+def test_the_ant_join_reads_last_turns_rows_back_by_id_and_zeros_for_a_new_ant():
+    """The numpy rendering alone, on a hand-made turn: last turn's ants were 7, 3 and 12, this
+    turn's are 3, 12 and 20 (the book's example), so the rows come back as 3's, 12's and zeros."""
+    prev = [[[7, 10, 11], [3, 30, 31], [12, 120, 121]]]
+    obs = {"size": [8, 8], "mine": [[1, 1], [2, 5], [6, 3]], "ids": [3, 12, 20], "ant_memory": prev}
+    rows = planes.ant_rows_in_view(obs)
+    assert rows.tolist() == [[30, 31], [120, 121], [0, 0]] and rows.dtype == planes.ANT_NP_DTYPE
+    p = planes.ant_planes_in_view(obs)
+    assert p.shape == (1, planes.ANT_MEMORY, 8, 8)
+    assert p[0, :, 1, 1].tolist() == [30, 31] and p[0, :, 2, 5].tolist() == [120, 121]
+    assert p[0, :, 6, 3].tolist() == [0, 0] and int(p.sum()) == 30 + 31 + 120 + 121
+    assert planes.ant_ids_in_view({"ids": [3, 300]}).tolist() == [[3, 300 % planes.ANT_TABLE]]
+    assert planes.ant_cells_in_view(obs).tolist() == [[9, 21, 51]]
+
+
+def test_the_per_ant_adapter_joins_by_id_as_the_trainer_does(dumped, ant_graph, tmp_path):
+    """The ladder's own answer, through datalogic: views carrying last turn's `ant_memory` -- rows
+    written for the ids of the previous observation on the same board size, so some of this
+    turn's ants find a row and some are new -- yield the same `ant_planes`, `ids` and `cells` the
+    trainer builds, and a view without one yields zeros."""
+    views = []
+    prev_ids: dict[tuple[int, int], list[int]] = {}
+    for obs in cases_of(dumped):
+        view = dict(obs)
+        key = tuple(obs["size"])
+        before = prev_ids.get(key)
+        if before:
+            # One row an ant of the last view on this size, valued by its id, and a row for an id
+            # long dead, which nothing this turn should read.
+            view["ant_memory"] = [[[i % planes.ANT_TABLE, (i * 7) % 256, (i * 13) % 256] for i in before]
+                                  + [[199, 5, 6]]]
+        views.append(view)
+        prev_ids[key] = list(obs["ids"])
+    assert any("ant_memory" in v for v in views) and any("ant_memory" not in v for v in views)
+
+    out = tmp_path / "tensors"
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(adapters.dumps(ants=True))
+    (tmp_path / "views.json").write_text(json.dumps({"observations": views}))
+    r = subprocess.run(
+        [CLI, "adapt", str(ant_graph), str(manifest), "--obs", str(tmp_path / "views.json"),
+         "--out", str(out)],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, f"tinybrains adapt failed on a view carrying `ant_memory`:\n{r.stdout}\n{r.stderr}"
+    index = json.loads((out / "index.json").read_text())
+    assert len(index["cases"]) == len(views)
+    joined = 0
+    for case in index["cases"]:
+        i = case["case"]
+        view = json.loads((out / f"case-{i}" / "observation.json").read_text())
+        for name, ours in (("ant_planes", planes.ant_planes_in_view(view)),
+                           ("ids", planes.ant_ids_in_view(view)),
+                           ("cells", planes.ant_cells_in_view(view))):
+            theirs = np.load(out / f"case-{i}" / f"{name}.npy")
+            assert theirs.shape == ours.shape and theirs.dtype == ours.dtype, (
+                f"case {i} {name}: the adapter builds {theirs.shape} {theirs.dtype}, the trainer {ours.shape} {ours.dtype}")
+            assert np.array_equal(theirs, ours), f"case {i} {name}: {int((theirs != ours).sum())} elements differ"
+        joined += int(planes.ant_planes_in_view(view).any())
+        assert np.array_equal(np.load(out / f"case-{i}" / "board.npy"), planes.encode(view))
+    assert joined, "at least one view read a row back through the join"

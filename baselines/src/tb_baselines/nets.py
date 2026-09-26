@@ -50,7 +50,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .planes import MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES
+from .planes import ANT_MEMORY, MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES
 
 
 def wrap(x: torch.Tensor, k: int) -> torch.Tensor:
@@ -226,34 +226,171 @@ class WithMemory(nn.Module):
     `policy` and `memory`, which is what the generated manifest declares.
     """
 
+    memory_ports = True     # exported with `memory_in` and `memory` beside `board` and `policy`
+    memory_kind = "max"
+
     def __init__(self, trunk: nn.Module):
         super().__init__()
         self.trunk = trunk
         self.channels = trunk.channels
         self.register_buffer("sources", torch.tensor(MEMORY_SOURCES, dtype=torch.long))
 
-    def forward(self, board: torch.Tensor, memory_in: torch.Tensor):
-        x = torch.cat([board, memory_in], dim=1).float()
-        policy = self.trunk.head(self.trunk.features(x))
+    def read(self, memory_in: torch.Tensor) -> torch.Tensor:
+        """The planes the trunk sees for the memory."""
+        return memory_in.float()
+
+    def write(self, f: torch.Tensor, board: torch.Tensor, memory_in: torch.Tensor) -> torch.Tensor:
+        """The memory for the next turn."""
         seen = board.index_select(1, self.sources).float()
-        memory = torch.maximum(memory_in.float(), seen).to(torch.int8)
-        return policy, memory
+        return torch.maximum(memory_in.float(), seen).to(torch.int8)
+
+    def forward(self, board: torch.Tensor, memory_in: torch.Tensor):
+        f = self.trunk.features(torch.cat([board.float(), self.read(memory_in)], dim=1))
+        return self.trunk.head(f), self.write(f, board, memory_in)
+
+
+class LearnedMemory(nn.Module):
+    """A trunk whose memory the graph learns: `N_MEMORY` planes written each turn from what the
+    seat sees and what it remembered, carried as `i8` exactly as `WithMemory`'s are.
+
+    Where `WithMemory` keeps two named planes with `Max`, this keeps two the optimiser shapes -- a
+    convolutional GRU whose input transform is the trunk itself. `memory_in` arrives as `i8` in
+    [-127, 127] and is read as `h = memory_in / 127`; the trunk sees the board and `h` stacked; a
+    1x1 gate and a 1x1 candidate over the features and `h` give `h' = (1 - z) h + z tanh(c)`; and
+    the output is `Floor(h' x 127 + 0.5)` cast to `i8`, which is what the runner carries. `Round` is
+    not on the operator allowlist; `Floor`, `Cast`, `Sigmoid` and `Tanh` are.
+
+    **Training carries the rounded value too.** The forward pass rounds and the backward pass sees
+    the identity (a straight-through estimator), so what the net learns to read back on the next
+    turn is exactly what a runner will hand it, and nothing is learned about a precision the wire
+    does not carry. The manifest is `WithMemory`'s: two planes of `i8`, 2 bytes a cell, so a class
+    that allows one allows the other, and `train/seq.py` is the trainer, because a memory the graph
+    computes has to be replayed in a seat's turn order.
+    """
+
+    memory_ports = True
+    memory_kind = "learned"
+
+    def __init__(self, trunk: nn.Module, planes: int = N_MEMORY):
+        super().__init__()
+        self.trunk = trunk
+        self.channels = trunk.channels
+        self.planes = planes
+        self.gate = nn.Conv2d(trunk.channels + planes, planes, 1)
+        self.cand = nn.Conv2d(trunk.channels + planes, planes, 1)
+
+    def read(self, memory_in: torch.Tensor) -> torch.Tensor:
+        return memory_in.float() / 127.0
+
+    def write(self, f: torch.Tensor, board: torch.Tensor, memory_in: torch.Tensor) -> torch.Tensor:
+        h = self.read(memory_in)
+        fh = torch.cat([f, h], dim=1)
+        z = torch.sigmoid(self.gate(fh))
+        c = torch.tanh(self.cand(fh))
+        scaled = ((1 - z) * h + z * c) * 127.0
+        rounded = torch.floor(scaled + 0.5)
+        if self.training:
+            # The value carried forward is the rounded one; the gradient is the unrounded one's.
+            return scaled + (rounded - scaled).detach()
+        return rounded.to(torch.int8)
+
+    def forward(self, board: torch.Tensor, memory_in: torch.Tensor):
+        f = self.trunk.features(torch.cat([board.float(), self.read(memory_in)], dim=1))
+        return self.trunk.head(f), self.write(f, board, memory_in)
+
+
+class PerAnt(nn.Module):
+    """A memory per ant beside the board's, or alone: `planes.ANT_MEMORY` values an ant keeps for
+    life, learned as `LearnedMemory`'s planes are and carried in the open under `ant_memory`.
+
+    The inputs are the adapter's three (`planes.py`, *a memory per ant*): `ant_planes`, each ant's
+    remembered values written at its own cell as `u8`; `ids`, this turn's ids modulo the table; and
+    `cells`, each ant's cell in row-major order. The trunk sees the board, the board memory if there
+    is one, and the ant planes read as `u8 / 127.5 - 1`; a 1x1 gate and candidate over the features
+    give every cell a new value, `(1 - z) a + z tanh(c)`, which is meaningful only where an ant
+    stands. The output gathers those cells (`GatherElements`, allowlisted) into `[1, N, K]`, rounds
+    them back to `u8` with `Floor` and `Cast`, and writes each ant's id in front: one row an ant,
+    which the runner hands back and the adapter re-keys by id next turn, so an ant's values follow
+    it through every move and a new ant reads zeros.
+
+    `inner` is `WithMemory`, `LearnedMemory` or None; with one, the graph has both memories and
+    the manifest declares both outputs, priced together.
+    """
+
+    ant_ports = True
+
+    def __init__(self, trunk: nn.Module, inner: nn.Module | None = None, planes: int = ANT_MEMORY):
+        super().__init__()
+        self.trunk = trunk
+        self.inner = inner
+        self.channels = trunk.channels
+        self.planes = planes
+        self.gate = nn.Conv2d(trunk.channels + planes, planes, 1)
+        self.cand = nn.Conv2d(trunk.channels + planes, planes, 1)
+
+    @property
+    def memory_ports(self) -> bool:
+        return self.inner is not None
+
+    @property
+    def memory_kind(self) -> str | None:
+        return getattr(self.inner, "memory_kind", None)
+
+    def forward(self, board: torch.Tensor, *rest: torch.Tensor):
+        if self.inner is not None:
+            memory_in, ant_planes, ids, cells = rest
+        else:
+            memory_in, (ant_planes, ids, cells) = None, rest
+        a = ant_planes.float() / 127.5 - 1.0
+        parts = [board.float()]
+        if self.inner is not None:
+            parts.append(self.inner.read(memory_in))
+        parts.append(a)
+        f = self.trunk.features(torch.cat(parts, dim=1))
+        outputs = [self.trunk.head(f)]
+        if self.inner is not None:
+            outputs.append(self.inner.write(f, board, memory_in))
+
+        fa = torch.cat([f, a], dim=1)
+        z = torch.sigmoid(self.gate(fa))
+        c = torch.tanh(self.cand(fa))
+        scaled = ((1 - z) * a + z * c + 1.0) * 127.5          # [B, K, H, W] in [0, 255]
+        rounded = torch.floor(scaled + 0.5)
+        value = scaled + (rounded - scaled).detach() if self.training else rounded
+        flat = value.flatten(2)                                 # [B, K, H*W]
+        index = cells.unsqueeze(1).expand(-1, self.planes, -1)  # [B, K, N]
+        rows = torch.gather(flat, 2, index).transpose(1, 2)     # [B, N, K]
+        head = ids.unsqueeze(-1).to(rows.dtype)                 # [B, N, 1]
+        ant_memory = torch.cat([head, rows], dim=2)
+        outputs.append(ant_memory if self.training else ant_memory.to(torch.uint8))
+        return tuple(outputs)
 
 
 ARCHS = {"trunk": Trunk, "encdec": EncDec, "percell": PerCell}
 
+MEMORIES = {"max": WithMemory, "learned": LearnedMemory}
 
-def build(spec: dict, memory: bool = False) -> nn.Module:
-    """One class's entry from `classes.toml` to a module; with `memory`, one that carries
-    `planes.MEMORY` and reads it beside the board."""
+
+def build(spec: dict, memory: bool | str = False, ants: bool = False) -> nn.Module:
+    """One class's entry from `classes.toml` to a module; with `memory`, one that carries a memory
+    beside the board: `"max"` (or True) is `planes.MEMORY` kept with `Max`, `"learned"` is
+    `LearnedMemory`; with `ants`, one that carries `planes.ANT_MEMORY` values per ant too."""
     arch = spec["arch"]
     if arch not in ARCHS:
         raise ValueError(f"no architecture '{arch}' (have: {', '.join(sorted(ARCHS))})")
     kwargs = {k: spec[k] for k in ("channels", "stride", "blocks", "dilate") if k in spec}
-    if memory:
-        kwargs["planes"] = N_PLANES + N_MEMORY
+    if memory or ants:
+        kwargs["planes"] = N_PLANES + (N_MEMORY if memory else 0) + (ANT_MEMORY if ants else 0)
     net = ARCHS[arch](**kwargs)
-    return WithMemory(net) if memory else net
+    inner = None
+    if memory:
+        kind = "max" if memory is True else memory
+        if kind not in MEMORIES:
+            raise ValueError(f"no memory '{kind}' (have: {', '.join(sorted(MEMORIES))})")
+        inner = MEMORIES[kind](net)
+    if ants:
+        return PerAnt(net, inner)
+    return inner or net
 
 
 class ActorCritic(nn.Module):
@@ -286,6 +423,7 @@ class ActorCritic(nn.Module):
 
 
 def policy_params(model: nn.Module) -> int:
-    """What the class is measured on: the exported half only."""
-    trunk = getattr(model, "trunk", model)
-    return sum(p.numel() for p in trunk.parameters())
+    """What the class is measured on: the exported half only. A memory wrapper ships whole (its
+    gates are in the graph); an actor-critic ships its trunk and leaves the value head behind."""
+    exported = model if getattr(model, "memory_ports", False) else getattr(model, "trunk", model)
+    return sum(p.numel() for p in exported.parameters())

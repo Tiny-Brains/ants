@@ -46,6 +46,24 @@ So ties break in a fixed direction order, and the random scouting is gone: the f
 seeded into the flood, so an ant with nowhere better to go walks toward what it has not seen
 *because the field says so*. The directional bias in a genuine tie is real and is the right trade —
 it is deterministic, so a network can learn it exactly.
+
+## A teacher that remembers
+
+Given a seat's memory (`planes.MEMORY`, the cells food and enemy hills have been seen on, as
+`collect.py` carries it under `m`), `orders` reads it and the labels come to depend on it:
+
+* **An enemy hill seen once is a target until an ant looks at its square and finds it gone.** The
+  plain teacher forgets a hill the turn no ant is near it and wanders off; this one keeps walking
+  back. It is the memory's whole point in this game: a raze is worth two points and a hill is
+  found long before it is reached.
+* **Food seen out of sight is a weak target.** Food falls at fixed places (`ants/engine/src/food.rs`
+  rotates symmetric sets), so a cell that held food once will again. It seeds one level below food
+  in view and one above the frontier, and a remembered cell an ant can see to be empty is skipped.
+
+Without a memory it is the plain teacher, move for move. The two are one function so that the
+class ladder keeps its teacher and the memory variant gets one whose labels a memory can improve:
+a model that reads `memory_in` has something to learn from it, and one that does not measures what
+it costs to forget.
 """
 
 from __future__ import annotations
@@ -76,12 +94,16 @@ class Teacher:
 
     # ---- the field ------------------------------------------------------------------
 
-    def field(self, obs: dict, water: np.ndarray, seen: np.ndarray) -> np.ndarray:
+    def field(self, obs: dict, water: np.ndarray, seen: np.ndarray,
+              memory: dict | None = None) -> np.ndarray:
         """Distance from the nearest target, over known-passable cells, wrapping.
 
         Unseen cells are passable *and* are targets: that is what makes one field drive foraging and
         exploration together, and why a colony with nothing in sight still spreads out rather than
         stalling into `idle_food`.
+
+        `memory` is the seat's remembered state, `{plane: [[r, c], ...]}` as `planes.remember`
+        keeps it, and None for a teacher that forgets (the module docstring says what it changes).
 
         **A numpy wavefront, not a queue.** The Python BFS this replaces was 93% of the training
         loop after `dilate` was fixed -- 11.6 million deque operations in a two-minute profile,
@@ -110,6 +132,16 @@ class Teacher:
         for r, c, owner in obs["hills"]:
             if owner != 0:
                 hills[r, c] = True
+        if memory:
+            # What the seat can see this turn: `seen` is known water or visible now, so visible is
+            # the part of it that is not water.
+            visible = seen & ~water
+            # A remembered hill is a target unless its square is in view with no hill on it, which
+            # is a hill razed. The memory itself never forgets; the teacher reads it against the
+            # view, and a model with the same two inputs can learn the same test.
+            for r, c in memory.get("hill_foe_seen", ()):
+                if not visible[r, c]:
+                    hills[r, c] = True
         if hills.any():
             seed(hills, 0)
 
@@ -118,6 +150,15 @@ class Teacher:
             idx = np.asarray(obs["food"], dtype=np.int64)
             food[idx[:, 0], idx[:, 1]] = True
             seed(food, self.hill_lead)
+        if memory:
+            # Food seen once, out of sight now: a place food comes back to, one level below food in
+            # view. A remembered cell in view is either food (seeded above) or empty (skipped).
+            recalled = np.zeros((rows, cols), dtype=bool)
+            for r, c in memory.get("food_seen", ()):
+                if not visible[r, c]:
+                    recalled[r, c] = True
+            if recalled.any():
+                seed(recalled & passable, self.hill_lead + 1)
 
         unseen = ~seen
         if unseen.any():
@@ -149,14 +190,16 @@ class Teacher:
 
     # ---- the move -------------------------------------------------------------------
 
-    def orders(self, obs: dict, water: np.ndarray, seen: np.ndarray) -> np.ndarray:
-        """One move index an ant, positionally aligned with `mine`."""
+    def orders(self, obs: dict, water: np.ndarray, seen: np.ndarray,
+               memory: dict | None = None) -> np.ndarray:
+        """One move index an ant, positionally aligned with `mine`. With `memory`, the seat's
+        remembered state, the teacher remembers (the module docstring); without it, it forgets."""
         mine = obs["mine"]
         if not mine:
             return np.zeros(0, dtype=np.int64)
 
         rows, cols = obs["size"]
-        dist = self.field(obs, water, seen)
+        dist = self.field(obs, water, seen, memory)
         # Food blocks movement as surely as water does (`ants/engine/src/turn.rs`), so an ant ordered
         # onto food simply stays -- which wastes the turn and, worse, teaches the network that it does
         # not.

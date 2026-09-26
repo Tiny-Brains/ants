@@ -328,3 +328,107 @@ def memory_in_view(obs: dict) -> np.ndarray:
     if obs.get("memory") is None:
         return encode_memory(None, obs["size"])
     return np.asarray(obs["memory"], dtype=NP_DTYPE).reshape(1, N_MEMORY, *obs["size"])
+
+
+# ---- a memory per ant -------------------------------------------------------------------
+#
+# `ant_memory` is one row per ant, `[id, s_1 .. s_K]` as `u8`, that the graph writes each turn and
+# the runner hands back on the next view (the book's *Memory* page, *A memory per ant*). The rows
+# follow the ants by id, never by position: `mine` is re-sorted every turn, so the adapter turns
+# last turn's rows into a table indexed by id and reads it back in this turn's `ids` order, with
+# zeros for an ant born since. The state values `s_k` are the graph's own to learn
+# (`nets.PerAnt`); the ids are the view's, kept modulo `ANT_TABLE` so a row fits a byte.
+#
+# Rendered twice, as the board is: the adapter below builds the graph's three inputs from the view,
+# and the numpy functions build the same tensors for the trainer; `tests/test_adapter_conformance.py`
+# runs the adapter through `tinybrains adapt --obs` over views carrying `ant_memory` and holds them
+# equal. The graph's inputs are
+#
+#   ant_planes  u8 [1, K, H, W]   each ant's remembered values written at its own cell
+#   ids         i64 [1, N]        this turn's ids modulo ANT_TABLE, which the graph writes back
+#   cells       i64 [1, N]        each ant's cell as row × cols + col, which the graph gathers at
+
+ANT_MEMORY = 2
+ANT_TABLE = 256
+ANT_DTYPE = "u8"
+ANT_NP_DTYPE = np.uint8
+
+
+def _ant_rows_logic() -> dict:
+    """Last turn's rows re-keyed to this turn's ants: `[N, ANT_MEMORY]` u8, the book's join."""
+    # `to_list` of `[1, P, K+1]` is one list holding the rows; the reduce projects it out, which is
+    # the language's way to index a value the program computed.
+    rows = {"reduce": [[{"to_list": [var("ant_memory")]}], var("current.0"), None]}
+    cols = [
+        {"scatter": [{"map": [rows, [var("0"), 0, var(str(k + 1))]]}, [ANT_TABLE, 1], ANT_DTYPE]}
+        for k in range(ANT_MEMORY)
+    ]
+    keys = {"map": [var("ids"), {"%": [var(""), ANT_TABLE]}]}
+    return {"gather": [{"concat": [cols, 1]}, keys, 0]}
+
+
+def ant_planes_adapter(size) -> dict:
+    """The `ant_planes` input: each ant's re-keyed row scattered at its cell, zeros on turn 0 or
+    with no ants."""
+    shape = {"merge": [[1, ANT_MEMORY], size]}
+    joined = {"to_list": [{"concat": [[{"tensor": [var("mine"), ANT_DTYPE]}, _ant_rows_logic()], 1]}]}
+    planes = [
+        {"scatter": [{"map": [joined, [var("0"), var("1"), var(str(2 + k))]]}, size, ANT_DTYPE]}
+        for k in range(ANT_MEMORY)
+    ]
+    return {
+        "if": [
+            {"and": [var("ant_memory"), var("mine")]},
+            {"reshape": [{"stack": [planes, 0]}, shape]},
+            {"zeros": [shape, ANT_DTYPE]},
+        ]
+    }
+
+
+def ant_ids_adapter() -> dict:
+    """The `ids` input, `[1, N]` i64: this turn's ids modulo the table, as the graph writes them."""
+    keys = {"map": [var("ids"), {"%": [var(""), ANT_TABLE]}]}
+    return {"reshape": [{"tensor": [keys, "i64"]}, {"merge": [[1], [{"length": [var("ids")]}]]}]}
+
+
+def ant_cells_adapter() -> dict:
+    """The `cells` input, `[1, N]` i64: each ant's cell in row-major order, for the graph's gather.
+    Inside the map the document is one ant, so the width is read from the root with `val`."""
+    cell = {"+": [{"*": [var("0"), {"val": [[1], "size", 1]}]}, var("1")]}
+    flat = {"map": [var("mine"), cell]}
+    return {"reshape": [{"tensor": [flat, "i64"]}, {"merge": [[1], [{"length": [var("mine")]}]]}]}
+
+
+def ant_rows_in_view(obs: dict) -> np.ndarray:
+    """numpy's `_ant_rows_logic`: `[N, ANT_MEMORY]` u8, last turn's rows by this turn's ids."""
+    ids = obs.get("ids") or []
+    out = np.zeros((len(ids), ANT_MEMORY), dtype=ANT_NP_DTYPE)
+    prev = obs.get("ant_memory")
+    if prev is None or not ids:
+        return out
+    table = np.zeros((ANT_TABLE, ANT_MEMORY), dtype=ANT_NP_DTYPE)
+    for row in np.asarray(prev, dtype=np.int64).reshape(-1, ANT_MEMORY + 1):
+        # A later row on the same id overwrites an earlier one, as `scatter` writes.
+        table[int(row[0]) % ANT_TABLE] = np.clip(row[1:], 0, 255)
+    return table[[int(i) % ANT_TABLE for i in ids]]
+
+
+def ant_planes_in_view(obs: dict) -> np.ndarray:
+    """numpy's `ant_planes_adapter`: `[1, ANT_MEMORY, rows, cols]` u8."""
+    rows, cols = obs["size"]
+    out = np.zeros((1, ANT_MEMORY, rows, cols), dtype=ANT_NP_DTYPE)
+    if obs.get("ant_memory") is None or not obs["mine"]:
+        return out
+    values = ant_rows_in_view(obs)
+    for (r, c), v in zip(obs["mine"], values):
+        out[0, :, r, c] = v
+    return out
+
+
+def ant_ids_in_view(obs: dict) -> np.ndarray:
+    return np.asarray([int(i) % ANT_TABLE for i in obs.get("ids") or []], dtype=np.int64).reshape(1, -1)
+
+
+def ant_cells_in_view(obs: dict) -> np.ndarray:
+    cols = obs["size"][1]
+    return np.asarray([r * cols + c for r, c in obs["mine"]], dtype=np.int64).reshape(1, -1)

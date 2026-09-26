@@ -32,7 +32,7 @@ import torch
 from onnx import numpy_helper
 
 from . import adapters, nets
-from .planes import MEMORY, N_MEMORY, N_PLANES
+from .planes import ANT_MEMORY, MEMORY, N_MEMORY, N_PLANES
 
 ROOT = Path(__file__).resolve().parents[2]
 OPSET = 17  # inside the deployment's 13-19, and what the reference fixtures use
@@ -87,11 +87,23 @@ def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
     trunk.eval()
     example = (torch.zeros(1, planes, 128, 128, dtype=torch.int8),)
     inputs, outputs = ["board"], ["policy"]
+    axes = {"board": {0: "B", 2: "H", 3: "W"}, "policy": {0: "B", 2: "H", 3: "W"}}
     # A memory model has two ports each way, named as the generated manifest declares them. The
     # memory is `i8` like the board.
-    if isinstance(trunk, nets.WithMemory):
+    if getattr(trunk, "memory_ports", False):
         example += (torch.zeros(1, N_MEMORY, 128, 128, dtype=torch.int8),)
         inputs, outputs = inputs + ["memory_in"], outputs + ["memory"]
+        axes |= {"memory_in": {0: "B", 2: "H", 3: "W"}, "memory": {0: "B", 2: "H", 3: "W"}}
+    # A memory per ant adds the adapter's three inputs and one row an ant out; the ant axis is
+    # dynamic, since a colony is any size.
+    if getattr(trunk, "ant_ports", False):
+        n = 8
+        example += (torch.zeros(1, ANT_MEMORY, 128, 128, dtype=torch.uint8),
+                    torch.arange(n, dtype=torch.int64).reshape(1, n),
+                    torch.arange(n, dtype=torch.int64).reshape(1, n) * 129)
+        inputs, outputs = inputs + ["ant_planes", "ids", "cells"], outputs + ["ant_memory"]
+        axes |= {"ant_planes": {0: "B", 2: "H", 3: "W"}, "ids": {0: "B", 1: "N"},
+                 "cells": {0: "B", 1: "N"}, "ant_memory": {0: "B", 1: "N"}}
     # The TorchScript exporter is deprecated in favour of dynamo, which does not yet produce the
     # dynamic H/W axes this graph needs on every board size. Pinned deliberately; revisit when it
     # does.
@@ -99,7 +111,7 @@ def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
     torch.onnx.export(
         trunk, example, str(path),
         input_names=inputs, output_names=outputs,
-        dynamic_axes={name: {0: "B", 2: "H", 3: "W"} for name in inputs + outputs},
+        dynamic_axes=axes,
         opset_version=OPSET, dynamo=False,
     )
 
@@ -276,8 +288,10 @@ each with its own deadline.
 def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
                notes: str, repro: str) -> None:
     mem = metrics.get("memory")
+    what = (f"the graph's own, learned" if metrics.get("memory_kind") == "learned"
+            else ", ".join(m.name for m in MEMORY))
     memory_row = "" if not mem else (
-        f"| Memory | `{N_MEMORY}` planes of `i8` ({', '.join(m.name for m in MEMORY)}), "
+        f"| Memory | `{N_MEMORY}` planes of `i8` ({what}), "
         f"{mem['cell_bytes']} bytes a cell: {mem['bytes_at_max']:,} bytes on the largest board. "
         f"The season's class has to allow it; `check` judged the round trip over "
         f"{mem['round_trip']['checked']} chained observations |\n"
@@ -311,8 +325,13 @@ def shape_of(trunk: torch.nn.Module) -> dict:
     """
     stages = [m for m in trunk.modules() if type(m).__name__ == "Stage"]
     inner = getattr(trunk, "trunk", trunk)
+    kind = getattr(trunk, "memory_kind", None)
+    ants = getattr(trunk, "ant_ports", False)
     return {
-        "arch": type(inner).__name__ + (" + memory" if inner is not trunk else ""),
+        "arch": type(inner).__name__ + (f" + {kind} memory" if kind else "")
+                + (" + a memory per ant" if ants else ""),
+        "memory_kind": kind,
+        "ant_memory": ants,
         "reach_cells": max((st.reach for st in stages), default=0),
         "dilations": [st.dilations for st in stages] or None,
     }
@@ -323,7 +342,8 @@ def export(trunk: torch.nn.Module, name: str, out: Path, method: str,
     """The whole pipeline. Raises if the artifact misses its class."""
     out.mkdir(parents=True, exist_ok=True)
     model_path, manifest_path = out / "model.onnx", out / "manifest.json"
-    manifest_path.write_text(adapters.dumps(f"tb.{out.name}", memory=isinstance(trunk, nets.WithMemory)))
+    manifest_path.write_text(adapters.dumps(f"tb.{out.name}", memory=getattr(trunk, "memory_ports", False),
+                                            ants=getattr(trunk, "ant_ports", False)))
     to_onnx(trunk, model_path)
     if classes()["_"]["dtype"]["default"] == "fp16":
         halve(model_path)
@@ -352,8 +372,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--channels", type=int, default=None)
     ap.add_argument("--blocks", type=int, default=None)
     ap.add_argument("--weights", type=Path, help="a .pt state dict; omitted means random init")
-    ap.add_argument("--memory", action="store_true",
-                    help="a model that carries planes.MEMORY; read off the weights when they say so")
+    ap.add_argument("--memory", nargs="?", const="max", default=False,
+                    help="a model that carries a memory: `max` (planes.MEMORY) or `learned`; read "
+                         "off the weights when they say so")
+    ap.add_argument("--ants", action="store_true",
+                    help="a model that carries a memory per ant too; read off the weights likewise")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--method", default="untrained")
     a = ap.parse_args(argv)
@@ -361,8 +384,9 @@ def main(argv: list[str] | None = None) -> None:
     from .train.bc import override
     spec = override(classes()[a.cls], a)
     state = torch.load(a.weights, map_location="cpu") if a.weights else {}
-    memory = a.memory or bool(state.get("memory"))
-    trunk = nets.build(spec, memory=memory)
+    memory = a.memory or state.get("memory", False)
+    ants = a.ants or bool(state.get("ants"))
+    trunk = nets.build(spec, memory=memory, ants=ants)
     if a.weights:
         trunk.load_state_dict(state.get("trunk", state))
 

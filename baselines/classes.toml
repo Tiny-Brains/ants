@@ -25,8 +25,11 @@ fp16_bytes_per_param = 2.22
 ## The manifest is the second term now, whole and uncompressed.
 ## `python -m tb_baselines.adapters | wc -c`. Regenerate when the plane set changes.
 ## With `--memory` the manifest declares a second input and output and measures 1,194 bytes
-## (`python -m tb_baselines.adapters --memory | wc -c`). `export.py` budgets with the line below, so a
-## memory model lands those 263 bytes, and two input channels of weights, above its class's target.
+## (`python -m tb_baselines.adapters --memory | wc -c`); with `--ants` (a memory per ant: three
+## inputs and a row an ant out) 2,674, and with both 2,937. `export.py` budgets with the line
+## below, so a memory model lands those bytes, and its extra input channels of weights, above its
+## class's target; a memory per ant does not fit nano at all (its graph alone passes the cap), so
+## `micro` is the smallest class one trains in.
 manifest_bytes = 931
 
 [target]

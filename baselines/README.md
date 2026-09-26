@@ -28,11 +28,22 @@ They do not cross because compute does not scale with bytes. Above `mini` the tu
 long before the byte cap does, and no dense architecture reaches `large`'s cap.
 [`classes.toml`](classes.toml) carries every number and the measurement behind it.
 
-**A memory variant** sits beside the ladder. `--memory` gives a class's network the two planes of
-`planes.MEMORY`, food seen and enemy hills seen, kept for the match with `Max` inside the graph and
-handed back by the runner each turn (the book's *Memory* page). The teacher reads no memory, so a
-memory model distils the same forager; what it proves is the whole path a model with memory takes,
-from the manifest's second input through admission's round trip to the carry and `conform`.
+**A memory column** sits beside the ladder, and it is a column because it has a teacher of its
+own: `collect.py --remember` has the teacher read each seat's memory (`teacher.py`, *A teacher that
+remembers*: an enemy hill seen once stays a target, food seen out of sight is a weak one), so its
+labels depend on what the seat remembered and a model with a memory has something to learn from
+it. On that dataset three models are trained the same way and differ only in what they carry:
+
+- `train/bc.py` on the board alone -- what forgetting costs, the control;
+- `train/bc.py --memory` with the two planes of `planes.MEMORY`, food seen and enemy hills seen,
+  kept for the match with `Max` inside the graph and handed back by the runner each turn (the
+  book's *Memory* page): a memory that is a fixed function, nothing in it learned;
+- `train/seq.py` with `nets.LearnedMemory`, the same two `i8` planes but written by a gated update
+  the optimiser shapes, trained by replaying each seat's rows in order with truncated
+  backpropagation through time. `--ants` adds a memory per ant (`planes.ANT_MEMORY`), one row an
+  ant that follows it by id, which the smallest class it fits is `micro`.
+
+The class ladder's own dataset is still collected without a memory, so its teacher is unchanged.
 
 ## Run it
 
@@ -46,7 +57,10 @@ pytest tests/ -q                                    # the conformance gate; see 
 python -m tb_baselines.collect --seat-turns 250000  # the teacher dataset, about 9 minutes and 90 MB
 python -m tb_baselines.train.bc --class micro --epochs 6
 python -m tb_baselines.train.bc --class micro --arch percell --channels 112 --blocks 2   # the control
-python -m tb_baselines.train.bc --class nano --memory --epochs 5      # the memory variant; the dataset carries the state
+python -m tb_baselines.collect --remember --seat-turns 250000 --out data/teacher-memory.jsonl.gz  # the memory column's teacher
+python -m tb_baselines.train.bc --class nano --memory --data data/teacher-memory.jsonl.gz --epochs 5    # a fixed memory
+python -m tb_baselines.train.seq --class nano --memory learned --data data/teacher-memory.jsonl.gz     # a learned one
+python -m tb_baselines.train.seq --class micro --memory learned --ants --data data/teacher-memory.jsonl.gz   # and one per ant
 python -m tb_baselines.export --class nano --weights runs/nano-bc-memory/best.pt --out models/nano-bc-memory
 python -m tb_baselines.train.ppo --class micro --iters 200                              # self-play
 python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
@@ -78,8 +92,11 @@ The memory is held to the same standard. Its adapter passes last turn's memory t
 zeros on turn 0, and the test runs it through `tinybrains adapt --obs` over views with and without
 a memory, against a four-port graph it builds with `onnx`. The trainer's update, `remember`, is
 checked against the `Max` the graph takes on the reference observations, and, where torch is
-installed, against the graph itself. A CLI without the memory carry fails the adapter test with a
-message that says so.
+installed, against the graph itself. The memory per ant is held to it too: the adapter's join by
+id (`to_list`, `scatter`, `concat`, `gather`, then a scatter at each ant's cell) is run through
+`tinybrains adapt --obs` over views carrying rows for the previous view's ants, and its three
+inputs are compared with the trainer's numpy join element for element. A CLI without the memory
+carry fails these tests with a message that says so.
 
 ## Design rules
 
@@ -93,7 +110,17 @@ message that says so.
 - **`Resize` is the upsampler.** `ConvTranspose` is not on the operator allowlist.
 - **A memory is a fixed function until a learner needs more.** The two planes of `planes.MEMORY`
   are the 1s of two board planes, kept with `Max`: nothing to train, nothing for numpy and the graph
-  to disagree on, and 2 bytes a cell as `i8`. A learned memory is a different trainer (Known gaps).
+  to disagree on, and 2 bytes a cell as `i8`. A learned memory (`nets.LearnedMemory`) is the same
+  two planes written by a gated update, and it costs a trainer that replays a seat in turn order
+  (`train/seq.py`), because the memory is the graph's own output on the row before.
+- **What the wire carries is what training carries.** A learned memory is rounded to its `i8` (a
+  memory per ant to its `u8`) inside the graph with `Floor` and `Cast`, and the trainer carries the
+  rounded value too, through a straight-through estimator: the net never learns to read a precision
+  the runner cannot hand back. `Round` is not on the operator allowlist; `Floor` is.
+- **Rows follow ants by id.** `mine` is re-sorted every turn, so a memory per ant is a table
+  indexed by id that the adapter reads back in this turn's `ids` order (the book's join), with the
+  id kept modulo `planes.ANT_TABLE` so a row fits a byte. The graph writes each ant's id in front
+  of its row; nothing else keeps the rows and the ants together.
 
 ## Artifacts
 
@@ -117,10 +144,11 @@ src/tb_baselines/
   planes.py                     THE encoding, and the memory, each rendered for numpy and for the manifest
   adapters.py                   generates manifest.json from planes.py, with the memory ports on request
   env.py                        client for `tinybrains env`
-  teacher.py                    the scripted bot the class ladder is distilled from
-  collect.py                    teacher rollouts to a dataset, each row carrying what the seat remembered
-  nets.py                       one architecture per class
+  teacher.py                    the scripted bot the class ladder is distilled from; remembering, the memory column's
+  collect.py                    teacher rollouts to a dataset, each row carrying what the seat remembered and its place in its match
+  nets.py                       one architecture per class, and the three memories a graph can carry
   train/bc.py                   behaviour cloning
+  train/seq.py                  behaviour cloning over a seat's turns in order, for a memory the graph computes
   train/ppo.py                  PPO self-play
   export.py                     torch -> ONNX -> fp16 -> the platform's verdict, metrics and card
   eval.py                       round robin through `tinybrains <match>`
@@ -147,6 +175,9 @@ data/ runs/ models/ replays/    gitignored output
   pass-through adapter, the graph's `Max` and the trainer's `remember`. A dataset row carries the
   state its seat remembered under `m`, so a change to `MEMORY` is a new dataset, and
   `train/bc.py --memory` refuses one collected under another definition.
+- **The memory per ant is one join, `planes.py`'s, rendered twice**: the adapter's, through
+  datalogic, and the trainer's, in numpy and in torch. The conformance test holds the first two
+  equal, and `train/seq.py` carries the third.
 
 ## Known gaps
 
@@ -154,11 +185,8 @@ data/ runs/ models/ replays/    gitignored output
 - `small` has no trained artifact, and `large` has no architecture: nothing dense reaches its cap
   inside a seat's deadline share.
 - The teacher forages and rarely razes, so what the class ladder distils is a forager.
-- The memory baseline learns nothing from its memory: the teacher reads none, so no label depends on
-  it. It proves the path, not the idea; a teacher that remembers, or a learned memory, would prove
-  the idea.
-- PPO self-play carries no memory. `ActorCritic` reads the board alone; `--memory` is behaviour
-  cloning's.
+- PPO self-play carries no memory. `ActorCritic` reads the board alone; the memories are behaviour
+  cloning's, fixed or learned.
 - No class table here names memory numbers. A season sets `memory_flat_bytes` and
   `memory_cell_bytes`, 0 and 0 by default; the memory baseline needs 2 bytes a cell, and `export`
   reports the price without a verdict.

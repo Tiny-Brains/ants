@@ -26,6 +26,7 @@ pip install -e '.[dev]'                            # torch, numpy, onnx, pytest
 pytest tests/ -q                                   # THE test; needs `tinybrains` on PATH or TINYBRAINS set
 python -m tb_baselines.adapters > /tmp/a.json      # the generated adapter
 python -m tb_baselines.adapters --memory > /tmp/m.json   # the same, with the memory ports
+python -m tb_baselines.adapters --memory --ants > /tmp/a.json   # and with a memory per ant's three inputs
 ```
 
 The conformance test loads a trained graph: `$TB_CONFORMANCE_ONNX`, else
@@ -56,9 +57,21 @@ for an adapter over budget. Never report a result from the env as a result.
   adapter (`memory_adapter`), the graph's `Max` (`nets.WithMemory`) and the trainer's union
   (`remember`, `encode_memory`). The memory is `i8` like the board, 2 bytes a cell. A dataset row
   carries the state its seat remembered under `m` (`collect.py`), so a change to `MEMORY` is a new
-  dataset, and `train/bc.py --memory` refuses one whose header names other planes. The teacher
-  reads no memory: what a memory model learns from it is nothing, and what the run proves is the
-  path.
+  dataset, and `train/bc.py --memory` refuses one whose header names other planes.
+- **The memory per ant is one join, rendered twice, and the same test holds it.** `planes.py`'s
+  `_ant_rows_logic` (the adapter: last turn's rows into a table by id, read back in this turn's
+  `ids` order, scattered at each ant's cell) and `ant_planes_in_view` (numpy) are compared through
+  `tinybrains adapt --obs`; `train/seq.py`'s `AntCarry` is the torch copy a gradient flows
+  through. Ids are kept modulo `ANT_TABLE`, and the graph writes each ant's id in front of its row.
+- **A memory the graph computes is trained in turn order.** `train/seq.py` replays each seat's rows
+  by `k` (`collect.py`) with truncated backpropagation through time; the memory carried between
+  turns is the rounded integer the runner carries, through a straight-through estimator in
+  `nets.LearnedMemory` and `nets.PerAnt`. `train/bc.py` is for a memory that is a fixed function
+  of the rows before (`planes.MEMORY`), which numpy can carry.
+- **The teacher reads a memory only when asked.** `Teacher.orders(..., memory)` reads the seat's
+  remembered state (an enemy hill seen once stays a target until seen gone; food seen out of sight
+  is a weak one), and `collect.py --remember` gives it one. The class ladder's dataset is collected
+  without, so its teacher is the same function move for move (`tests/test_teacher.py`).
 - **`manifest.json` is generated and never hand-edited.** Editing one rendering of the encoding
   without the other is exactly the bug the conformance test exists to catch.
 - **An observation change lands here in the same commit.** `planes.py` encodes what
@@ -87,9 +100,19 @@ for an adapter over budget. Never report a result from the env as a result.
 - **An old `tinybrains` fails the env tests.** `tests/test_env.py` needs a binary whose `env`
   understands `--maps`; an older one exits and every env test errors with "the environment exited".
   Point `TINYBRAINS` at a current build (`../../cli/target/release/tinybrains`) or the latest release.
-- **An old `tinybrains` fails the memory adapter test too.** `adapt --obs` on a view carrying
-  `memory` needs the carry; 0.3.0 refuses the nested arrays and the test names the cause. Ants' CI
-  builds the CLI from cli's `main`, so this test passes there only once the carry is on `main`.
+- **An old `tinybrains` fails the memory adapter tests too.** `adapt --obs` on a view carrying
+  `memory` or `ant_memory` needs the carry; 0.3.0 refuses the nested arrays and the test names the
+  cause. Ants' CI builds the CLI from cli's `main`, so these pass there only once the carry is on
+  `main`.
+- **A memory per ant does not fit nano.** Its graph (the gather, the id column, the two gates)
+  and its 2,674-byte manifest pass the cap before a weight is counted; `micro` is its smallest
+  class, and a season's class has to allow its price (3 bytes a cell alone, 5 with the board
+  memory).
+- **Four trainings on one MPS is one too many.** A sequence trainer holds `bptt` turns of
+  activations; two of them beside two `bc.py` runs on a 16 GB machine ended in a Metal
+  out-of-memory that the process survives with garbage. Run the sequence trainers one at a time,
+  and start background jobs with `setopt nobgnice`: zsh nices a `&` job by default and the
+  trainer lands on the efficiency cores.
 - **CI installs `numpy`, `onnx` and `pytest`, not torch.** The graph-side memory test
   (`test_the_graphs_memory_update_matches_the_encoder`) skips without torch and runs on a dev
   install; its numpy twin is what CI runs.

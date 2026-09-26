@@ -12,7 +12,8 @@ the comparison is between two things at once.
 One seat on one turn: the observation exactly as the engine emitted it, one character an ant in
 `mine`'s order, exactly as a replay delta writes a turn, and under `m` what the seat remembered
 going into the turn (`planes.MEMORY`: the cells food and enemy hills have been seen on, as sorted
-`[r, c]` lists). Observations rather than tensors, for two reasons. Tensors are fifty times larger
+`[r, c]` lists), and under `k` where the row sits in its match, `[episode, seat, turn]`.
+Observations rather than tensors, for two reasons. Tensors are fifty times larger
 — a 7x128x128 int8 board is 114 KiB against about 2 KiB of JSON — so 200,000 of them is 23 GiB
 against 400 MiB. And an encoding stored in the dataset is an encoding frozen at collection time:
 `planes.py` should be free to gain a plane without every dataset becoming stale. The remembered
@@ -23,7 +24,9 @@ otherwise independent: a change to `MEMORY` is a new dataset, and the header nam
 ## What it is not
 
 It is not a replay and cannot be viewed. Replays come from `tinybrains <match>`; this is a pile of
-independent observations with no match structure, which is all a supervised learner wants.
+observations, which is all a supervised learner wants. `k` is the one thread through it: a learner
+whose memory the graph computes (`train/seq.py`) reads a seat's rows in turn order and nothing else
+does.
 """
 
 from __future__ import annotations
@@ -47,8 +50,13 @@ def collect(
     max_turns: int = 300,
     seed: int = 1,
     maps: str | None = None,
+    remembers: bool = False,
 ) -> dict:
-    """Play until `seat_turns` rows are written, and report what was collected."""
+    """Play until `seat_turns` rows are written, and report what was collected.
+
+    With `remembers` the teacher reads each seat's memory (`teacher.py`, *A teacher that
+    remembers*), so the labels depend on the state each row carries under `m` and a memory model
+    has something to learn from it. The class ladder's dataset is collected without."""
     teacher = Teacher()
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,28 +80,34 @@ def collect(
             "maps": [m["id"] for m in env.hello["maps"]],
             "max_turns": max_turns,
             "env_seed": seed,
-            # The teacher is a pure function of the observation, so the env seed is the whole
-            # provenance: this dataset is reproducible from that number and the engine digest.
-            "teacher": "deterministic potential field",
+            # The teacher is a pure function of the observation (and, remembering, of the turns
+            # before it, which the env seed also fixes), so the env seed is the whole provenance:
+            # this dataset is reproducible from that number and the engine digest.
+            "teacher": "deterministic potential field" + (", remembering" if remembers else ""),
+            "teacher_remembers": remembers,
             # The remembered state each row carries under `m`, by plane name.
             "memory": [m.name for m in MEMORY],
         }) + "\n")
 
         # What each live seat has seen so far, keyed by episode and seat: `ep` is the one stable
-        # key, since a wave's `(w, m)` is reused after a refill. The teacher reads none of it.
+        # key, since a wave's `(w, m)` is reused after a refill. The teacher reads it only when
+        # asked to remember.
         remembered: dict[tuple[int, int], dict] = {}
         step = env.reset()
         while written < seat_turns:
             actions = []
             for s in step.seats:
                 water, seen = _known(s.obs)
-                moves = teacher.orders(s.obs, water, seen)
-                order = orders_from_indices(moves, [len(s.obs["mine"])])[0]
-                actions.append(order)
                 key = (s.ep, s.seat)
                 state = remembered.get(key)
+                moves = teacher.orders(s.obs, water, seen, state if remembers else None)
+                order = orders_from_indices(moves, [len(s.obs["mine"])])[0]
+                actions.append(order)
                 if written < seat_turns and s.obs["mine"]:
-                    f.write(json.dumps({"o": s.obs, "a": order, "m": state or {}},
+                    # `k` is the row's place in its match, (episode, seat, turn): what lets a
+                    # trainer put a seat's rows back in order, for a memory the graph learns.
+                    f.write(json.dumps({"o": s.obs, "a": order, "m": state or {},
+                                        "k": [s.ep, s.seat, s.turn]},
                                        separators=(",", ":")) + "\n")
                     written += 1
                     ants += len(order)
@@ -137,11 +151,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--maps", default=None,
                     help="board ids, paths, or a directory of boards; default the release's basic ones")
+    ap.add_argument("--remember", action="store_true",
+                    help="the teacher reads each seat's memory, so the labels depend on it")
     a = ap.parse_args(argv)
 
     stats = collect(
         a.out, a.seat_turns, waves=a.waves, matches_per_wave=a.matches_per_wave,
-        max_turns=a.max_turns, seed=a.seed, maps=a.maps,
+        max_turns=a.max_turns, seed=a.seed, maps=a.maps, remembers=a.remember,
     )
     (a.out.with_suffix("").with_suffix(".stats.json")).write_text(json.dumps(stats, indent=2) + "\n")
     print(json.dumps(stats, indent=2))

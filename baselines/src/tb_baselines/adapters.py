@@ -41,7 +41,8 @@ from __future__ import annotations
 import json
 import sys
 
-from .planes import DTYPE, N_MEMORY, N_MOVES, N_PLANES, PLANES, memory_adapter
+from .planes import (ANT_DTYPE, ANT_MEMORY, DTYPE, N_MEMORY, N_MOVES, N_PLANES, PLANES,
+                     ant_cells_adapter, ant_ids_adapter, ant_planes_adapter, memory_adapter)
 
 ABI = "orion:model@1.0.0"
 
@@ -59,7 +60,8 @@ def board_adapter() -> dict:
     return {"reshape": [stacked, {"merge": [[1, N_PLANES], size]}]}
 
 
-def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False) -> dict:
+def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False,
+             ants: bool = False) -> dict:
     inputs = [
         {
             "name": "board",
@@ -80,6 +82,18 @@ def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False
         outputs.append({"name": "memory", "dtype": DTYPE, "shape": shape})
         description = ("A TinyBrains Ants entry: seven planes and a two-plane memory in, "
                        "a per-cell policy and the memory out.")
+    if ants:
+        # A memory per ant (`planes.ANT_MEMORY`): the graph reads each ant's remembered values at
+        # its cell and writes one row an ant, its id first, which the runner hands back.
+        size = {"var": "size"}
+        inputs += [
+            {"name": "ant_planes", "dtype": ANT_DTYPE, "shape": [1, ANT_MEMORY, "H", "W"],
+             "adapter": ant_planes_adapter(size)},
+            {"name": "ids", "dtype": "i64", "shape": [1, "N"], "adapter": ant_ids_adapter()},
+            {"name": "cells", "dtype": "i64", "shape": [1, "N"], "adapter": ant_cells_adapter()},
+        ]
+        outputs.append({"name": "ant_memory", "dtype": ANT_DTYPE, "shape": [1, "N", ANT_MEMORY + 1]})
+        description += " Each ant carries a row of its own."
     return {
         "abi": ABI,
         "name": name,
@@ -88,19 +102,22 @@ def manifest(name: str = "tb.baseline", version: str = "1", memory: bool = False
         "description": description,
         "inputs": inputs,
         "outputs": outputs,
-        "probe_dims": PROBE_DIMS,
+        # A memory per ant names an ant axis, and the probe has to bind it to something.
+        "probe_dims": PROBE_DIMS | ({"N": 8} if ants else {}),
     }
 
 
-def dumps(name: str = "tb.baseline", version: str = "1", memory: bool = False) -> str:
+def dumps(name: str = "tb.baseline", version: str = "1", memory: bool = False,
+          ants: bool = False) -> str:
     """The exact bytes. Sorted and compact, so the same spec always hashes the same."""
-    return json.dumps(manifest(name, version, memory), separators=(",", ":"), sort_keys=True)
+    return json.dumps(manifest(name, version, memory, ants), separators=(",", ":"), sort_keys=True)
 
 
 def main() -> None:
-    """`python -m tb_baselines.adapters [NAME] [--memory]`"""
-    args = [a for a in sys.argv[1:] if a != "--memory"]
-    sys.stdout.write(dumps(args[0] if args else "tb.baseline", memory="--memory" in sys.argv))
+    """`python -m tb_baselines.adapters [NAME] [--memory] [--ants]`"""
+    args = [a for a in sys.argv[1:] if a not in ("--memory", "--ants")]
+    sys.stdout.write(dumps(args[0] if args else "tb.baseline", memory="--memory" in sys.argv,
+                           ants="--ants" in sys.argv))
 
 
 if __name__ == "__main__":
