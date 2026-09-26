@@ -22,6 +22,7 @@ There is no server, database, container or running platform to set up.
 | `viz/build.sh` | Transpiles the component with `jco` into `dist/viz/`, copies the viewer, runs `viz/check.mjs` | Node; `./build.sh` first |
 | `tools/pack.py DIR` | Packs `dist/` into `DIR/ants-artifacts.tar.gz`; prints the engine, archive and content digests and the tag a release would take | a complete `dist/`, viewer included |
 | `tools/deny.sh` | The determinism check alone: no floating point in `engine/src/` | |
+| `tools/equivalence.py OLD NEW` | Plays the same seeded matches through two dists (a release unpacked, and `dist/`) under a random and a greedy policy and diffs every view, score and ending turn by turn; `--allow` names the view keys one may send and the other not | `tinybrains`, numpy |
 | `(cd engine && cargo test)` | The host suite alone | |
 | `(cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings)` | Lint; CI runs the same in `mapgen/` | |
 | `(cd viz && node check.mjs)` | The viewer's checks: geometry, step counts, territory, labels, CSS scoping | Node, `dist/` |
@@ -215,6 +216,7 @@ maps/                      the five basic boards, one JSON file each
 tools/deny.sh              the determinism check
 tools/package.py           finishes dist/: plugin.json, the catalogue and limits.boards, the boards, the report
 tools/pack.py              dist/ as a release's one archive, packed deterministically, and its digests
+tools/equivalence.py       two dists played turn by turn against each other: the proof a rebuild kept the rules
 build.sh                   the gate, then every artifact, into dist/
 rust-toolchain.toml        the exact rustc, which is part of the engine digest
 .github/workflows/build.yml  the gate and the build on every push; the release when asked

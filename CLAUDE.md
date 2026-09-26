@@ -29,6 +29,7 @@ viz/build.sh                # the viewer into dist/viz/, then check.mjs (after .
 (cd viz && node check.mjs)  # the viewer checks alone
 (cd baselines && pytest tests/ -q)   # the encoding conformance gate; see baselines/CLAUDE.md
 tools/pack.py DIR           # dist/ as the release archive, its digests, and the tag it would take
+tools/equivalence.py OLD dist --allow ids   # a release unpacked vs dist/, played turn by turn under two policies
 
 cd engine
 cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
@@ -158,8 +159,10 @@ A *wave* is many matches advanced together in one call.
   `games.active_engine_digest`, each replica's `engine_digest`, the plugin signatures and
   `viz/engine.json` all move with it, and it is a release and a ladder event. Say so in the commit.
   To prove a refactor changed no rule, diff `cartridge.json`, `plugin.json`,
-  `reference/observations.json` and `mapgen` output against a `git archive HEAD` build, and hash
-  every `observe`/`step`/`finish` output turn by turn under a random and a greedy policy.
+  `reference/observations.json` and `maps/` against the release's archive unpacked, and play the
+  two against each other with `tools/equivalence.py`: every view, score and ending turn by turn
+  under a random and a greedy policy, with `--allow` naming the keys the change adds. A change that
+  could treat seats differently runs `mapgen sweep --seats 8` too.
 - **The `build` workflow's digest is the platform's.** Four things make the component's bytes: the
   source, rustc (exact; a patch bump moves the bytes), `wasm-tools` (exact; it stamps its version
   in) and **the host rustc runs on**. `build.sh` remaps the crates.io, standard-library and checkout
