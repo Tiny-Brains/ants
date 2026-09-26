@@ -20,33 +20,37 @@ STRIDE = 100_000
 
 
 def merge(parts: list[Path], out: Path) -> dict:
-    header = None
+    headers = []
+    for part in parts:
+        with gzip.open(part, "rt") as f:
+            headers.append(json.loads(f.readline()))
+    header = dict(headers[0])
+    for part, h in zip(parts[1:], headers[1:]):
+        for key in ("engine_digest", "teacher", "memory", "evaluator"):
+            if h.get(key) != header.get(key):
+                raise SystemExit(f"{part}: {key} is {h.get(key)!r}, the first part's {header.get(key)!r}")
+    header["parts"] = [{"file": p.name, "env_seed": h.get("env_seed"), "episode_offset": i * STRIDE}
+                       for i, (p, h) in enumerate(zip(parts, headers))]
+    header.pop("env_seed", None)
     rows = 0
     with gzip.open(out, "wt") as w:
+        w.write(json.dumps(header) + "\n")
         for i, part in enumerate(parts):
             with gzip.open(part, "rt") as f:
-                h = json.loads(f.readline())
-                if header is None:
-                    header = dict(h)
-                    header["parts"] = []
-                else:
-                    for key in ("engine_digest", "teacher", "memory", "evaluator"):
-                        if h.get(key) != header.get(key):
-                            raise SystemExit(f"{part}: {key} is {h.get(key)!r}, the first part's {header.get(key)!r}")
-                header["parts"].append({"file": part.name, "env_seed": h.get("env_seed"), "episode_offset": i * STRIDE})
-                if i == 0:
-                    w.write(json.dumps(header) + "\n")
-                for line in f:
-                    if i == 0:
-                        w.write(line)
-                    else:
-                        row = json.loads(line)
-                        row["k"][0] += i * STRIDE
-                        w.write(json.dumps(row, separators=(",", ":")) + "\n")
-                    rows += 1
-    if header is None:
-        raise SystemExit("nothing to merge")
-    # The header was written before the parts were known; rewrite it now that they are.
+                f.readline()
+                try:
+                    for line in f:
+                        if not line.endswith("\n"):
+                            break                       # a torn last line, from a collector stopped
+                        if i == 0:
+                            w.write(line)
+                        else:
+                            row = json.loads(line)
+                            row["k"][0] += i * STRIDE
+                            w.write(json.dumps(row, separators=(",", ":")) + "\n")
+                        rows += 1
+                except EOFError:
+                    pass
     return {"rows": rows, "parts": len(parts), "out": str(out)}
 
 

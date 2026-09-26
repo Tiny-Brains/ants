@@ -94,12 +94,17 @@ class Rows:
         self.sizes: list[tuple[int, int]] = []
         with gzip.open(path, "rb") as f:
             self.header = json.loads(f.readline())
-            for line in f:
-                m = SIZE_RE.search(line)
-                if not m:
-                    continue
-                self.lines.append(line)
-                self.sizes.append((int(m.group(1)), int(m.group(2))))
+            try:
+                for line in f:
+                    m = SIZE_RE.search(line)
+                    if not m or not line.endswith(b"\n"):
+                        continue
+                    self.lines.append(line)
+                    self.sizes.append((int(m.group(1)), int(m.group(2))))
+            except EOFError:
+                # A collector stopped mid-write leaves a gzip stream without its end: what it
+                # wrote whole is a dataset, and the torn last line is not.
+                pass
 
     def __len__(self) -> int:
         return len(self.lines)
