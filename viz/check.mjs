@@ -523,6 +523,73 @@ if (shellLoads) {
   const rings = calls.slice(before).filter((c) => c[0] === "createRadialGradient").length;
   check("a ring near a corner is drawn across the wrap", drew && rings === 4, `${rings} rings`);
 
+  // What a turn did, from the frame's own record: a death is a ring with a cross and a line from
+  // each killer, two that killed each other meeting halfway; a razed hill is a dashed square. A
+  // frame from an engine that wrote none of this -- a stored last frame with three-element ants --
+  // draws as it always did.
+  const lineCount = (from) => calls.slice(from).filter((c) => c[0] === "lineTo").length;
+  const small = { rows: 8, cols: 12, water: [0, 96] };
+  const rm = new Renderer(makeStubCanvas());
+  rm.setBoard(small);
+  rm.resize(600, 400); // fifty pixels a cell: every mark is drawn
+  const quiet = {
+    turn: 3, size: [8, 12], water: { rle: [0, 96] }, food: [], hills: [[1, 1, 0], [5, 7, 1]],
+    ants: [[3, 2, 0, 0], [3, 6, 1, 0]], deaths: [], razed: [], score: [1, 1], ranks: [1, 1], done: false,
+  };
+  const fought = {
+    ...quiet, turn: 4, ants: [], score: [1, 1],
+    deaths: [
+      { ant: [3, 3, 0, 0], by: [[3, 5, 1, 0]] },
+      { ant: [3, 5, 1, 0], by: [[3, 3, 0, 0]] },
+    ],
+  };
+  let mark = calls.length;
+  rm.render(quiet, {});
+  const still = lineCount(mark);
+  mark = calls.length;
+  rm.render(fought, {});
+  const fights = calls.slice(mark);
+  const arcs = fights.filter((c) => c[0] === "arc").length;
+  const heads = fights.filter((c) => c[0] === "closePath").length;
+  check(
+    "a death is a ring on the square it died on, with a line from its killer",
+    arcs >= 2 && lineCount(mark) > still,
+    `${arcs} rings, ${lineCount(mark)} lines`
+  );
+  check("two ants that killed each other draw two lines that meet halfway, with no head", heads === 0, `${heads} heads`);
+  mark = calls.length;
+  rm.render({ ...quiet, turn: 4, ants: [[3, 2, 0, 0]], deaths: [{ ant: [3, 4, 1, 0], by: [[3, 2, 0, 0]] }] }, {});
+  const oneWay = calls.slice(mark).filter((c) => c[0] === "closePath").length;
+  check("a one-way kill is headed at the victim", oneWay === 1, `${oneWay} heads`);
+  mark = calls.length;
+  rm.render({ ...quiet, turn: 5, hills: [[1, 1, 0]], razed: [[5, 7, 1, 0]] }, {});
+  const dashed = calls.slice(mark).filter((c) => c[0] === "setLineDash" && c[1].length === 2).length;
+  check("a razed hill is a dashed square where it stood", dashed >= 1 && lineCount(mark) > still);
+  mark = calls.length;
+  let old = true;
+  try {
+    rm.render({ ...quiet, ants: [[3, 2, 0], [3, 6, 1]], deaths: undefined, razed: undefined }, {});
+  } catch (e) {
+    old = false;
+    console.log(`        ${e.message}`);
+  }
+  check("a frame with no ids and no record draws as before", old && lineCount(mark) === still);
+  const said = shell.describeEvents(fought, ["ember", "azure"]);
+  check(
+    "the turn's deaths are said for a screen reader",
+    said.length === 2 && said[0] === "ember lost 1 ant to azure" && said[1] === "azure lost 1 ant to ember",
+    JSON.stringify(said)
+  );
+  const bump = shell.describeEvents(
+    { deaths: [{ ant: [1, 1, 0, 2], by: [] }, { ant: [1, 1, 0, 3], by: [] }], razed: [[5, 7, 1, 0]] },
+    ["ember", "azure"]
+  );
+  check(
+    "a collision and a razing are said too",
+    bump[0] === "ember lost 2 ants in a collision" && bump[1] === "azure's hill razed by ember",
+    JSON.stringify(bump)
+  );
+
   const named = shell.seatLabels(
     { seats: [{ seat: 0, weights_hash: "sha256:0123456789abcdef" }, { seat: 1, label: "dense" }] },
     2,
@@ -662,6 +729,18 @@ const labels2 = [
   player.zoom(2);
   player.key({ key: "+", preventDefault() {} });
   check("a player does not zoom", player.renderer.scale === scale);
+  // A lesson board six rows by eight: the eight-move reach covers it, so no hill is ringed.
+  {
+    const tiny = {
+      ...replay,
+      turns: 0,
+      map: { id: "tiny", rows: 6, cols: 8, players: 2, water: [0, 48], hills: [[1, 1], [4, 5]], food: [], food_target: 0, symmetry: { dr: 3, dc: 4 } },
+      deltas: [],
+    };
+    const small = new shellT.Viewer(fx.host(600, 400), tiny, { tier: "stage" });
+    check("a ring that would cover the board is not drawn", small.threatsAt(0).length === 0, `${small.threatsAt(0).length} rings`);
+    small.destroy();
+  }
   check("a player's cards drop the counts line", /\.tb-viz\.tb-tier-player \.tb-nums\{display:none\}/.test(css));
 
   const tile = new Viewer(fx.host(320, 200), null, { tier: "tile", frame: frames.at(-1), labels: labels2 });

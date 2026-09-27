@@ -215,7 +215,7 @@ export class Graph {
 
     // Three gridlines, their values in the gutter left of the plot when there is room for them.
     const { x0, w } = this.span;
-    g.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    g.font = "11px ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
     g.textBaseline = "middle";
     const inside = x0 < 26;
     g.textAlign = inside ? "left" : "right";

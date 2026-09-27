@@ -7,8 +7,13 @@
 //!
 //! A turn's delta is one string per seat, one character per ant, in `mine`'s order — the same
 //! ordering the actions arrived in, so a delta and an action array are the same shape. Ant ids are
-//! not recorded: re-simulation gives every ant the id it had, and a frame carries none, because the
-//! viewer draws ants rather than names them.
+//! not recorded: re-simulation gives every ant the id it had, and a frame carries them, so a host
+//! can follow one ant from a frame to the next.
+//!
+//! A frame also carries what its turn did that the position no longer shows: the ants that died
+//! and who killed them, and the hills that fell. The referee's step reports them
+//! (`turn::Events`), the tape keeps the last turn's, and the frame writes them out — so a viewer
+//! draws a fight from the record of it, and re-implements no rule to find one.
 //!
 //! The envelope carries its own board. `decode` rebuilds from `map`, which `finish` emits, so a
 //! replay stays viewable whatever became of the season or the file its board came from.
@@ -17,11 +22,11 @@
 
 use serde_json::{Value, json};
 
-use crate::grid::Bits;
+use crate::grid::{Bits, Geom};
 use crate::maps::MapFile;
 use crate::observe::{rc, rc_owned};
-use crate::state::Match;
-use crate::turn::ranks;
+use crate::state::{Ant, Match};
+use crate::turn::{Events, ranks};
 
 /// The per-turn delta `step` returns for one match.
 pub fn delta(m: &Match, turn: u16, moves: &[Vec<String>]) -> Value {
@@ -53,6 +58,9 @@ struct Tape<'a> {
     /// What each seat knew before the turn the match is on was played, so a frame can say what
     /// that turn revealed. Nothing at turn zero, which makes the opening vision turn zero's news.
     before: Vec<Bits>,
+    /// What the turn the match is on did: the deaths and the razings its frame reports. Empty at
+    /// turn zero, where nothing has happened yet.
+    last: Events,
 }
 
 impl<'a> Tape<'a> {
@@ -68,6 +76,7 @@ impl<'a> Tape<'a> {
             deltas: payload.get("deltas").and_then(Value::as_array).map_or(&[], Vec::as_slice),
             at: 0,
             before,
+            last: Events::default(),
         })
     }
 
@@ -93,27 +102,49 @@ impl<'a> Tape<'a> {
                 })
                 .unwrap_or_default();
             self.before.clone_from(&self.m.known);
-            crate::turn::step(&mut self.m, &moves);
+            self.last = crate::turn::step(&mut self.m, &moves);
         }
     }
 
-    /// One frame, for the viewer.
+    /// One frame, for the viewer: the position after `turn` turns, and what turn `turn` did.
+    ///
+    /// An ant is `[r, c, owner, id]`. A death is the ant as it stood when it died, on a square
+    /// `ants` no longer lists, and `by` the enemies that killed it there, each as it stood at the
+    /// same moment — empty for a collision. A razing is `[r, c, owner, by]`: a hill `hills` no
+    /// longer lists, and the seat that took it — the hills a lone survivor is credited with at the
+    /// end among them, since they are razed and scored like any other. Frame zero reports no
+    /// events: nothing has happened.
     fn frame(&self) -> Value {
         let m = &self.m;
+        let ant = |a: &Ant| ant_json(&m.g, a);
         json!({
             "turn":  m.turn,
             "size":  [m.g.rows, m.g.cols],
             "water": { "rle": m.water.rle() },
-            "ants":  m.ants.iter().map(|a| rc_owned(&m.g, a.pos, a.owner)).collect::<Vec<_>>(),
+            "ants":  m.ants.iter().map(ant).collect::<Vec<_>>(),
             "food":  m.food.iter().map(|&f| rc(&m.g, f)).collect::<Vec<_>>(),
             "hills": m.hills.iter().filter(|h| !h.razed)
                        .map(|h| rc_owned(&m.g, h.pos, h.owner)).collect::<Vec<_>>(),
             "discovered": discovered(m, &self.before),
+            "deaths": self.last.deaths.iter().map(|d| json!({
+                "ant": ant(&d.ant),
+                "by":  d.by.iter().map(ant).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "razed": self.last.razed.iter().map(|z| {
+                let (r, c) = m.g.rc(z.pos);
+                json!([r, c, z.owner, z.by])
+            }).collect::<Vec<_>>(),
             "score": m.score,
             "ranks": ranks(m),
             "done":  m.done,
         })
     }
+}
+
+/// An ant as a frame writes it: `[r, c, owner, id]`, the owner an absolute seat.
+fn ant_json(g: &Geom, a: &Ant) -> Value {
+    let (r, c) = g.rc(a.pos);
+    json!([r, c, a.owner, a.id])
 }
 
 /// The squares each seat saw for the first time on the turn a frame shows, seat by seat, as

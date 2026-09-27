@@ -2,8 +2,15 @@
 //
 // A frame is what `replay-decode` returns:
 //
-//   { turn, size: [rows, cols], water: { rle }, ants: [[r, c, owner]], food: [[r, c]],
-//     hills: [[r, c, owner]], discovered: [[[r, c]], ...per seat], score: [], ranks: [], done }
+//   { turn, size: [rows, cols], water: { rle }, ants: [[r, c, owner, id]], food: [[r, c]],
+//     hills: [[r, c, owner]], discovered: [[[r, c]], ...per seat],
+//     deaths: [{ ant: [r, c, owner, id], by: [[r, c, owner, id]] }], razed: [[r, c, owner, by]],
+//     score: [], ranks: [], done }
+//
+// A frame is the board after its turn, and `deaths` and `razed` are what that turn did that the
+// board no longer shows: an ant on the square it died on with the enemies that killed it there (none
+// for a collision), and a hill that fell with the seat that took it. Both are drawn from the record
+// as the engine wrote it, and nothing is worked out here.
 //
 // Two things are drawn that are not in a frame, and both are handed in already decided: the
 // territory each seat has explored (`setTerritory`) and the hills an enemy is closing on (`render`'s
@@ -46,6 +53,11 @@ const FOOD_RIM = "rgba(10,15,26,0.5)";
 // small step in brightness, and it is the fog around it that makes an explored region read as one.
 const FOG = [5, 8, 15, 150];
 const TINT_ALPHA = 64;
+// The marks of a turn. A kill is a line in the killer's colour with its head at the victim -- two
+// ants that killed each other draw two lines that meet halfway -- a death a hollow ring with a
+// cross through it, a razed hill a dashed square. From this scale up: below it a board is a
+// thumbnail and a line is a smear.
+const MARK_SCALE = 4;
 
 /** Expand `[value, run, value, run, ...]` into a row-major flag array. */
 export function expandRle(rle, cells) {
@@ -394,6 +406,10 @@ export class Renderer {
       }
     }
 
+    // The hills that fell this turn, under the ants. The deaths go over them, so a strike is not
+    // hidden under the ant that made it.
+    if (s >= MARK_SCALE) this.razings(frame, x0, y0, s);
+
     for (const [r, c, owner] of frame.ants) {
       if (!onScreen(r, c)) continue;
       const x = px(c) + s / 2;
@@ -411,11 +427,144 @@ export class Renderer {
       }
     }
 
+    if (s >= MARK_SCALE) this.deaths(frame, x0, y0, s);
+
     // Where the board ends. The void behind it is darker than deep water, so a map whose border is
     // water had no edge at all without this -- and at a fitted scale that is most of them.
     ctx.strokeStyle = BOARD_EDGE;
     ctx.lineWidth = 1;
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, this.cols * s - 1, this.rows * s - 1);
+  }
+
+  /**
+   * A straight line from cell `a` towards cell `b` on a board that wraps, into the current path:
+   * the shorter way round on each axis, and `frac` of the way there (all of it by default, half
+   * for two lines that meet in the middle). Where the way crosses an edge it is drawn twice -- out
+   * of `a` towards the edge and again shifted a board over, so the part past the edge lands inside
+   * the board -- and the caller clips to the board, so nothing spills into the void where no ant
+   * can stand. Returns the direction it leaves `a` in, so an arrowhead can point the same way.
+   */
+  segment(ctx, a, b, x0, y0, s, frac = 1) {
+    const { rows, cols } = this;
+    let dr = b[0] - a[0];
+    if (dr > rows / 2) dr -= rows;
+    else if (dr < -rows / 2) dr += rows;
+    let dc = b[1] - a[1];
+    if (dc > cols / 2) dc -= cols;
+    else if (dc < -cols / 2) dc += cols;
+    const len = Math.hypot(dr, dc) || 1;
+    const ax = x0 + (a[1] + 0.5) * s;
+    const ay = y0 + (a[0] + 0.5) * s;
+    const ex = ax + dc * s * frac;
+    const ey = ay + dr * s * frac;
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ex, ey);
+    if (a[0] + dr !== b[0] || a[1] + dc !== b[1]) {
+      // The same piece, a board over, for the end that wrapped.
+      const sx = (b[1] - a[1] - dc) * s;
+      const sy = (b[0] - a[0] - dr) * s;
+      ctx.moveTo(ax + sx, ay + sy);
+      ctx.lineTo(ex + sx, ey + sy);
+    }
+    return [dc / len, dr / len];
+  }
+
+  /**
+   * The turn's deaths: each dead ant as a hollow ring with a cross through it, on the square it died
+   * on, and a line from every enemy that killed it, in that enemy's colour, headed at the victim.
+   * Two ants that killed each other draw two lines that meet halfway between them, each in its
+   * own colour and neither with a head: the meeting point says "both". A collision is the ring and
+   * the cross alone: nobody killed those ants.
+   */
+  deaths(frame, x0, y0, s) {
+    const deaths = frame.deaths ?? [];
+    if (!deaths.length) return;
+    const { ctx } = this;
+    const key = (a) => `${a[0]},${a[1]}`;
+    const struck = new Set();
+    for (const d of deaths) for (const k of d.by) struck.add(`${key(k)}>${key(d.ant)}`);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, this.cols * s, this.rows * s);
+    ctx.clip();
+    ctx.lineCap = "round";
+    const lw = Math.max(1.5, s * 0.14);
+    const head = Math.max(3, s * 0.3);
+    for (const d of deaths) {
+      const v = d.ant;
+      for (const k of d.by) {
+        const mutual = struck.has(`${key(v)}>${key(k)}`);
+        ctx.strokeStyle = SEATS[k[2] % SEATS.length];
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        const [ux, uy] = this.segment(ctx, k, v, x0, y0, s, mutual ? 0.5 : 1);
+        ctx.stroke();
+        if (mutual) continue;
+        // The head: a short chevron at the victim's rim, pointing in.
+        const vx = x0 + (v[1] + 0.5) * s - ux * s * 0.38;
+        const vy = y0 + (v[0] + 0.5) * s - uy * s * 0.38;
+        ctx.beginPath();
+        ctx.moveTo(vx, vy);
+        ctx.lineTo(vx - ux * head - uy * head * 0.6, vy - uy * head + ux * head * 0.6);
+        ctx.lineTo(vx - ux * head + uy * head * 0.6, vy - uy * head - ux * head * 0.6);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    for (const d of deaths) {
+      const [r, c, owner] = d.ant;
+      const x = x0 + (c + 0.5) * s;
+      const y = y0 + (r + 0.5) * s;
+      const rad = Math.max(1.5, s * 0.38);
+      ctx.strokeStyle = SEATS[owner % SEATS.length];
+      ctx.lineWidth = Math.max(1.5, s * 0.12);
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.stroke();
+      const k = rad * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(x - k, y - k);
+      ctx.lineTo(x + k, y + k);
+      ctx.moveTo(x + k, y - k);
+      ctx.lineTo(x - k, y + k);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The hills that fell this turn: a dashed square in the owner's colour where the hill stood, with
+   * a cross in the colour of the seat that took it. The frame's `hills` no longer lists them, so
+   * without this a razed hill is a square that was there and is not.
+   */
+  razings(frame, x0, y0, s) {
+    const razed = frame.razed ?? [];
+    if (!razed.length) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.setLineDash([Math.max(2, s * 0.22), Math.max(2, s * 0.16)]);
+    for (const [r, c, owner, by] of razed) {
+      const x = x0 + c * s;
+      const y = y0 + r * s;
+      const lw = Math.max(1.5, s * 0.14);
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = SEATS[owner % SEATS.length];
+      ctx.strokeRect(x + lw / 2, y + lw / 2, s - lw, s - lw);
+      ctx.setLineDash([]);
+      ctx.strokeStyle = SEATS[by % SEATS.length];
+      const k = s * 0.28;
+      const cx = x + s / 2;
+      const cy = y + s / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - k, cy - k);
+      ctx.lineTo(cx + k, cy + k);
+      ctx.moveTo(cx + k, cy - k);
+      ctx.lineTo(cx - k, cy + k);
+      ctx.stroke();
+      ctx.setLineDash([Math.max(2, s * 0.22), Math.max(2, s * 0.16)]);
+    }
+    ctx.restore();
   }
 
   /**

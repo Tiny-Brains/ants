@@ -10,11 +10,40 @@ use crate::food;
 use crate::grid::{ATTACK_RADIUS2, Bits, SPAWN_RADIUS2, dir_of};
 use crate::state::{Ant, CUTOFF_FOOD, CUTOFF_NONE, CUTOFF_PERCENT, Match, STALEMATE_TURNS};
 
+/// One ant's death, where it happened.
+///
+/// `ant` is the ant as it stood after moving -- the square it died on, its owner and its id -- and
+/// `by` the enemies that killed it: in a battle, every enemy in range whose focus was no higher
+/// than its own, each as it stood at the same moment, and dead or alive by the end of the turn.
+/// A collision has no killer, so `by` is empty. The position after the fight no longer shows any
+/// of this, which is why a frame carries it (`replay.rs`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Death {
+    pub ant: Ant,
+    pub by: Vec<Ant>,
+}
+
+/// A hill that fell this turn: where it stood, whose it was, and the seat that razed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Razing {
+    pub pos: u16,
+    pub owner: u8,
+    pub by: u8,
+}
+
+/// What a turn did that the position after it no longer shows. Returned by `step` for whoever
+/// records a match turn by turn; the rules read none of it back.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Events {
+    pub deaths: Vec<Death>,
+    pub razed: Vec<Razing>,
+}
+
 /// Advance one match by one turn. `moves[seat]` is that seat's action array, positionally aligned
-/// with `mine(seat)`.
-pub fn step(m: &mut Match, moves: &[Vec<String>]) {
+/// with `mine(seat)`. Returns what the turn did that its position no longer shows.
+pub fn step(m: &mut Match, moves: &[Vec<String>]) -> Events {
     if m.done {
-        return;
+        return Events::default();
     }
     let mut deaths = move_ants(m, moves);
     deaths.extend(battle(m));
@@ -24,9 +53,9 @@ pub fn step(m: &mut Match, moves: &[Vec<String>]) {
     // a game that looks one-sided is not stalled (`ants.py:793`).
     let hill_kill = deaths
         .iter()
-        .any(|&pos| m.hills.iter().any(|h| h.pos == pos && !h.razed && h.owner != m.cutoff_bot));
+        .any(|d| m.hills.iter().any(|h| h.pos == d.ant.pos && !h.razed && h.owner != m.cutoff_bot));
 
-    raze(m);
+    let mut razed = raze(m);
     spawn(m);
     gather(m);
     food::spawn(m);
@@ -41,7 +70,8 @@ pub fn step(m: &mut Match, moves: &[Vec<String>]) {
 
     m.turn += 1;
     update_cutoff(m, hill_kill);
-    check_end(m);
+    razed.extend(check_end(m));
+    Events { deaths, razed }
 }
 
 /// An order into water **or into food** is ignored and that ant stays put; an ant with no order
@@ -57,8 +87,8 @@ pub fn step(m: &mut Match, moves: &[Vec<String>]) {
 /// from `mine_ids`, not from `mine`, whose squares alone would lose which ant stood on each. Two
 /// that collide die with their ids, and the ids are never handed out again.
 ///
-/// Returns the squares ants died on, which is what `step` needs for the hill-kill stall.
-fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
+/// Returns the ants that died, with no killer: a collision is nobody's kill.
+fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<Death> {
     // Built once per turn rather than scanned per ant: `m.food` is a list, and this is a hot loop.
     let mut blocked = Bits::zeros(m.cells());
     for &f in &m.food {
@@ -96,8 +126,11 @@ fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
     for a in &next {
         occupancy[a.pos as usize] += 1;
     }
-    let dead: Vec<u16> =
-        next.iter().filter(|a| occupancy[a.pos as usize] > 1).map(|a| a.pos).collect();
+    let dead: Vec<Death> = next
+        .iter()
+        .filter(|a| occupancy[a.pos as usize] > 1)
+        .map(|&a| Death { ant: a, by: Vec::new() })
+        .collect();
     m.ants = next.into_iter().filter(|a| occupancy[a.pos as usize] == 1).collect();
     dead
 }
@@ -108,7 +141,10 @@ fn move_ants(m: &mut Match, moves: &[Vec<String>]) -> Vec<u16> {
 /// count. An ant dies if any enemy in its range has a focus less than or equal to its own. Every
 /// ant is judged at the same moment from the positions after moving, and deaths do not cascade: an
 /// ant that dies this turn still counts as an attacker for everyone it was facing.
-fn battle(m: &mut Match) -> Vec<u16> {
+///
+/// A death names its killers: the enemies in range whose focus was no higher than the victim's,
+/// which is exactly the set the rule reads. An enemy in range with a higher focus did not kill it.
+fn battle(m: &mut Match) -> Vec<Death> {
     let n = m.ants.len();
     if n < 2 {
         return Vec::new();
@@ -125,9 +161,16 @@ fn battle(m: &mut Match) -> Vec<u16> {
         }
     }
     let focus: Vec<usize> = facing.iter().map(|f| f.len()).collect();
+    let killers = |i: usize| -> Vec<Ant> {
+        facing[i].iter().filter(|&&j| focus[j] <= focus[i]).map(|&j| m.ants[j]).collect()
+    };
+    let died: Vec<Death> = (0..n)
+        .map(killers)
+        .enumerate()
+        .filter(|(_, by)| !by.is_empty())
+        .map(|(i, by)| Death { ant: m.ants[i], by })
+        .collect();
     let dead: Vec<bool> = (0..n).map(|i| facing[i].iter().any(|&j| focus[j] <= focus[i])).collect();
-
-    let died = m.ants.iter().zip(&dead).filter(|&(_, &d)| d).map(|(a, _)| a.pos).collect();
     m.ants = m.ants.iter().zip(&dead).filter(|&(_, &d)| !d).map(|(a, _)| *a).collect();
     died
 }
@@ -138,7 +181,9 @@ fn battle(m: &mut Match) -> Vec<u16> {
 /// Razing scores +2 for the razer and −1 for the owner, charged once per hill because a razed hill
 /// is never un-razed. A player's own ant on its own hill razes nothing; it **touches** the hill,
 /// which is both what blocks spawning there and what pushes that hill to the back of the queue.
-fn raze(m: &mut Match) {
+///
+/// Returns the hills that fell, for the record of the turn.
+fn raze(m: &mut Match) -> Vec<Razing> {
     let mut razings: Vec<(usize, u8, u8)> = Vec::new(); // hill, owner, razer
     let mut touched: Vec<usize> = Vec::new();
     for (hi, h) in m.hills.iter().enumerate() {
@@ -156,6 +201,7 @@ fn raze(m: &mut Match) {
     for hi in touched {
         m.hills[hi].last_touched = m.turn + 1;
     }
+    let mut fell = Vec::with_capacity(razings.len());
     for (hi, owner, razer) in razings {
         m.hills[hi].razed = true;
         m.score[razer as usize] += 2;
@@ -163,7 +209,9 @@ fn raze(m: &mut Match) {
         // A hill just fell, so this game is still being fought (`ants.py:752`). The cutoff counter
         // restarts from zero, not from where it was.
         m.cutoff_turns = 0;
+        fell.push(Razing { pos: m.hills[hi].pos, owner, by: razer });
     }
+    fell
 }
 
 /// Each food in the hive becomes one new ant on one of that player's hills, taking that seat's
@@ -329,18 +377,22 @@ fn rank_stabilized(m: &Match) -> bool {
 ///
 /// The turn limit comes **last**: there it is the loop bound rather than a condition, and
 /// `finish_game` labels a match "turn limit reached" only when nothing else already claimed it.
-fn check_end(m: &mut Match) {
+///
+/// Returns the hills the lone-survivor rule took: they are razed and scored as any other, so the
+/// turn's record lists them with the rest.
+fn check_end(m: &mut Match) -> Vec<Razing> {
     let living = m.living_players();
 
     if living.is_empty() {
         m.done = true;
         m.reason = 2; // extermination
-        return;
+        return Vec::new();
     }
     if living.len() == 1 && m.players > 1 {
         // The last player with living ants takes every enemy hill still standing as though they
         // had razed it.
         let winner = living[0];
+        let mut taken = Vec::new();
         for hi in 0..m.hills.len() {
             if m.hills[hi].razed || m.hills[hi].owner == winner {
                 continue;
@@ -348,25 +400,27 @@ fn check_end(m: &mut Match) {
             m.hills[hi].razed = true;
             m.score[winner as usize] += 2;
             m.score[m.hills[hi].owner as usize] -= 1;
+            taken.push(Razing { pos: m.hills[hi].pos, owner: m.hills[hi].owner, by: winner });
         }
         m.done = true;
         m.reason = 1; // lone survivor
-        return;
+        return taken;
     }
     if m.cutoff_turns >= STALEMATE_TURNS {
         m.done = true;
         m.reason = if m.cutoff_bot == CUTOFF_FOOD { 5 } else { 4 };
-        return;
+        return Vec::new();
     }
     if m.players > 1 && rank_stabilized(m) {
         m.done = true;
         m.reason = 3;
-        return;
+        return Vec::new();
     }
     if m.turn >= m.max_turns {
         m.done = true;
         m.reason = 0;
     }
+    Vec::new()
 }
 
 /// Ranks, 1-based, ties allowed. Highest score wins; equal scores share the rank.

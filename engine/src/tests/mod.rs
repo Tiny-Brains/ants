@@ -6,6 +6,7 @@
 mod boards;
 mod ending;
 mod equivalence;
+mod events;
 mod food;
 mod ids;
 mod maps;

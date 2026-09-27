@@ -3,9 +3,11 @@
 // It behaves like a media player because that is what watching a match is — transport buttons, a
 // timeline you can click and drag, playback speed, and a keyboard that does what a keyboard does in
 // a player. One thing it does that a video player cannot: the timeline is annotated, so a hill razed
-// or a colony wiped out can be found without scrubbing for it. And two things are drawn over the
-// board to say where to look: a ring around any hill an enemy is within eight moves of, and -- on a
-// toggle -- the territory each seat has explored, from the engine's own record of what it saw.
+// or a colony wiped out can be found without scrubbing for it. And three things are drawn over the
+// board to say what happened and where to look: the turn's deaths with a line from every killer,
+// the hills that fell, and a ring around any hill an enemy is within eight moves of -- plus, on a
+// toggle, the territory each seat has explored. The first two come from the frame's own record; no
+// rule is re-read.
 //
 // **Four tiers, one viewer.** A host picks the tier by the job the viewer does on its page, and the
 // tier decides which parts `build()` makes; it never changes what is simulated.
@@ -180,7 +182,7 @@ const CSS = `
 
 /* The only part of the tray that is clickable, so a drag anywhere else still pans the board. */
 .tb-viz .tb-tools{display:flex;gap:2px;margin-left:auto;padding:3px;pointer-events:auto;flex:none}
-.tb-viz .tb-tools button{width:28px;height:28px;padding:0;border-radius:5px;
+.tb-viz .tb-tools button{width:28px;height:28px;padding:0;border-radius:6px;
   color:var(--tb-over-ink)}
 .tb-viz .tb-tools button:hover:not(:disabled){background:rgba(238,243,255,.14)}
 .tb-viz .tb-tools button[aria-pressed=true]{background:rgba(238,243,255,.24)}
@@ -201,7 +203,7 @@ const CSS = `
 .tb-viz .tb-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;
   flex:none;background:var(--tb-panel);border-top:1px solid var(--tb-line)}
 .tb-viz button{font:inherit;color:var(--tb-ink);background:transparent;border:1px solid transparent;
-  border-radius:5px;padding:5px 7px;cursor:pointer;line-height:1;display:inline-flex;
+  border-radius:6px;padding:5px 7px;cursor:pointer;line-height:1;display:inline-flex;
   align-items:center;justify-content:center}
 .tb-viz button:hover:not(:disabled){background:var(--tb-raised)}
 .tb-viz button:disabled{opacity:.35;cursor:default}
@@ -217,6 +219,7 @@ const CSS = `
 
 .tb-viz .tb-track{position:relative;flex:1 1 80px;height:28px;display:flex;align-items:center;
   cursor:pointer;touch-action:none;min-width:80px}
+.tb-viz .tb-track:focus-visible{outline:2px solid var(--tb-accent);outline-offset:2px;border-radius:6px}
 .tb-viz .tb-rail{position:absolute;left:0;right:0;height:5px;border-radius:3px;
   background:var(--tb-raised)}
 .tb-viz .tb-fill{position:absolute;left:0;height:5px;border-radius:3px;background:var(--tb-accent)}
@@ -258,24 +261,26 @@ const CSS = `
 .tb-viz .tb-tag .tb-nm{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tb-viz .tb-tag .tb-sc{font:650 13px/1 var(--tb-mono);font-variant-numeric:tabular-nums}
 .tb-viz .tb-corner{position:absolute;top:6px;max-width:calc(50% - 9px);padding:3px 7px;
-  border-radius:5px;background:rgba(13,23,41,.82)}
+  border-radius:6px;background:rgba(13,23,41,.82)}
 .tb-viz .tb-corner.tb-l{left:6px}
 .tb-viz .tb-corner.tb-r{right:6px;flex-direction:row-reverse}
 .tb-viz .tb-list{position:absolute;top:6px;left:6px;display:grid;gap:2px;max-width:calc(100% - 12px);
-  padding:4px 8px;border-radius:5px;background:rgba(13,23,41,.82)}
+  padding:4px 8px;border-radius:6px;background:rgba(13,23,41,.82)}
 .tb-viz .tb-list .tb-sc{margin-left:auto;padding-left:10px}
 .tb-viz .tb-more{color:var(--tb-over-dim);font-weight:500;font-size:11.5px}
-.tb-viz .tb-at{position:absolute;right:6px;bottom:6px;padding:2px 6px;border-radius:5px;
+.tb-viz .tb-at{position:absolute;right:6px;bottom:6px;padding:2px 6px;border-radius:6px;
   background:rgba(13,23,41,.82);font:600 11.5px/1.2 var(--tb-mono);
   font-variant-numeric:tabular-nums}
 .tb-viz .tb-at[hidden]{display:none}
 /* The thumb's one addition, from 160 pixels up. */
 .tb-viz .tb-chips{position:absolute;left:5px;bottom:5px;display:flex;align-items:center;gap:6px;
-  padding:2px 6px;border-radius:5px;background:rgba(13,23,41,.82);color:var(--tb-over-ink);
+  padding:2px 6px;border-radius:6px;background:rgba(13,23,41,.82);color:var(--tb-over-ink);
   font:600 11.5px/1.2 var(--tb-mono);font-variant-numeric:tabular-nums;pointer-events:none}
 .tb-viz .tb-chips[hidden]{display:none}
 .tb-viz .tb-chips i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;
   background:var(--tb-seat)}
+.tb-viz .tb-chips .tb-chip{display:inline-flex;align-items:center;min-width:0}
+.tb-viz .tb-chips .tb-nm{max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:5px}
 
 /* ---------- the map visual: a board, not a match (map.js) ----------
    Three facts over the board and nothing else: its name, how many play it, how many cells it is.
@@ -872,8 +877,8 @@ export class Viewer {
     this.chips.hidden = true;
     const n = this.labels.length;
     this.chipTags = Array.from({ length: Math.min(n, 2) }, () => {
-      const s = this.make("span", null, this.chips);
-      return { sw: this.make("i", null, s), sc: this.make("span", null, s) };
+      const s = this.make("span", "tb-chip", this.chips);
+      return { sw: this.make("i", null, s), nm: this.make("span", "tb-nm", s), sc: this.make("span", null, s) };
     });
     if (n > 2) this.make("span", "tb-more", this.chips).textContent = `+${n - 2}`;
   }
@@ -883,6 +888,9 @@ export class Viewer {
     this.track = track;
     track.setAttribute("role", "slider");
     track.setAttribute("aria-label", "Turn");
+    // Focusable, so it is a real operable slider: the root's keydown handler (Arrow/Home/End)
+    // fires for the focused track by bubbling, so no key logic is duplicated here.
+    track.setAttribute("tabindex", "0");
     const rail = d.createElement("div");
     rail.className = "tb-rail";
     track.appendChild(rail);
@@ -1209,7 +1217,10 @@ export class Viewer {
     if (this.onTurn) this.onTurn(f);
   }
 
-  /** What the canvas says to a screen reader: the turn, each seat's ants and score, the threats. */
+  /**
+   * What the canvas says to a screen reader: the turn, each seat's ants and score, what the turn
+   * did (who lost ants, to whom; whose hill fell), and the threats.
+   */
   describe() {
     const f = this.frames[this.i];
     const ants = antsBySeat(f);
@@ -1224,7 +1235,7 @@ export class Viewer {
             ? this.names[i]
             : `${this.names[i]}: ${ants[i]} ant${ants[i] === 1 ? "" : "s"}, score ${s}`
         )
-        .concat(threats)
+        .concat(describeEvents(f, this.names), threats)
         .join(". ")}`
     );
   }
@@ -1288,6 +1299,7 @@ export class Viewer {
     const who = this.labels.length === 2 ? [0, 1] : leaders(f.score, 2);
     this.chipTags.forEach((c, k) => {
       c.sw.style.setProperty("--tb-seat", SEATS[who[k] % SEATS.length]);
+      c.nm.textContent = this.names[who[k]];
       c.sc.textContent = String(f.score[who[k]]);
     });
   }
@@ -1314,7 +1326,11 @@ export class Viewer {
       const water = expandRle(map.water, map.rows * map.cols);
       this.board = { rows: map.rows, cols: map.cols, water, steps: new Map() };
     }
-    const threats = this.board ? threatsIn(this.frames[i], this.board, THREAT_STEPS) : [];
+    // On a board the reach would cover, a ring says nothing: every hill is always "close", and
+    // the rings drawn across the wrap bury a lesson board under arcs. Draw them only where the
+    // reach is a region of the board rather than the whole of it.
+    const roomy = this.board && Math.min(this.board.rows, this.board.cols) > 2 * THREAT_STEPS + 1;
+    const threats = roomy ? threatsIn(this.frames[i], this.board, THREAT_STEPS) : [];
     this.threatCache = { i, frames: this.frames, threats };
     return threats;
   }
@@ -1511,6 +1527,32 @@ function findEvents(frames, lo, hi) {
       }
     }
   }
+  return out;
+}
+
+/**
+ * A frame's deaths and razings as sentences: how many ants each seat lost and to whom, and whose
+ * hill fell to whom. For the canvas's label; the board draws the same record.
+ */
+export function describeEvents(f, names) {
+  const out = [];
+  const lost = new Map();
+  for (const d of f.deaths ?? []) {
+    const seat = d.ant[2];
+    const e = lost.get(seat) ?? { n: 0, by: new Set(), collided: 0 };
+    e.n++;
+    if (d.by.length) for (const k of d.by) e.by.add(k[2]);
+    else e.collided++;
+    lost.set(seat, e);
+  }
+  for (const [seat, e] of [...lost].sort((a, b) => a[0] - b[0])) {
+    const who = [...e.by].sort().map((s) => names[s]);
+    let s = `${names[seat]} lost ${e.n} ant${e.n === 1 ? "" : "s"}`;
+    if (who.length) s += ` to ${who.join(" and ")}`;
+    if (e.collided) s += e.by.size ? `, ${e.collided} in a collision` : " in a collision";
+    out.push(s);
+  }
+  for (const [, , owner, by] of f.razed ?? []) out.push(`${names[owner]}'s hill razed by ${names[by]}`);
   return out;
 }
 

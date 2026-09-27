@@ -89,7 +89,9 @@ hidden until hovered, focused or touched; the key list opens over its bottom-lef
 | Transport | first, previous, play/pause, next, last |
 | Timeline | click to jump, drag to scrub; ticks mark a hill razed or a colony wiped out, in the seat's colour |
 | Zoom | stage only. Wheel about the cursor, drag to pan, −/+/fit buttons; opens fitted and stays fitted through a resize until zoomed |
-| Hill rings | a hill with an enemy ant within eight moves (round water, across the wrap) is ringed in its owner's colour |
+| Hill rings | a hill with an enemy ant within eight moves (round water, across the wrap) is ringed in its owner's colour; not on a board whose shorter side the reach would cover, where every hill is always close |
+| Deaths | each ant that died on the turn shown: a hollow ring with a cross on the square it died on, and a line in the killer's colour from every enemy that killed it, headed at the victim. Two ants that killed each other draw two lines that meet halfway between them. A collision is the ring alone |
+| Razed hills | a hill that fell on the turn shown: a dashed square in the owner's colour, crossed in the colour of the seat that took it |
 | Territory | stage only. The eye button or `E`: fog where nobody has looked, each seat's explored area and frontier, its share on its card |
 | Speed | stage only. Cycles 0.25× to 8× |
 | Fullscreen | the button or `F`. Where the browser has no fullscreen for an element (a phone), the viewer fills the window instead |
@@ -222,6 +224,10 @@ missing (a host hides the player with it while it fetches a replay). It imports 
 because a backtick inside a CSS comment ends the template literal and `node --check` does not
 notice.
 
+It also draws a frame with deaths (mutual and one-way) and a razed hill through the stubbed canvas
+and counts the lines and heads, and a frame from before the record existed to see that it still
+draws.
+
 The stored frame is `last-frame-basic-xlarge-8p.json`, the last frame of a thousand-turn match on
 the envelope's top board with eight seats (about 7 KB), made by `make-last-frame.mjs` and never by
 hand. It plays the match with the `tinybrains` CLI and the starter's models against a registry
@@ -254,11 +260,30 @@ last-frame-basic-xlarge-8p.json  that frame
 build.sh        the build into ../dist/viz/
 ```
 
+## The frame
+
+`replay-decode` answers one frame per turn, and a frame is the board after its turn plus what the
+turn did:
+
+```text
+{ turn, size: [rows, cols], water: { rle }, ants: [[r, c, owner, id]], food: [[r, c]],
+  hills: [[r, c, owner]], discovered: [[[r, c]], ...per seat],
+  deaths: [{ ant: [r, c, owner, id], by: [[r, c, owner, id]] }], razed: [[r, c, owner, by]],
+  score: [], ranks: [], done }
+```
+
+`deaths` lists each ant that died on that turn, on the square it died on, and `by` the enemies
+that killed it there (empty for a collision), each as it stood at that moment, dead or alive by the
+end of the turn. `razed` lists each hill that fell, with the seat that took it, the hills a lone
+survivor is credited with at the end included. Frame zero reports nothing. An ant's id is per seat
+and kept for life, so a host can follow one ant from a frame to the next.
+
 ## Invariants
 
 - **No rule is re-implemented here.** Territory comes from the engine: each `replay-decode` frame
-  says what each seat saw for the first time, and the shell only folds those. Ring step counts are
-  computed in the shell because they decide nothing about the match.
+  says what each seat saw for the first time, and the shell only folds those. Deaths, killers and
+  razed hills come from the frame's own record. Ring step counts are computed in the shell because
+  they decide nothing about the match.
 - **The viewer never runs a model.** It re-simulates recorded actions: no ONNX, no adapter, no
   competitor code in the browser.
 - **The stylesheet cannot leave the viewer.** One `<style>` goes into the host document on mount,
