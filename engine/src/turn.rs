@@ -161,16 +161,19 @@ fn battle(m: &mut Match) -> Vec<Death> {
         }
     }
     let focus: Vec<usize> = facing.iter().map(|f| f.len()).collect();
-    let killers = |i: usize| -> Vec<Ant> {
-        facing[i].iter().filter(|&&j| focus[j] <= focus[i]).map(|&j| m.ants[j]).collect()
-    };
-    let died: Vec<Death> = (0..n)
-        .map(killers)
-        .enumerate()
-        .filter(|(_, by)| !by.is_empty())
-        .map(|(i, by)| Death { ant: m.ants[i], by })
-        .collect();
-    let dead: Vec<bool> = (0..n).map(|i| facing[i].iter().any(|&j| focus[j] <= focus[i])).collect();
+    // Who killed an ant and whether it died are one question, not two: it dies exactly when that
+    // set is not empty. Asked once, so only an ant that dies allocates -- in a big fight this runs
+    // for every ant on the board.
+    let mut died: Vec<Death> = Vec::new();
+    let mut dead = vec![false; n];
+    for i in 0..n {
+        let by: Vec<Ant> =
+            facing[i].iter().filter(|&&j| focus[j] <= focus[i]).map(|&j| m.ants[j]).collect();
+        if !by.is_empty() {
+            dead[i] = true;
+            died.push(Death { ant: m.ants[i], by });
+        }
+    }
     m.ants = m.ants.iter().zip(&dead).filter(|&(_, &d)| !d).map(|(a, _)| *a).collect();
     died
 }
