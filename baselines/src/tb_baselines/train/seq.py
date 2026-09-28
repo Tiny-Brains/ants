@@ -44,6 +44,7 @@ import argparse
 import json
 import random
 import re
+import sys
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -52,7 +53,7 @@ import torch
 import torch.nn.functional as F
 
 from .. import nets
-from ..export import budget, classes
+from ..export import budget, classes, command
 from ..planes import ANT_MEMORY, ANT_TABLE, N_MEMORY
 from .bc import Rows, ant_logits, device, override, tensors
 
@@ -231,6 +232,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--holdout", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path, default=None)
+    argv = sys.argv[1:] if argv is None else argv
     a = ap.parse_args(argv)
 
     torch.manual_seed(a.seed)
@@ -284,6 +286,7 @@ def main(argv: list[str] | None = None) -> None:
     (out / "history.json").write_text(json.dumps(
         {"class": a.cls, "method": "bc", "arch": spec["arch"], "spec": spec, "memory": memory,
          "ants": a.ants, "bptt": a.bptt, "batch": a.batch, "data": str(a.data), "teacher": header.get("teacher"),
+         "seed": a.seed, "command": command("tb_baselines.train.seq", argv),
          "epochs": history, "engine_digest": header["engine_digest"], "device": dev.type},
         indent=2) + "\n")
     print(f"  -> {out / 'best.pt'}  (best held-out loss {best:.4f})")

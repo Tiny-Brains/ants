@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -32,7 +33,7 @@ import torch
 from onnx import numpy_helper
 
 from . import adapters, nets
-from .planes import ANT_MEMORY, MEMORY, N_MEMORY, N_PLANES
+from .planes import ANT_DTYPE, ANT_MEMORY, MEMORY, N_MEMORY, N_PLANES
 
 ROOT = Path(__file__).resolve().parents[2]
 OPSET = 17  # inside the deployment's 13-19, and what the reference fixtures use
@@ -326,7 +327,11 @@ CARD = """# {name}
 {memory}
 {notes}
 
-Reproduce with `{repro}`.
+Reproduce with:
+
+```sh
+{repro}
+```
 
 Inference time is measured on whatever machine ran the check and is **reported, never a gate**:
 there is no compute cap. It is here because the turn deadline is what a graph too expensive to
@@ -335,19 +340,33 @@ each with its own deadline.
 """
 
 
-def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
-               notes: str, repro: str) -> None:
+def memory_row(metrics: dict) -> str:
+    """What the model carries between turns, as the card's Memory row: the board memory, the memory
+    per ant, or both, and the price `check` read off the manifest for all of it."""
     mem = metrics.get("memory")
-    what = {"learned": "the graph's own, learned"}.get(
-        metrics.get("memory_kind"), ", ".join(m.name for m in MEMORY))
-    memory_row = "" if not mem else (
-        f"| Memory | `{N_MEMORY}` planes of `i8` ({what}), "
+    if not mem:
+        return ""
+    kind, ants = metrics.get("memory_kind"), metrics.get("ant_memory")
+    learned = {"learned": "the graph's own, learned"}
+    carries = []
+    if kind or not ants:
+        what = learned.get(kind, ", ".join(m.name for m in MEMORY))
+        carries.append(f"`{N_MEMORY}` planes of `i8` ({what})")
+    if ants:
+        carries.append(f"a row of `{ANT_MEMORY}` `{ANT_DTYPE}` values per ant, kept by id "
+                       f"({learned.get(ants, ants)})")
+    return (
+        f"| Memory | {' and '.join(carries)}, "
         f"{mem['cell_bytes']} bytes a cell: {mem['bytes_at_max']:,} bytes on the largest board. "
         f"The season's class has to allow it; `check` judged the round trip over "
         f"{mem['round_trip']['checked']} chained observations |\n"
     )
+
+
+def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
+               notes: str, repro: str) -> None:
     (out / "card.md").write_text(CARD.format(
-        memory=memory_row,
+        memory=memory_row(metrics),
         name=name, summary=summary, cls=metrics["class"],
         size=metrics["size_metric_bytes"], cap=metrics["class_max_bytes"],
         fill=metrics["fill_of_cap"], params=metrics["params"],
@@ -387,9 +406,39 @@ def shape_of(trunk: torch.nn.Module) -> dict:
     }
 
 
-def export(trunk: torch.nn.Module, name: str, out: Path, method: str,
-           summary: str = "", notes: str = "", repro: str = "") -> dict:
-    """The whole pipeline. Raises if the artifact misses its class."""
+def command(module: str, argv: list[str]) -> str:
+    """A command line as a person would type it from this directory."""
+    return shlex.join(["python", "-m", module, *argv])
+
+
+def recipe(weights: Path | None, argv: list[str]) -> str:
+    """The commands that made an artifact, one a line, for the card's Reproduce block.
+
+    Each step writes down its own command line (`collect` in the dataset's `.stats.json`, a
+    trainer in the run's `history.json`), so this reads them back rather than guessing flags a run
+    may have overridden: the dataset, the training run, and this export. A run from before the
+    trainers recorded it contributes nothing, and the card then names the export alone.
+    """
+    steps = []
+    history = weights.parent / "history.json" if weights else None
+    if history and history.exists():
+        h = json.loads(history.read_text())
+        if h.get("data"):
+            stats = Path(h["data"]).with_suffix("").with_suffix(".stats.json")
+            if stats.exists() and json.loads(stats.read_text()).get("command"):
+                steps.append(json.loads(stats.read_text())["command"])
+        if h.get("command"):
+            steps.append(h["command"])
+    steps.append(command("tb_baselines.export", argv))
+    return "\n".join(steps)
+
+
+def export(trunk: torch.nn.Module, name: str, out: Path, method: str, repro: str,
+           summary: str = "", notes: str = "") -> dict:
+    """The whole pipeline. Raises if the artifact misses its class.
+
+    `repro` is the card's Reproduce block: the commands that make this artifact again.
+    """
     out.mkdir(parents=True, exist_ok=True)
     model_path, manifest_path = out / "model.onnx", out / "manifest.json"
     manifest_path.write_text(adapters.dumps(
@@ -406,7 +455,7 @@ def export(trunk: torch.nn.Module, name: str, out: Path, method: str,
     metrics = report(name, said) | shape_of(trunk)
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     write_card(out, out.name, method, metrics,
-               summary or f"A {name}-class Ants policy.", notes, repro or "see README.md")
+               summary or f"A {name}-class Ants policy.", notes, repro)
 
     if problems:
         raise SystemExit(
@@ -433,6 +482,10 @@ def main(argv: list[str] | None = None) -> None:
                          "the weights likewise")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--method", default="untrained")
+    ap.add_argument("--repro", default=None,
+                    help="the card's Reproduce block (default: the dataset's, the run's and this "
+                         "export's own recorded command lines)")
+    argv = sys.argv[1:] if argv is None else argv
     a = ap.parse_args(argv)
 
     from .train.bc import override
@@ -447,7 +500,7 @@ def main(argv: list[str] | None = None) -> None:
     b = budget(a.cls)
     print(f"{a.cls}: {nets.policy_params(trunk):,} parameters, "
           f"budget about {b['params_at_target']:,} at {b['target_bytes']:,} bytes")
-    m = export(trunk, a.cls, a.out, a.method)
+    m = export(trunk, a.cls, a.out, a.method, a.repro or recipe(a.weights, argv))
     print(f"  S = {m['size_metric_bytes']:,} bytes, {m['fill_of_cap']:.0%} of the {a.cls} cap "
           f"(aiming at {m['target_fraction']:.0%})")
     print(f"  adapter {m['adapter_ops_max']:,} ops, inference {m['infer_us_max'] / 1000:.2f} ms "

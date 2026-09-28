@@ -104,9 +104,6 @@ blocks = 3            # four 3x3s at dilations 1, 2, 4, 8: reach 15 cells each w
 ## the teacher grows 33. Nine channels that can see fifteen cells is the better trade, and finding
 ## that out is most of what this repository is for.
 target_params = 2939
-## THE 2011 WINNER'S COLUMN FILLS THE CLASS: 10 channels, 3 blocks and the bot's two-plane memory
-## (its flood as convolutions) measure 16,368 bytes after `export.py` shortens the graph, 16 under
-## the cap, at 4,012 parameters; 11 channels is 17,840 and does not fit.
 
 [[class]]
 name = "micro"
@@ -120,9 +117,6 @@ blocks = 3            # reach 15 cells, as nano
 ## to the 3,005-parameter nano over 18 boards while growing bigger colonies. Capacity was not what
 ## it was short of.
 target_params = 24001
-## THE 2011 WINNER'S COLUMN FILLS THE CLASS: 43 channels with the bot's memory and a mission an ant
-## measure 129,672 bytes (99%) at about 57,700 parameters, 52 ms at the worst reference board;
-## 44 channels is 134,879 and does not fit. The deadline is nowhere near.
 
 [[class]]
 name = "mini"

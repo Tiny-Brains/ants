@@ -34,6 +34,8 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import shlex
+import sys
 import time
 from pathlib import Path
 
@@ -154,12 +156,16 @@ def main(argv: list[str] | None = None) -> None:
                     help="board ids, paths, or a directory of boards; default the release's basic ones")
     ap.add_argument("--remember", action="store_true",
                     help="the teacher reads each seat's memory, so the labels depend on it")
+    argv = sys.argv[1:] if argv is None else argv
     a = ap.parse_args(argv)
 
     stats = collect(
         a.out, a.seat_turns, waves=a.waves, matches_per_wave=a.matches_per_wave,
         max_turns=a.max_turns, seed=a.seed, maps=a.maps, remembers=a.remember,
     )
+    # The command line goes beside the numbers, so an export can print the recipe that made its
+    # dataset on the model card rather than a pointer to a README.
+    stats["command"] = shlex.join(["python", "-m", "tb_baselines.collect", *argv])
     (a.out.with_suffix("").with_suffix(".stats.json")).write_text(json.dumps(stats, indent=2) + "\n")
     print(json.dumps(stats, indent=2))
 

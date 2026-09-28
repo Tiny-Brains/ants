@@ -51,7 +51,7 @@ The class ladder's own dataset is still collected without a memory, so its teach
 
 | Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
 |---|---|---|---|---|
-| the fixed memory | remembering | 81.8% | 72% | 4.44 / 2.32 |
+| the fixed memory (the starter's `nano-bc-max-r`) | remembering | 81.8% | 72% | 4.44 / 2.32 |
 | the board alone | remembering | 81.0% | 49% | 3.46 / 3.38 |
 | the learned memory | remembering | 77.0% | 47% | 3.15 / 3.53 |
 | the fixed memory | forgetting | 82.8% | 45% | 3.24 / 3.69 |
@@ -90,12 +90,12 @@ pip install -e '.[dev]'                  # torch, numpy, onnx, pytest
 pytest tests/ -q                                    # the conformance gate; see below
 python -m tb_baselines.collect --seat-turns 250000  # the teacher dataset, about 9 minutes and 90 MB
 python -m tb_baselines.train.bc --class micro --epochs 6
-python -m tb_baselines.train.bc --class micro --arch percell --channels 112 --blocks 2   # the control
+python -m tb_baselines.train.bc --class micro --arch percell --channels 108 --blocks 2 --epochs 5 --out runs/micro-percell   # the control
 python -m tb_baselines.collect --remember --seat-turns 250000 --out data/teacher-memory.jsonl.gz  # the memory column's teacher
-python -m tb_baselines.train.bc --class nano --memory --data data/teacher-memory.jsonl.gz --epochs 5    # a fixed memory
-python -m tb_baselines.train.seq --class nano --memory learned --data data/teacher-memory.jsonl.gz     # a learned one
-python -m tb_baselines.train.seq --class micro --memory learned --ants --data data/teacher-memory.jsonl.gz   # and one per ant
-python -m tb_baselines.export --class nano --weights runs/nano-bc-memory/best.pt --out models/nano-bc-memory
+python -m tb_baselines.train.bc --class nano --memory --data data/teacher-memory.jsonl.gz --epochs 5 --out runs/nano-bc-max-r   # a fixed memory
+python -m tb_baselines.train.seq --class nano --memory learned --data data/teacher-memory.jsonl.gz --out runs/nano-bc-learned-r   # a learned one
+python -m tb_baselines.train.seq --class micro --memory learned --ants --data data/teacher-memory.jsonl.gz --out runs/micro-bc-learned-ants-r   # and one per ant
+python -m tb_baselines.export --class nano --weights runs/nano-bc-max-r/best.pt --out models/nano-bc-max-r
 python -m tb_baselines.train.ppo --class micro --iters 200                              # self-play
 python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
 python -m tb_baselines.eval models/micro-bc ../../ants-starter/models/nano-bc --boards 3
@@ -103,7 +103,13 @@ python -m tb_baselines.eval models/micro-bc ../../ants-starter/models/nano-bc --
 
 `export` writes `model.onnx`, the generated `manifest.json`, a `metrics.json` of what
 `tinybrains check` measured, and a `card.md` a person can read into `models/<class>-<method>/`, which
-is gitignored. It refuses an artifact that misses its class. A model worth keeping is committed to
+is gitignored. The card's *Reproduce* block is the commands that made it, read back from the
+dataset's `.stats.json` and the run's `history.json`, which record their own command lines; a
+run made before they did names the export alone. The memory column's runs are named for what they
+carry and what taught them, so a name says which row of the table it is: `-max` is `planes.MEMORY`
+kept by `Max`, `-learned` the graph's own, `-ants` a memory per ant, and `-r` the remembering
+teacher's labels. `train.bc --memory` without `--out` writes `runs/<class>-bc-memory`, the name of
+the fixed memory on the *forgetting* labels (the 45% row). It refuses an artifact that misses its class. A model worth keeping is committed to
 ants-starter's `models/` for competitors to test against, or uploaded into a season as a baseline.
 
 ### The one test that matters
