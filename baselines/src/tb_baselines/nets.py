@@ -50,7 +50,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .planes import ANT_MEMORY, MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES, PLANES
+from .planes import ANT_MEMORY, MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES
 
 
 def wrap(x: torch.Tensor, k: int) -> torch.Tensor:
@@ -299,18 +299,6 @@ class LearnedMemory(nn.Module):
         return self.trunk.head(f), self.write(f, board, memory_in)
 
 
-def roll(x: torch.Tensor, shift: int, dim: int) -> torch.Tensor:
-    """A shift of one cell on a board axis, wrapping: the two slices and the concat it exports to,
-    with constant bounds so the graph reads no shape (`Slice` and `Concat`, nothing more)."""
-    assert dim in (2, 3) and shift in (1, -1)
-    if dim == 2:
-        return torch.cat([x[:, :, -1:], x[:, :, :-1]], dim=2) if shift == 1 else torch.cat([x[:, :, 1:], x[:, :, :1]], dim=2)
-    return torch.cat([x[:, :, :, -1:], x[:, :, :, :-1]], dim=3) if shift == 1 else torch.cat([x[:, :, :, 1:], x[:, :, :, :1]], dim=3)
-
-
-PLANE = {p.name: i for i, p in enumerate(PLANES)}
-
-
 class PerAnt(nn.Module):
     """A memory per ant beside the board's, or alone: `planes.ANT_MEMORY` values an ant keeps for
     life, learned as `LearnedMemory`'s planes are and carried in the open under `ant_memory`.
@@ -445,5 +433,9 @@ class ActorCritic(nn.Module):
 def policy_params(model: nn.Module) -> int:
     """What the class is measured on: the exported half only. A memory wrapper ships whole (its
     gates are in the graph); an actor-critic ships its trunk and leaves the value head behind."""
-    exported = model if getattr(model, "memory_ports", False) else getattr(model, "trunk", model)
+    # "Does this module ship whole", not "does it carry a board memory": `PerAnt.memory_ports` is
+    # False when it wraps no inner memory (`--memory none --ants`), and its gate and candidate are
+    # exported all the same, so asking the narrower question left them out of the count.
+    whole = getattr(model, "memory_ports", False) or getattr(model, "ant_ports", False)
+    exported = model if whole else getattr(model, "trunk", model)
     return sum(p.numel() for p in exported.parameters())

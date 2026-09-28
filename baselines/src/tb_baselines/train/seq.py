@@ -98,8 +98,8 @@ def batches(rows: Rows, seqs: list[list[int]], size: int, rng: random.Random, sh
     return out
 
 
-def initial_memory(kind, n: int, size, dev) -> torch.Tensor:
-    """Turn 0's memory for `n` seats: zeros."""
+def initial_memory(n: int, size, dev) -> torch.Tensor:
+    """Turn 0's memory for `n` seats: zeros, whatever kind of memory the graph carries."""
     return torch.zeros((n, N_MEMORY, *size), device=dev)
 
 
@@ -151,7 +151,6 @@ def run_epoch(model, rows, chunks, dev, opt=None, bptt: int = 32) -> tuple[float
     train = opt is not None
     model.train(train)
     board_memory = getattr(model, "memory_ports", False)
-    memory_kind = getattr(model, "memory_kind", None)
     per_ant = getattr(model, "ant_ports", False)
     ant_kind = getattr(model, "ant_kind", "learned") if per_ant else None
     total_loss = correct = seen = 0
@@ -169,7 +168,7 @@ def run_epoch(model, rows, chunks, dev, opt=None, bptt: int = 32) -> tuple[float
                 args = [boards]
                 if board_memory:
                     if h is None:
-                        h = initial_memory(memory_kind, len(live), boards.shape[2:], dev)
+                        h = initial_memory(len(live), boards.shape[2:], dev)
                     else:
                         h = h[: len(live)]
                     args.append(h)

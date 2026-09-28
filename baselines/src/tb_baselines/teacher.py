@@ -68,8 +68,6 @@ it costs to forget.
 
 from __future__ import annotations
 
-from collections import deque
-
 import numpy as np
 
 from .planes import MOVES
