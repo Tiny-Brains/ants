@@ -697,6 +697,16 @@ const has = (v, cls) => find(v.el, cls).length > 0;
 const board = (id) => JSON.parse(readFileSync(`../maps/${id}.json`, "utf8"));
 const unplayed = (map) => ({ seed: 1, max_turns: 1, turns: 0, map, deltas: [] });
 const lastFrame = JSON.parse(readFileSync("./last-frame-basic-xlarge-8p.json", "utf8"));
+// The stored frame is what Soma keeps for a match and what a tile or a thumb draws without
+// decoding anything, so it has to be the shape THIS engine emits. It sat two digests behind --
+// three-element ants, no `deaths`, no `razed` -- because `make-last-frame.mjs` wrote the digest it
+// played on and nothing ever read it back. This is what makes writing it mean something.
+const distEngine = JSON.parse(readFileSync("../dist/viz/engine.json", "utf8")).engine_digest;
+check(
+  "the stored last frame is this engine's",
+  lastFrame.engine_digest === distEngine,
+  `fixture ${lastFrame.engine_digest}, dist ${distEngine}; regenerate with \`node make-last-frame.mjs\``
+);
 const labels8 = lastFrame.seats.map((s) => ({ seat: s.seat, name: s.name }));
 const labels2 = [
   { seat: 0, name: "left-model", by: "@one" },
