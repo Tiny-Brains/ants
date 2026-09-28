@@ -50,8 +50,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .planes import (ANT_MEMORY, MEMORY_SOURCES, MISSION, N_MEMORY, N_MOVES, N_PLANES, PLANES,
-                     XATHIS_MEMORY, XATHIS_REACH, XATHIS_STAY_CAP)
+from .planes import ANT_MEMORY, MEMORY_SOURCES, N_MEMORY, N_MOVES, N_PLANES, PLANES
 
 
 def wrap(x: torch.Tensor, k: int) -> torch.Tensor:
@@ -312,85 +311,6 @@ def roll(x: torch.Tensor, shift: int, dim: int) -> torch.Tensor:
 PLANE = {p.name: i for i, p in enumerate(PLANES)}
 
 
-class XathisMemory(nn.Module):
-    """The 2011 winner's two board memories, as the graph computes them (`planes.py`, *the 2011
-    winner's memory*). Nothing here is learned: `read` turns the two `u8` planes into what the
-    trunk sees, and `write` is the bot's update, its ten-step walk from every own ant and hill
-    through land (`reach="walk"`) or, where a class cannot afford those nodes, the view itself
-    (`reach="sight"`), and its stillness detector over the enemies in view.
-
-    Both are written as convolutions with fixed kernels over a board wrapped once, because a graph
-    is priced by its bytes: a step of the walk is one 3x3 cross `Conv` (the four neighbours), a
-    `Clip` and a `Mul` by the land, against the twelve `Slice` and `Concat` nodes a shift a side
-    would cost; the neighbour mask is one `Conv` whose kernel holds 1, 2, 4 and 8 at N, E, S, W.
-    """
-
-    memory_ports = True
-    memory_kind = "xathis"
-    dtype = torch.uint8
-
-    def __init__(self, trunk: nn.Module, reach: str = "walk"):
-        super().__init__()
-        self.trunk = trunk
-        self.channels = trunk.channels
-        self.reach = reach
-        cross = torch.tensor([[0.0, 1.0, 0.0], [1.0, 1.0, 1.0], [0.0, 1.0, 0.0]]).reshape(1, 1, 3, 3)
-        # The mask kernel reads the neighbour's plane: a foe NORTH of the cell is at row -1.
-        mask = torch.tensor([[0.0, 1.0, 0.0], [8.0, 0.0, 2.0], [0.0, 4.0, 0.0]]).reshape(1, 1, 3, 3)
-        self.register_buffer("cross", cross)
-        self.register_buffer("mask_kernel", mask)
-
-    @staticmethod
-    def planes() -> int:
-        """What the trunk sees for the memory: explore scaled, the stay count scaled, will-stay."""
-        return 3
-
-    def read(self, memory_in: torch.Tensor) -> torch.Tensor:
-        m = memory_in.float()
-        explore = m[:, 0:1] / 255.0
-        stay = m[:, 1:2]
-        # Strict comparisons on half-integers: `GreaterOrEqual` is not on the operator allowlist,
-        # `Greater` is, and the planes hold integers.
-        has = (stay > 127.5).float()
-        count = torch.floor((stay - 128.0) / 16.0) * has
-        return torch.cat([explore, count / XATHIS_STAY_CAP, (count > 4.5).float()], dim=1)
-
-    def write(self, f: torch.Tensor, board: torch.Tensor, memory_in: torch.Tensor) -> torch.Tensor:
-        b = board.float()
-        water = b[:, PLANE["water"]:PLANE["water"] + 1]
-        m = memory_in.float()
-        explore, stay = m[:, 0:1], m[:, 1:2]
-        if self.reach == "walk":
-            land = 1.0 - water
-            src = torch.clamp(b[:, PLANE["mine"]:PLANE["mine"] + 1] + b[:, PLANE["hill_mine"]:PLANE["hill_mine"] + 1], 0, 1) * land
-            # Wrapped once, a cell wider than the walk: each step is a cross convolution padded
-            # with zeros, which is wrong only at the outermost ring and creeps inward a cell a
-            # step, so the margin keeps the board itself exact and is cropped off at the end.
-            k = XATHIS_REACH + 1
-            reach = wrap(src, k)
-            land_w = wrap(land, k)
-            for _ in range(XATHIS_REACH):
-                reach = torch.clamp(F.conv2d(reach, self.cross, padding=1), 0, 1) * land_w
-            reach = reach[:, :, k:-k, k:-k]
-        else:
-            reach = b[:, PLANE["visible"]:PLANE["visible"] + 1]
-        explore = (1.0 - reach) * torch.clamp(explore + 1.0, max=255.0)
-
-        foes = b[:, PLANE["foes"]:PLANE["foes"] + 1]
-        mask = F.conv2d(wrap(foes, 1), self.mask_kernel)
-        has_prev = (stay > 127.5).float()
-        count_prev = torch.floor((stay - 128.0) / 16.0) * has_prev
-        mask_prev = (stay - 128.0 - 16.0 * count_prev) * has_prev
-        same = has_prev * torch.eq(mask, mask_prev).float()
-        count = foes * same * torch.clamp(count_prev + 1.0, max=float(XATHIS_STAY_CAP))
-        stay = foes * (128.0 + mask + 16.0 * count)
-        return torch.cat([explore, stay], dim=1).to(torch.uint8)
-
-    def forward(self, board: torch.Tensor, memory_in: torch.Tensor):
-        f = self.trunk.features(torch.cat([board.float(), self.read(memory_in)], dim=1))
-        return self.trunk.head(f), self.write(f, board, memory_in)
-
-
 class PerAnt(nn.Module):
     """A memory per ant beside the board's, or alone: `planes.ANT_MEMORY` values an ant keeps for
     life, learned as `LearnedMemory`'s planes are and carried in the open under `ant_memory`.
@@ -418,15 +338,9 @@ class PerAnt(nn.Module):
         self.inner = inner
         self.channels = trunk.channels
         self.kind = kind
-        self.planes = MISSION if kind == "mission" else planes
-        if kind == "mission":
-            # A mission head: has it one (a logit), and the wrapped offset to its target in
-            # cells, scaled so tanh covers a board.
-            self.mission = nn.Conv2d(trunk.channels + MISSION, MISSION, 1)
-            self.aux: dict | None = None
-        else:
-            self.gate = nn.Conv2d(trunk.channels + planes, planes, 1)
-            self.cand = nn.Conv2d(trunk.channels + planes, planes, 1)
+        self.planes = planes
+        self.gate = nn.Conv2d(trunk.channels + planes, planes, 1)
+        self.cand = nn.Conv2d(trunk.channels + planes, planes, 1)
 
     ant_kind = property(lambda self: self.kind)
 
@@ -443,12 +357,7 @@ class PerAnt(nn.Module):
             memory_in, ant_planes, ids, cells = rest
         else:
             memory_in, (ant_planes, ids, cells) = None, rest
-        if self.kind == "mission":
-            # has as is, the offsets back to cells over 64
-            ap = ant_planes.float()
-            a = torch.cat([ap[:, 0:1], (ap[:, 1:3] - 128.0) / 64.0], dim=1)
-        else:
-            a = ant_planes.float() / 127.5 - 1.0
+        a = ant_planes.float() / 127.5 - 1.0
         parts = [board.float()]
         if self.inner is not None:
             parts.append(self.inner.read(memory_in))
@@ -457,9 +366,6 @@ class PerAnt(nn.Module):
         outputs = [self.trunk.head(f)]
         if self.inner is not None:
             outputs.append(self.inner.write(f, board, memory_in))
-
-        if self.kind == "mission":
-            return tuple(outputs + [self._mission_rows(f, a, board, ids, cells)])
 
         fa = torch.cat([f, a], dim=1)
         z = torch.sigmoid(self.gate(fa))
@@ -475,47 +381,19 @@ class PerAnt(nn.Module):
         outputs.append(ant_memory if self.training else ant_memory.to(torch.uint8))
         return tuple(outputs)
 
-    def _mission_rows(self, f, a, board, ids, cells):
-        """One row an ant, `[id, has, target_row, target_col]`: the head's has-logit rounded, and
-        its offsets added to the ant's own cell, wrapping. In training the raw heads at the ants'
-        cells are kept on `self.aux` for the mission loss."""
-        raw = self.mission(torch.cat([f, a], dim=1))                    # [B, 3, H, W]
-        flat = raw.flatten(2)                                            # [B, 3, H*W]
-        index = cells.unsqueeze(1).expand(-1, MISSION, -1)               # [B, 3, N]
-        at = torch.gather(flat, 2, index)                                # [B, 3, N]
-        has_logit, dr, dc = at[:, 0], torch.tanh(at[:, 1]) * 64.0, torch.tanh(at[:, 2]) * 64.0
-        if self.training:
-            self.aux = {"has": has_logit, "dr": dr, "dc": dc}
-        # The board's height and width as the graph reads them at run time (a traced size, never
-        # a Python number, or the export would freeze the probe's 128).
-        h = torch.as_tensor(board.shape[2]).to(torch.float32)
-        w = torch.as_tensor(board.shape[3]).to(torch.float32)
-        r = torch.floor(cells.float() / w)
-        c = cells.float() - r * w
-        tr = r + torch.floor(dr + 0.5)
-        tc = c + torch.floor(dc + 0.5)
-        tr = tr - h * torch.floor(tr / h)
-        tc = tc - w * torch.floor(tc / w)
-        has = torch.floor(torch.sigmoid(has_logit) + 0.5)
-        rows = torch.stack([ids.float(), has, tr, tc], dim=2)          # [B, N, 4]
-        return rows if self.training else rows.to(torch.uint8)
-
 
 ARCHS = {"trunk": Trunk, "encdec": EncDec, "percell": PerCell}
 
-MEMORIES = {"max": WithMemory, "learned": LearnedMemory, "xathis": XathisMemory,
-            "xathis-sight": lambda trunk: XathisMemory(trunk, reach="sight")}
-MEMORY_PLANES = {"max": N_MEMORY, "learned": N_MEMORY, "xathis": XathisMemory.planes(),
-                 "xathis-sight": XathisMemory.planes()}
-ANT_PLANES = {"learned": ANT_MEMORY, "mission": MISSION}
+MEMORIES = {"max": WithMemory, "learned": LearnedMemory}
+MEMORY_PLANES = {"max": N_MEMORY, "learned": N_MEMORY}
+ANT_PLANES = {"learned": ANT_MEMORY}
 
 
 def build(spec: dict, memory: bool | str = False, ants: bool | str = False) -> nn.Module:
     """One class's entry from `classes.toml` to a module; with `memory`, one that carries a memory
     beside the board: `"max"` (or True) is `planes.MEMORY` kept with `Max`, `"learned"` is
-    `LearnedMemory`, `"xathis"` the 2011 winner's two planes (`"xathis-sight"` with the view as
-    its reach); with `ants`, one that carries a row per ant too: `"learned"` (or True) values the
-    graph learns, `"mission"` the bot's mission."""
+    `LearnedMemory`; with `ants`, one that carries a row per ant too: `"learned"` (or True) values
+    the graph learns."""
     arch = spec["arch"]
     if arch not in ARCHS:
         raise ValueError(f"no architecture '{arch}' (have: {', '.join(sorted(ARCHS))})")

@@ -68,14 +68,6 @@ for an adapter over budget. Never report a result from the env as a result.
   turns is the rounded integer the runner carries, through a straight-through estimator in
   `nets.LearnedMemory` and `nets.PerAnt`. `train/bc.py` is for a memory that is a fixed function
   of the rows before (`planes.MEMORY`), which numpy can carry.
-- **`xathis.py` is a port, and stays one.** A change to what the bot does is a change to the
-  Java it cites, so none is made here; the four things the port decides for itself (evaluation
-  budgets for the clock, `java.util.Random` bit for bit, sorted keys for the two random
-  comparators, the observation's iteration order) are named in its docstring and nowhere else.
-  Its memory for a model is the pure part of what it keeps: `planes.xathis_remember` and
-  `nets.XathisMemory.write` are one function (the conformance test holds them equal, walk and
-  sight), and the explore claims an ant makes when it picks a direction are the bot's decisions,
-  which the plane does not carry.
 - **A graph is weighed whole, so `export.py` shortens it.** `shorten` drops node names, renames
   every intermediate tensor to a short id and shares repeated `Constant` nodes; the ports and the
   initializers keep their names. The size a class is filled to is measured after it, and a change
@@ -116,10 +108,6 @@ for an adapter over budget. Never report a result from the env as a result.
   `memory` or `ant_memory` needs the carry; 0.3.0 refuses the nested arrays and the test names the
   cause. Ants' CI builds the CLI from cli's `main`, so these pass there only once the carry is on
   `main`.
-- **The 2011 winner's walk is written as convolutions.** Ten steps of a 4-neighbour flood as
-  shifts were 180 nodes and 60 KB of graph; as one wrap of eleven cells and ten padded 3x3 cross
-  convolutions it is 30, and fits nano beside the trunk. Do the same for any other fixed update:
-  a shift a side is twelve nodes, a kernel is one.
 - **`tinybrains check` passing is not the allowlist passing, until cli `b7e1625`.** A graph with a
   `GreaterOrEqual` ran through `check` and was `OP_NOT_ALLOWED` at admission; the runtime executes
   more than the deployment allows. Write comparisons as `Greater` on half-integer thresholds, and

@@ -1,6 +1,6 @@
 """Join datasets collected in parallel into one, keeping every seat's rows its own.
 
-    python -m tb_baselines.merge data/xathis-1[1-5].jsonl.gz --out data/xathis.jsonl.gz
+    python -m tb_baselines.merge data/teacher-[1-5].jsonl.gz --out data/teacher.jsonl.gz
 
 A teacher too slow for one process is collected by several, each from its own seed, and
 `train/seq.py` reads a seat's rows back in order by `k = [episode, seat, turn]`. Each collector

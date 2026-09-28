@@ -45,20 +45,6 @@ it. On that dataset three models are trained the same way and differ only in wha
 
 The class ladder's own dataset is still collected without a memory, so its teacher is unchanged.
 
-**The 2011 winner's column** is a second teacher: `xathis.py`, a port of the bot that won the
-contest this game comes from (`Strategy.java`, method for method, tie-break for tie-break; its
-docstring names the four things the Java left to its runtime and what this port does instead,
-the wall-clock timeouts first of all). It keeps three things between turns, and a model built on
-it carries the same three: two `u8` board planes (`planes.py`, *the 2011 winner's memory*) whose
-update the graph computes exactly, the bot's ten-step walk from every own ant and hill included,
-and a mission per ant as `[id, has, target_row, target_col]`, which the graph is taught to write
-from the dataset's `x` and reads back as the offset to its target. `collect.py --xathis` collects
-it (70 ms a seat-turn in Python, so `merge.py` joins what several collectors wrote), and the two
-models fill their classes to the byte: nano at 10 channels with the two planes, 16,368 of 16,384
-bytes, and micro at 43 with the missions too, 129,672 of 131,072. A graph is weighed whole, so
-`export.py` strips every name the runtime never reads and shares its repeated constants, which is
-a third of nano back for every model here.
-
 **What the column measured**, all at nano, five epochs each, then a round robin through
 `tinybrains <match>` over the nine two-seat boards of a season, both seats of every pairing,
 1000 turns (`eval.py`; the model cards carry each artifact's own numbers):
@@ -80,26 +66,6 @@ And at micro, the same round robin with the memory per ant:
 | the learned memory and a memory per ant | remembering | 88.6% | 46% | 3.37 / 3.37 |
 | no receptive field (the starter's `micro-percell`) | forgetting | | 17% | 1.07 / 5.35 |
 
-And the 2011 winner's column at nano, in the same round robin:
-
-| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
-|---|---|---|---|---|
-| the board alone (the starter's `micro-bc`) | forgetting | 82% | 76% | 5.11 / 1.78 |
-| the bot's two planes, nano at 10 channels | the 2011 winner's | 59.6% | 60% | 3.54 / 3.08 |
-| the fixed memory | remembering | 81.8% | 51% | 3.44 / 3.36 |
-| the board alone | remembering | 81.0% | 35% | 2.57 / 4.19 |
-| the board alone (the starter's `nano-bc`) | forgetting | 81.9% | 28% | 2.24 / 4.49 |
-
-And the column's micro, with the missions, in the same round robin:
-
-| Carries | Labels | Held-out agreement | Round-robin rate | Points a match, for / against |
-|---|---|---|---|---|
-| the bot's two planes and a mission an ant, micro at 43 channels | the 2011 winner's | 67.3% | 77% | 5.06 / 1.68 |
-| the board alone (the starter's `micro-bc`) | forgetting | 82% | 62% | 4.19 / 2.53 |
-| the bot's two planes, nano at 10 channels | the 2011 winner's | 59.6% | 51% | 2.99 / 3.57 |
-| the learned memory and a memory per ant | remembering | 88.6% | 47% | 3.54 / 3.17 |
-| no receptive field (the starter's `micro-percell`) | forgetting | | 12% | 0.86 / 5.69 |
-
 Three things to read off it. **A memory is worth a great deal once the labels use it**: the same
 class, data and method with and without the two planes is 72% against 49%, eleven wins to two
 head to head, and the difference is points, a remembered hill razed. **Agreement does not say
@@ -111,12 +77,7 @@ the baseline until a longer run says otherwise. **And capacity beats memory acro
 starter's plain micro, eight times the parameters trained flat, beats the fixed-memory nano
 12-2-4 and the per-ant micro 13-4-1, whose 88.6% agreement with its teacher is the highest here
 and whose play is the weaker for having been trained on a tenth of the optimiser steps. A memory
-per ant proves its path; its worth waits on a trainer that steps as often as bc.py does. **And
-the teacher is worth more than the agreement**: the 2011 winner's nano agrees with its bot on
-six moves in ten and beats every other nano here, 9-4-5 over the fixed memory and 11-4-3 over the
-board alone, because the moves it does get right are the ones a stronger player makes. Its micro,
-with the bot's missions carried per ant, is the strongest model here: 10-1-7 over the starter's
-plain micro, 14-2-2 over the per-ant micro and 11-6-1 over its own nano.
+per ant proves its path; its worth waits on a trainer that steps as often as bc.py does.
 
 ## Run it
 
@@ -135,10 +96,6 @@ python -m tb_baselines.train.bc --class nano --memory --data data/teacher-memory
 python -m tb_baselines.train.seq --class nano --memory learned --data data/teacher-memory.jsonl.gz     # a learned one
 python -m tb_baselines.train.seq --class micro --memory learned --ants --data data/teacher-memory.jsonl.gz   # and one per ant
 python -m tb_baselines.export --class nano --weights runs/nano-bc-memory/best.pt --out models/nano-bc-memory
-for s in 11 12 13 14 15; do python -m tb_baselines.collect --xathis --seat-turns 50000 --seed $s --out data/xathis-$s.jsonl.gz & done; wait
-python -m tb_baselines.merge data/xathis-1?.jsonl.gz --out data/xathis.jsonl.gz                  # the 2011 winner's column
-python -m tb_baselines.train.seq --class nano --channels 10 --memory xathis --bptt 1 --batch 32 --data data/xathis.jsonl.gz
-python -m tb_baselines.train.seq --class micro --channels 43 --memory xathis --ants mission --bptt 1 --batch 32 --data data/xathis.jsonl.gz
 python -m tb_baselines.train.ppo --class micro --iters 200                              # self-play
 python -m tb_baselines.export --class micro --weights runs/micro-bc/best.pt --out models/micro-bc
 python -m tb_baselines.eval models/micro-bc ../../ants-starter/models/nano-bc --boards 3
@@ -222,10 +179,9 @@ src/tb_baselines/
   adapters.py                   generates manifest.json from planes.py, with the memory ports on request
   env.py                        client for `tinybrains env`
   teacher.py                    the scripted bot the class ladder is distilled from; remembering, the memory column's
-  xathis.py                     the 2011 winner's bot, ported: the second column's teacher, and what it remembers
   collect.py                    teacher rollouts to a dataset, each row carrying what the seat remembered and its place in its match
   merge.py                      datasets collected in parallel joined into one, their episodes kept apart
-  nets.py                       one architecture per class, and the three memories a graph can carry
+  nets.py                       one architecture per class, and the memories a graph can carry
   train/bc.py                   behaviour cloning
   train/seq.py                  behaviour cloning over a seat's turns in order, for a memory the graph computes
   train/ppo.py                  PPO self-play

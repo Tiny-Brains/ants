@@ -32,7 +32,7 @@ import torch
 from onnx import numpy_helper
 
 from . import adapters, nets
-from .planes import ANT_MEMORY, MEMORY, MISSION, N_MEMORY, N_PLANES, XATHIS_MEMORY
+from .planes import ANT_MEMORY, MEMORY, N_MEMORY, N_PLANES
 
 ROOT = Path(__file__).resolve().parents[2]
 OPSET = 17  # inside the deployment's 13-19, and what the reference fixtures use
@@ -96,11 +96,9 @@ def to_onnx(trunk: torch.nn.Module, path: Path, planes: int = N_PLANES) -> None:
         axes |= {"memory_in": {0: "B", 2: "H", 3: "W"}, "memory": {0: "B", 2: "H", 3: "W"}}
     # A memory per ant adds the adapter's three inputs and one row an ant out; the ant axis is
     # dynamic, since a colony is any size.
-    if getattr(trunk, "memory_ports", False) and getattr(trunk, "memory_kind", None) in ("xathis", "xathis-sight"):
-        example = example[:1] + (torch.zeros(1, XATHIS_MEMORY, 128, 128, dtype=torch.uint8),) + example[2:]
     if getattr(trunk, "ant_ports", False):
         n = 8
-        k = MISSION if getattr(trunk, "ant_kind", None) == "mission" else ANT_MEMORY
+        k = ANT_MEMORY
         example += (torch.zeros(1, k, 128, 128, dtype=torch.uint8),
                     torch.arange(n, dtype=torch.int64).reshape(1, n),
                     torch.arange(n, dtype=torch.int64).reshape(1, n) * 129)
@@ -340,9 +338,7 @@ each with its own deadline.
 def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
                notes: str, repro: str) -> None:
     mem = metrics.get("memory")
-    what = {"learned": "the graph's own, learned",
-            "xathis": "the 2011 winner's: turns since within reach, and an enemy's stillness",
-            "xathis-sight": "the 2011 winner's, reset by sight"}.get(
+    what = {"learned": "the graph's own, learned"}.get(
         metrics.get("memory_kind"), ", ".join(m.name for m in MEMORY))
     memory_row = "" if not mem else (
         f"| Memory | `{N_MEMORY}` planes of `i8` ({what}), "
@@ -383,7 +379,7 @@ def shape_of(trunk: torch.nn.Module) -> dict:
     ants = getattr(trunk, "ant_kind", None) if getattr(trunk, "ant_ports", False) else None
     return {
         "arch": type(inner).__name__ + (f" + {kind} memory" if kind else "")
-                + ({"mission": " + a mission per ant", "learned": " + a memory per ant"}.get(ants, "")),
+                + ({"learned": " + a memory per ant"}.get(ants, "")),
         "memory_kind": kind,
         "ant_memory": ants,
         "reach_cells": max((st.reach for st in stages), default=0),
@@ -430,10 +426,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--blocks", type=int, default=None)
     ap.add_argument("--weights", type=Path, help="a .pt state dict; omitted means random init")
     ap.add_argument("--memory", nargs="?", const="max", default=False,
-                    help="a model that carries a memory: `max` (planes.MEMORY), `learned`, `xathis` "
-                         "or `xathis-sight`; read off the weights when they say so")
+                    help="a model that carries a memory: `max` (planes.MEMORY) or `learned`; "
+                         "read off the weights when they say so")
     ap.add_argument("--ants", nargs="?", const="learned", default=False,
-                    help="a model that carries a row per ant too: `learned` or `mission`; read off "
+                    help="a model that carries a row per ant too: `learned`; read off "
                          "the weights likewise")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--method", default="untrained")
