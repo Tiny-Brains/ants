@@ -355,12 +355,18 @@ def memory_row(metrics: dict) -> str:
     if ants:
         carries.append(f"a row of `{ANT_MEMORY}` `{ANT_DTYPE}` values per ant, kept by id "
                        f"({learned.get(ants, ants)})")
-    return (
-        f"| Memory | {' and '.join(carries)}, "
-        f"{mem['cell_bytes']} bytes a cell: {mem['bytes_at_max']:,} bytes on the largest board. "
-        f"The season's class has to allow it; `check` judged the round trip over "
-        f"{mem['round_trip']['checked']} chained observations |\n"
-    )
+    # A memory `check` could not price -- a shape it refuses (`MEMORY_SHAPE`), or a release
+    # declaring no `limits.boards` -- is still an object, with nulls where the numbers go
+    # (`cli/src/cmd/check.rs`, `MemoryReport::json`). The card says what it knows and names the
+    # gap: `certify` is what turns a refusal into the message that stops the export, and
+    # `write_card` runs first, so a format crash here would swallow it.
+    cell, most = mem.get("cell_bytes"), mem.get("bytes_at_max")
+    rt = mem.get("round_trip") or {}
+    priced = (f"{cell} bytes a cell: {most:,} bytes on the largest board"
+              if cell is not None and most is not None else "which `check` could not price")
+    judged = (f"`check` judged the round trip over {rt['checked']} chained observations"
+              if rt.get("checked") is not None else "`check` did not run the round trip")
+    return f"| Memory | {' and '.join(carries)}, {priced}. The season's class has to allow it; {judged} |\n"
 
 
 def write_card(out: Path, name: str, method: str, metrics: dict, summary: str,
@@ -507,9 +513,15 @@ def main(argv: list[str] | None = None) -> None:
           f"= {m['share_used']:.0%} of a seat share")
     if m.get("memory"):
         mem = m["memory"]
-        print(f"  memory {mem['cell_bytes']} bytes a cell, {mem['bytes_at_max']:,} bytes on the "
-              f"largest board; round trip {mem['round_trip']['failed']} of "
-              f"{mem['round_trip']['checked']} chained calls failed")
+        rt = mem.get("round_trip") or {}
+        # Nulls where the numbers go when `check` could not price it; see `memory_row`.
+        if mem.get("cell_bytes") is not None and mem.get("bytes_at_max") is not None:
+            print(f"  memory {mem['cell_bytes']} bytes a cell, {mem['bytes_at_max']:,} bytes "
+                  f"on the largest board")
+        else:
+            print("  memory declared, which `check` could not price")
+        if rt.get("checked") is not None:
+            print(f"  round trip {rt['failed']} of {rt['checked']} chained calls failed")
     print(f"  -> {a.out}")
 
 
