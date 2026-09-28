@@ -24,9 +24,10 @@ Needs rustup (`rust-toolchain.toml` pins rustc and the wasm32 target), `wasm-too
 ```sh
 ./build.sh                  # deny.sh, engine tests, mapgen tests, then every artifact into dist/; prints the digest
 viz/build.sh                # the viewer into dist/viz/, then check.mjs (after ./build.sh)
-(cd engine && cargo fmt --check && cargo clippy --all-targets -- -D warnings)
-(cd mapgen && cargo fmt --check && cargo clippy --all-targets -- -D warnings)
+(cd engine && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
+(cd mapgen && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
 (cd viz && node check.mjs)  # the viewer checks alone
+(cd viz && node make-last-frame.mjs)  # rewrite the stored last frame; needed after an engine-digest change
 (cd baselines && pytest tests/ -q)   # the encoding conformance gate; see baselines/CLAUDE.md
 tools/pack.py DIR           # dist/ as the release archive, its digests, and the tag it would take
 tools/equivalence.py OLD dist --allow ids   # a release unpacked vs dist/, played turn by turn under two policies
@@ -36,10 +37,19 @@ cargo test a_replay_re_simulates_the_match_it_recorded    # one test by name
 cargo test spec_scenario_                                  # the spec's worked fights
 cargo test measure_what_random_play_produces -- --ignored --nocapture   # a diagnostic, not a guarantee; minutes
 cargo run --bin reference -- --only basic-small-3p:20260919:400          # one reference spec
+cargo run --quiet --bin manifest > ../dist/cartridge.json   # the manifest alone, after an about.json or limits edit
 ```
 
 `build.sh` clears `dist/` first, which also drops `dist/viz/` on purpose: a viewer transpiled from
 the previous component is a viewer for some other engine. Rerun `viz/build.sh` after it.
+
+**Three of those gates read what this repository does not carry**, so the whole set needs a
+`tinybrains` on the PATH (or `$TINYBRAINS`) and an `ants-starter` checkout beside this one:
+`viz/make-last-frame.mjs` plays a real match with the CLI and the starter's `models/`
+(`$STARTER_MODELS`), `tools/equivalence.py` wants a CLI that plays both dists plus numpy, and the
+baselines' conformance test **skips** without the starter's `micro-bc` graph rather than failing --
+which is why CI names it in `TB_CONFORMANCE_ONNX`. CI builds that CLI from `cli`'s `main`, not its
+latest release, so a broken `cli` main fails this repository's build.
 
 The mapgen commands are in README §Boards. A season's boards are made with the same commands
 pointed outside every repository:
@@ -139,7 +149,10 @@ A *wave* is many matches advanced together in one call.
   re-renders every recipe and compares bytes, so a hand edit, or a renderer change nobody
   regenerated for, fails `build.sh`. `recipe.rs`, `make.rs` and `set.rs` (the area generator) remain
   only for `sweep` and their own tests. `mapgen` validates every board it writes through
-  `tb.ants.worldgen`, the same check a season's upload runs on Soma's node.
+  `tb.ants.worldgen`, the same check a season's upload runs on Soma's node. **A recipe is not
+  hand-written either**: a board is authored by `explore` → `playtest` → `adopt` (README §Boards),
+  which proposes designs by the hundred, plays the ones a person picked by eye, and writes those
+  picks down as recipes.
 - **`sweep` is the fairness proof, not a benchmark.** Every seat plays one policy that reads only
   its own view moved into seat 0's frame, so on a fair board under fair rules every view, every
   turn, is seat 0's moved by the shift and every match ends level. A divergence is a bug, reported
@@ -156,8 +169,9 @@ A *wave* is many matches advanced together in one call.
 
 - **Any edit under `engine/src/` outside `tests/` and `bin/`, or to `engine/plugin.toml`, is a new
   engine digest**, comment-only edits included (panic locations carry line numbers).
-  `games.active_engine_digest`, each replica's `engine_digest`, the plugin signatures and
-  `viz/engine.json` all move with it, and it is a release and a ladder event. Say so in the commit.
+  `games.active_engine_digest`, each replica's `engine_digest`, the plugin signatures,
+  `viz/engine.json` and the stored last frame (`viz/last-frame-basic-xlarge-8p.json`) all move with
+  it, and it is a release and a ladder event. Say so in the commit.
   To prove a refactor changed no rule, diff `cartridge.json`, `plugin.json`,
   `reference/observations.json` and `maps/` against the release's archive unpacked, and play the
   two against each other with `tools/equivalence.py`: every view, score and ending turn by turn
@@ -202,10 +216,17 @@ A *wave* is many matches advanced together in one call.
   outside every repository, uploaded to the season by an admin, and pushed to a backup repository
   only once the season has closed.
 - **`viz/check.mjs` fails the build if a stylesheet rule is not scoped to `.tb-viz`**: the viewer's
-  one `<style>` goes into the host document, and an unscoped selector relays out the host page.
-  Web copies the viewer's modules by name (`viz.js shell.js render.js engine.js map.js graph.js`), so
-  a new static import in `viz.js` is a change to web's list too (`map.js` and `graph.js` are loaded
-  on first use for that reason).
+  one `<style>` goes into the host document, and an unscoped selector relays out the host page. It
+  also **refuses a stored last frame another engine wrote**: the fixture carries the digest it was
+  played on, and a mismatch with `dist/viz/engine.json` fails `viz/build.sh` until
+  `node make-last-frame.mjs` rewrites it. Nothing regenerates it for you, and it sat two digests
+  behind once because nothing read it back. Web copies the viewer's modules by name (`viz.js
+  shell.js render.js engine.js map.js graph.js`), so a new static import in `viz.js` is a change to
+  web's list too (`map.js` and `graph.js` are loaded on first use for that reason).
+  **`react.js` is deliberately not on that list**: it wraps the same
+  viewer for a host that already has React, is the only file here allowed to name it, and imports
+  the bare specifier `"react"` -- so a listed module importing `react.js` takes every replay on the
+  site down. `viz/README.md` is the viewer's own guide (the `mount` API, the tiers, the React peer).
 - **`baselines/` is a public path.** ants-starter pip-installs `tb_baselines` from
   `git+https://github.com/Tiny-Brains/ants#subdirectory=baselines`, so renaming the directory or the
   package breaks every starter clone. It stays out of a release: `build.sh` never reads it and
