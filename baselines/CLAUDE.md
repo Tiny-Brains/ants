@@ -92,8 +92,11 @@ for an adapter over budget. Never report a result from the env as a result.
 - **The value head is never exported.** `export.py` takes the trunk and the policy head only. It is
   a real saving (at nano a critic would be a third of the budget) and it is what makes privileged
   input safe: a critic may see the true score because it is discarded before anything plays.
-- **The engine digest belongs on every artifact**: the dataset header, `metrics.json` and `card.md`.
-  A model trained against one engine and played under another cannot be reproduced.
+- **The engine digest belongs on every artifact**: the dataset header, `metrics.json` and
+  `card.md`'s *Measured on*. A model trained against one engine and played under another cannot be
+  reproduced. The card's row says *Measured on* rather than *Engine* because it is a record of the
+  measurement, not a pin a reader should match against `games.toml`; the cards in ants-starter name
+  older engines on purpose and are not chased from release to release.
 - **`data/`, `runs/`, `replays/` and `models/` are gitignored output.** The dataset is 90 MB and
   regenerable from a seed, and a checkpoint is not an artifact.
 - **The model card is generated from `export.py`'s `CARD` template**, and ants-starter commits the

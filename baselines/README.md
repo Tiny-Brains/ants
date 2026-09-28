@@ -207,9 +207,11 @@ data/ runs/ models/ replays/    gitignored output
   is discarded before anything plays.
 - **`tinybrains env` is not the referee.** No deadline, no strikes, no adapter. A result from the env
   is not a result.
-- **Every artifact names its engine digest**: the dataset header, `metrics.json` and `card.md`. An
-  engine change is a rules change, and a model that cannot say which engine it was trained against
-  cannot be reproduced.
+- **Every artifact names the engine it was measured against**: the dataset header, `metrics.json`
+  and `card.md`'s *Measured on*. An engine change is a rules change, and a model that cannot say
+  which engine it was trained against cannot be reproduced. It is a RECORD, not a pin: what a
+  starter plays is the `engine` in its `games.toml`, and a card is not re-measured for every ants
+  release, because the model does not change when the engine does.
 - **The directory name and the `tb_baselines` package name are a contract** with every ants-starter
   clone.
 - **The memory is one definition, `planes.MEMORY`, rendered three ways**: the manifest's

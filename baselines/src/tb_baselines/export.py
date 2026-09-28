@@ -321,7 +321,7 @@ CARD = """# {name}
 | Adapter | {ops:,} of {opsmax:,} operations at its worst reference case |
 | Inference | {infer:.2f} ms at the worst reference case — **{shareuse:.1%}** of the {share:.0f} ms a seat gets |
 | Operators | {operators} |
-| Engine | `{engine}` |
+| Measured on | engine `{engine}` |
 | Model hash | `{whash}` |
 | Manifest hash | `{ahash}` |
 {memory}
@@ -337,6 +337,12 @@ Inference time is measured on whatever machine ran the check and is **reported, 
 there is no compute cap. It is here because the turn deadline is what a graph too expensive to
 play runs into, and a seat's share of it is the WHOLE turn -- one `model_infer` call per seat,
 each with its own deadline.
+
+**Measured on** is the engine the numbers above were read against, not a pin to match. What a
+starter plays is the `engine` in its `games.toml`, which moves with each ants release; these numbers
+were true of the engine named here and are not re-measured for every release, because the model
+does not change when the engine does. A number that has to be current is read by running
+`tinybrains check` yourself.
 """
 
 
