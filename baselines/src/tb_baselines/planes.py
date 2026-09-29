@@ -335,9 +335,24 @@ def memory_in_view(obs: dict) -> np.ndarray:
 # `ant_memory` is one row per ant, `[id, s_1 .. s_K]` as `u8`, that the graph writes each turn and
 # the runner hands back on the next view (the book's *Memory* page, *A memory per ant*). The rows
 # follow the ants by id, never by position: `mine` is re-sorted every turn, so the adapter turns
-# last turn's rows into a table indexed by id and reads it back in this turn's `ids` order, with
-# zeros for an ant born since. The state values `s_k` are the graph's own to learn
-# (`nets.PerAnt`); the ids are the view's, kept modulo `ANT_TABLE` so a row fits a byte.
+# last turn's rows into a table indexed by id and reads it back in this turn's `ids` order. The
+# state values `s_k` are the graph's own to learn (`nets.PerAnt`); the ids are the view's, kept
+# modulo `ANT_TABLE` so a row fits a byte.
+#
+# THE TABLE WRAPS, AND A NEW ANT DOES NOT RELIABLY READ ZEROS. Ids are per seat and cumulative, so
+# they run well past `ANT_TABLE`: in `viz/last-frame-basic-xlarge-8p.json`, turn 1000 of
+# `basic-xlarge-8p`, all 130 live ants have ids above 255 and the largest is 615. A slot is never
+# cleared when its ant dies, so an ant born with id 300 reads whatever the ant with id 44 left
+# there. Two LIVE ants collide only when a seat's living cohort spans more than `ANT_TABLE`
+# consecutive ids -- in that frame none does, since ants born together have near-consecutive ids --
+# but inheriting a dead ant's two bytes is the ordinary case, not the exception.
+#
+# It is WRONG but it is not INCONSISTENT: the adapter, the numpy renderings and the graph all wrap
+# the same way, so a node and the trainer agree and `test_adapter_conformance` holds. What a model
+# learns is "these two bytes are usually mine and sometimes a stranger's", and it learns that on the
+# ladder exactly as it did in training. Widening the key is a real fix and a real cost: the id round
+# trips through the u8 `ant_memory` row, so it needs a second byte of key, which is a new manifest
+# shape, a new graph and a retrain of the shipped baseline. Recorded in ants' *Known gaps*.
 #
 # Rendered twice, as the board is: the adapter below builds the graph's three inputs from the view,
 # and the numpy functions build the same tensors for the trainer; `tests/test_adapter_conformance.py`

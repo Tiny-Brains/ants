@@ -267,6 +267,13 @@ dist/                      build output, gitignored; exactly what a release arch
 - Web's `scripts/check/configs.sh` compares Kalam's engine with the book's viewer, but not with web's
   own viewer or Soma's image, and nothing compares ants-starter's pinned `engine`.
 - A view carries no turn number. Whether endgame play needs one is untested.
+- **`ant_memory`'s id table wraps at 256, so an ant can inherit a dead one's bytes.** Ids are per
+  seat and cumulative and run past `ANT_TABLE` early — every live ant on `basic-xlarge-8p` is past
+  it by turn 1000 — and a slot is never cleared on death, so "a new ant reads zeros" is not true.
+  The adapter, the numpy renderings and the graph wrap identically, so the ladder and the trainer
+  agree and `test_adapter_conformance` holds; what is lost is per-ant identity, not determinism.
+  Widening the key means a second byte in the `ant_memory` row — a new manifest shape, a new graph
+  and a retrained `nano-bc-max-r` — so it is a deliberate deferral, not an oversight.
 
 ## License
 

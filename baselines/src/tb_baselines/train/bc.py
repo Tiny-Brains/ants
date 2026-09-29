@@ -241,6 +241,18 @@ def main(argv: list[str] | None = None) -> None:
             f"{a.data} carries {header.get('memory') or 'no'} remembered state and --memory needs "
             f"{[m.name for m in MEMORY]}: collect it again (`python -m tb_baselines.collect`)"
         )
+    # AND THE TEACHER MUST HAVE READ IT. `collect` writes the `memory` plane names on EVERY dataset,
+    # remembering or not, so that key alone proves nothing -- it only says the rows carry the
+    # columns. `teacher_remembers` is the fact that matters and was written for this check: without
+    # it the labels are a memoryless teacher's, and `--memory` trains a model to consult a state its
+    # target never looked at, while `train.py` stamps the card "behaviour cloning on the remembering
+    # teacher's labels". The model learns to ignore the memory, and nothing says so.
+    if a.memory and not header.get("teacher_remembers"):
+        raise SystemExit(
+            f"{a.data} was collected from a teacher that does not remember, so --memory would train "
+            f"on labels that never read the memory: collect it again with "
+            f"`python -m tb_baselines.collect --remember`"
+        )
     order = list(range(len(rows)))
     rng.shuffle(order)
     cut = int(len(order) * (1 - a.holdout))

@@ -701,11 +701,19 @@ const lastFrame = JSON.parse(readFileSync("./last-frame-basic-xlarge-8p.json", "
 // decoding anything, so it has to be the shape THIS engine emits. It sat two digests behind --
 // three-element ants, no `deaths`, no `razed` -- because `make-last-frame.mjs` wrote the digest it
 // played on and nothing ever read it back. This is what makes writing it mean something.
-const distEngine = JSON.parse(readFileSync("../dist/viz/engine.json", "utf8")).engine_digest;
+//
+// THE COMPARISON IS THE SHAPE, NOT THE DIGEST. rustc's host is part of the component's bytes
+// (build.yml says so at the top), so the fixture's `engine_digest` is whatever machine last ran
+// `make-last-frame.mjs` and can never equal a CI build's -- asserting equality fails every run on
+// the arm64 Linux runner, and nothing in CI regenerates the fixture. What actually went stale was
+// the SHAPE, and that is checkable against a frame this build just produced: same keys, same ant
+// arity. `engine_digest` stays in the file as provenance for whoever regenerates it.
+const liveFrame = frames[frames.length - 1];
+const shapeOf = (f) => `${Object.keys(f).sort().join(" ")} | ants[${f.ants?.[0]?.length ?? 0}]`;
 check(
-  "the stored last frame is this engine's",
-  lastFrame.engine_digest === distEngine,
-  `fixture ${lastFrame.engine_digest}, dist ${distEngine}; regenerate with \`node make-last-frame.mjs\``
+  "the stored last frame is the shape this engine emits",
+  shapeOf(lastFrame.frame) === shapeOf(liveFrame),
+  `fixture ${shapeOf(lastFrame.frame)}, engine ${shapeOf(liveFrame)}; regenerate with \`node make-last-frame.mjs\``
 );
 const labels8 = lastFrame.seats.map((s) => ({ seat: s.seat, name: s.name }));
 const labels2 = [
