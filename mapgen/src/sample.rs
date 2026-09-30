@@ -29,8 +29,25 @@ impl Slot {
     }
 }
 
+/// An exact board, written `ROWSxCOLS`, when the size names one instead of a class.
+///
+/// A class proposes boards across a range of sides, which is what you want when the question is
+/// "what could a medium board look like". It is not what you want when the sizes are already
+/// decided and the question is only which board of THAT size plays best -- a season picking from
+/// twenty fixed sizes wants a hundred candidates at each one, not a hundred spread over nine
+/// widths. `size = "36x44"` is that.
+pub fn exact(size: &str) -> Option<(i32, i32)> {
+    let (r, c) = size.split_once('x')?;
+    Some((r.parse().ok()?, c.parse().ok()?))
+}
+
 /// `[smallest side, largest side]` a size class allows, and the largest side it must exceed.
 pub fn class(size: &str) -> Result<(i32, i32, i32), String> {
+    if let Some((rows, cols)) = exact(size) {
+        // The column loop below runs `lo.max(over + 1)..=hi`, so this pins it to `cols`; the row
+        // loop is pinned separately, because its range is written against `cols`.
+        return Ok((rows, cols, cols - 1));
+    }
     Ok(match size {
         "tiny" => (24, 32, 0),
         "small" => (32, 48, 32),
@@ -59,54 +76,70 @@ fn gcd(a: i32, b: i32) -> i32 {
 
 /// Every board and seating a slot could be played on, fat enough to play well.
 pub fn board_options(slot: &Slot) -> Result<Vec<BoardOpt>, String> {
-    let (lo, hi, over) = class(&slot.size)?;
     let p = slot.seats as i32;
     let mut out = Vec::new();
-    for cols in lo.max(over + 1)..=hi {
-        for rows in lo..=cols {
-            // Landscape, and no more than a third longer than it is tall.
-            if cols * 3 > rows * 4 {
-                continue;
-            }
-            let t = Torus { rows, cols };
-            let mut seen: Vec<Vec<(i32, i32)>> = Vec::new();
-            for dr in (0..rows).filter(|dr| (dr * p) % rows == 0) {
-                for dc in (0..cols).filter(|dc| (dc * p) % cols == 0) {
-                    let s = Shift { seats: p as usize, dr, dc };
-                    if !s.is_exact(&t) {
+    // AN EXACT SIZE IS THE SHAPE SOMEBODY CHOSE, so it is taken as given. A class instead proposes
+    // shapes, and the two guards below are about what the SAMPLER should offer unasked: landscape,
+    // and no more than a third longer than it is tall. Applying them to a size a person named would
+    // refuse `24x36` as "no board fits" -- a board the engine plays perfectly well.
+    //
+    // What still has to hold either way is further down and is not taste: a seating must close on
+    // the torus, and seats must be more than a view apart on a board fat enough to play.
+    let shapes: Vec<(i32, i32)> = match exact(&slot.size) {
+        Some((rows, cols)) => vec![(rows, cols)],
+        None => {
+            let (lo, hi, over) = class(&slot.size)?;
+            let mut v = Vec::new();
+            for cols in lo.max(over + 1)..=hi {
+                for rows in lo..=cols {
+                    if cols * 3 > rows * 4 {
                         continue;
                     }
-                    let mut sub: Vec<(i32, i32)> =
-                        (0..p).map(|k| ((k * dr) % rows, (k * dc) % cols)).collect();
-                    sub.sort_unstable();
-                    if seen.contains(&sub) {
-                        continue;
-                    }
-                    seen.push(sub);
-                    let d2 = |r: i32, c: i32| {
-                        let (r, c) = (r.rem_euclid(rows), c.rem_euclid(cols));
-                        let (r, c) = (r.min(rows - r), c.min(cols - c));
-                        (r * r + c * c) as i64
-                    };
-                    let seat2 = (1..p).map(|k| d2(k * dr, k * dc)).min().unwrap_or(0);
-                    let own2 = (rows as i64).pow(2).min((cols as i64).pow(2));
-                    let l2 = seat2.min(own2);
-                    let fat = l2 as f64 / (rows as f64 * cols as f64 / p as f64);
-                    if seat2 <= VIEW_RADIUS2 + 20 || fat < 0.55 {
-                        continue;
-                    }
-                    let g = gcd(gcd(rows, cols), gcd(dr, dc));
-                    let pitches = (3..=16).filter(|q| g % q == 0).collect();
-                    out.push(BoardOpt {
-                        rows,
-                        cols,
-                        shift: (dr, dc),
-                        spacing: (seat2 as f64).sqrt(),
-                        fatness: fat,
-                        groups: sym::admitted(&t, &s),
-                        pitches,
-                    });
+                    v.push((rows, cols));
                 }
+            }
+            v
+        }
+    };
+    for (rows, cols) in shapes {
+        let t = Torus { rows, cols };
+        let mut seen: Vec<Vec<(i32, i32)>> = Vec::new();
+        for dr in (0..rows).filter(|dr| (dr * p) % rows == 0) {
+            for dc in (0..cols).filter(|dc| (dc * p) % cols == 0) {
+                let s = Shift { seats: p as usize, dr, dc };
+                if !s.is_exact(&t) {
+                    continue;
+                }
+                let mut sub: Vec<(i32, i32)> =
+                    (0..p).map(|k| ((k * dr) % rows, (k * dc) % cols)).collect();
+                sub.sort_unstable();
+                if seen.contains(&sub) {
+                    continue;
+                }
+                seen.push(sub);
+                let d2 = |r: i32, c: i32| {
+                    let (r, c) = (r.rem_euclid(rows), c.rem_euclid(cols));
+                    let (r, c) = (r.min(rows - r), c.min(cols - c));
+                    (r * r + c * c) as i64
+                };
+                let seat2 = (1..p).map(|k| d2(k * dr, k * dc)).min().unwrap_or(0);
+                let own2 = (rows as i64).pow(2).min((cols as i64).pow(2));
+                let l2 = seat2.min(own2);
+                let fat = l2 as f64 / (rows as f64 * cols as f64 / p as f64);
+                if seat2 <= VIEW_RADIUS2 + 20 || fat < 0.55 {
+                    continue;
+                }
+                let g = gcd(gcd(rows, cols), gcd(dr, dc));
+                let pitches = (3..=16).filter(|q| g % q == 0).collect();
+                out.push(BoardOpt {
+                    rows,
+                    cols,
+                    shift: (dr, dc),
+                    spacing: (seat2 as f64).sqrt(),
+                    fatness: fat,
+                    groups: sym::admitted(&t, &s),
+                    pitches,
+                });
             }
         }
     }

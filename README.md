@@ -169,8 +169,12 @@ cargo run --release -- sweep             # the fairness proof: many styles, 2-8 
 ```
 
 `explore` proposes and a person picks by eye; `adopt` writes the pick down, so a chosen board stays
-that board whatever later happens to the sampler. `build.sh` runs `mapgen`'s tests, which re-render
-every committed board and compare bytes.
+that board whatever later happens to the sampler. A slot's `size` is either a class (`tiny`,
+`small`, `medium`, `large`, `xlarge`), which proposes boards across that class's range of sides, or
+one exact board written `ROWSxCOLS` (`size = "36x44"`), when the sizes are already decided and the
+only question left is which board of that size plays best. An exact size is taken as given: the
+sampler's landscape and proportion preferences shape what it offers unasked, not a shape somebody
+named. `build.sh` runs `mapgen`'s tests, which re-render every committed board and compare bytes.
 
 **A season's boards are not here.** They are made with the same tool pointed outside every
 repository (`--recipes DIR --maps DIR`), uploaded to the season by an admin, and pushed to a backup
